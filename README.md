@@ -24,6 +24,20 @@ python scripts/servir.py
 
 e abre <http://localhost:8000>.
 
+## Dois modos: Draft e FPL clássica
+
+O botão no cabeçalho alterna entre a liga de Draft e a FPL clássica. Para a clássica mostrar
+o *teu* plantel, define o id da tua equipa:
+
+```bash
+FPL_ENTRY_ID=1234567 python scripts/fetch_classica.py
+```
+
+**Como descobrir o id**: entra em fantasy.premierleague.com, abre uma mini-liga em
+*Leagues & Cups* e clica no nome da tua equipa na tabela — o URL passa a
+`.../entry/1234567/event/1`. Esse número é o id. (Na página "My Team" o URL não o mostra.)
+Sem o id, o modo funciona na mesma para análise geral.
+
 ## No telemóvel
 
 O `atualizar.cmd` mostra, além do endereço local, o endereço desta máquina na rede

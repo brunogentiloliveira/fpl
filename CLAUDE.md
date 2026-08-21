@@ -247,6 +247,36 @@ Avalia uma troca concreta — recebida ou a propor — com **N jogadores de cada
   da API, por isso não disparava avisos para quem está fora apenas por indicação do Scout
   (o caso do Pedro Porro). Isto corrigiu também o mesmo ponto cego no aviso dos waivers.
 
+## Modo "Clássica" (FPL normal, 2026-08-21)
+
+Segundo modo, a pedido do utilizador, para a FPL clássica
+(`fantasy.premierleague.com/api`) a par do Draft. Botão no cabeçalho, guardado em
+`localStorage` (`modo`); trocar recarrega a página com o outro ficheiro de dados.
+
+- `scripts/fetch_classica.py` escreve `site/data/classica.json` **na mesma forma** do data.json
+  do Draft — é isso que permite reutilizar o motor de projeção inteiro (`projecao`,
+  `componentesPP90`, bola parada, calendário, FFS, pré-época) sem uma linha alterada. Importa
+  as funções partilhadas de `fetch_data.py`.
+- Diferenças reais da clássica, todas lidas da API: orçamento de 100.0M (`squad_total_spend`),
+  preços (`now_cost`) e propriedade (`selected_by_percent`), **máximo 3 por clube**
+  (`squad_team_limit`), transferências com custo de −4, e chips (2 wildcards, 2 free hits,
+  2 bench boosts, 2 triple captains, por metade da época). A tabela de pontuação vem em
+  `game_config.scoring` aninhada por posição e é achatada para o formato do Draft
+  (`goals_scored_GKP`) que `regra()`/`regraPos()` já esperam.
+- **Bónus**: na clássica os campos de bola parada **vêm preenchidos** (131 jogadores), ao
+  contrário do Draft. Confirmam a tabela curada à mão (Saka, Buendía, Palmer, Thiago…) e neste
+  modo dispensam o `bolaparada.json`.
+- O calendário sai de `/fixtures/` num único pedido, com `team_h_difficulty`/`team_a_difficulty`
+  já calculadas — não é preciso o truque dos 20 `element-summary` do Draft.
+- Interface: `data-modo="draft|classica"` nos separadores e blocos; `aplicarModo()` esconde o
+  que não pertence ao modo. Na clássica desaparecem Liga, Equipas e Analisar troca, a coluna
+  "Dono" passa a "Preço" (com a percentagem de equipas que o têm), a ordenação por draft rank dá
+  lugar a preço, e as Sugestões ganham **Capitão** (o dobro é a maior decisão da jornada),
+  **Transferências** (orçamento, limite por clube e se o ganho paga os −4) e **Chips**.
+- Sem `FPL_ENTRY_ID` o modo funciona na mesma: capitão entre todos os jogadores e tabela de
+  pontos por milhão. Com o id, mostra plantel, banco, chips usados e sugestões para a tua equipa.
+  As escolhas de uma jornada só existem depois do deadline (a API dá 404 antes disso).
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;

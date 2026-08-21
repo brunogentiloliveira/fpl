@@ -52,7 +52,7 @@ function estadoDe(p) {
 /* ---------- Cabeçalho ---------- */
 
 function initCabecalho() {
-  document.title = D.league.name + " · FPL Draft";
+  document.title = D.league.name + (ehClassica() ? " · FPL" : " · FPL Draft");
   $("titulo-liga").textContent = D.league.name;
   $("atualizado").textContent =
     "Atualizado: " + fmtDataHora.format(new Date(D.generated_at));
@@ -298,7 +298,9 @@ function aplicarFiltros() {
   });
 
   const ordem = $("ordenar").value;
-  if (ordem === "proj") {
+  if (ordem === "preco") {
+    filtrados.sort((a, b) => (b.now_cost || 0) - (a.now_cost || 0));
+  } else if (ordem === "proj") {
     filtrados.sort((a, b) => projecao(b).ppj - projecao(a).ppj);
   } else if (ordem === "pontos") {
     filtrados.sort((a, b) => b.total_points - a.total_points);
@@ -324,11 +326,15 @@ function desenharJogadores() {
       ? ' <span class="estado ok">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
     return "<tr>" +
       "<td>" + esc(p.web_name) + marca + dinheiro +
-        '<span class="sub">' + nomeClube(p.team) + " · #" + (p.draft_rank ?? "–") + "</span></td>" +
+        '<span class="sub">' + nomeClube(p.team) +
+          (p.draft_rank ? " · #" + p.draft_rank : "") + "</span></td>" +
       "<td>" + (POSICOES[p.element_type] || "?") + "</td>" +
       '<td class="num">' + p.total_points + "</td>" +
       '<td class="num forte">' + projecao(p).ppj.toFixed(1) + "</td>" +
-      "<td>" + (dono ? esc(dono) : '<span class="sub">Livre</span>') + "</td>" +
+      "<td>" + (ehClassica()
+        ? (p.now_cost ? precoDe(p).toFixed(1) + "M" +
+            '<span class="sub">' + (p.selected_by_percent || "0") + "% têm</span>" : "—")
+        : (dono ? esc(dono) : '<span class="sub">Livre</span>')) + "</td>" +
     "</tr>";
   }).join("");
   $("contagem-jogadores").textContent =
@@ -337,7 +343,24 @@ function desenharJogadores() {
   $("mostrar-mais").hidden = mostrar.length >= filtrados.length;
 }
 
+/** A clássica não tem donos nem draft rank, mas tem preços. */
+function adaptarJogadoresAoModo() {
+  if (!ehClassica()) return;
+  const cabecalho = document.querySelector("#tabela-jogadores thead th:last-child");
+  if (cabecalho) cabecalho.textContent = "Preço";
+  const soLivres = $("so-livres");
+  if (soLivres && soLivres.parentElement) soLivres.parentElement.hidden = true;
+  const ordenar = $("ordenar");
+  if (ordenar) {
+    ordenar.querySelector('option[value="rank"]').remove();
+    ordenar.insertAdjacentHTML("beforeend",
+      '<option value="preco">Ordenar por preço</option>');
+    ordenar.value = "proj";
+  }
+}
+
 function initJogadores() {
+  adaptarJogadoresAoModo();
   $("pesquisa").addEventListener("input", aplicarFiltros);
   $("filtro-pos").addEventListener("change", aplicarFiltros);
   $("so-livres").addEventListener("change", aplicarFiltros);
@@ -1343,6 +1366,240 @@ function desenharPrecisao() {
     "</ul>";
 }
 
+/* ---------- Modo de jogo: Draft ou FPL clássica ---------- */
+
+const MODOS = { draft: "data/data.json", classica: "data/classica.json" };
+
+function modoAtual() {
+  const m = lerGuardado("modo");
+  return MODOS[m] ? m : "draft";
+}
+
+function aplicarModo(modo) {
+  document.body.dataset.modo = modo;
+  document.querySelectorAll("[data-modo]").forEach((el) => {
+    el.hidden = el.dataset.modo !== modo;
+  });
+  $("modo-draft").setAttribute("aria-pressed", String(modo === "draft"));
+  $("modo-classica").setAttribute("aria-pressed", String(modo === "classica"));
+}
+
+function initSeletorModo() {
+  const trocar = (modo) => {
+    if (modo === modoAtual()) return;
+    try {
+      localStorage.setItem("modo", JSON.stringify(modo));
+    } catch (err) { /* segue sem guardar */ }
+    location.reload();
+  };
+  $("modo-draft").addEventListener("click", () => trocar("draft"));
+  $("modo-classica").addEventListener("click", () => trocar("classica"));
+}
+
+/* ---------- Sugestões da FPL clássica ---------- */
+
+function ehClassica() {
+  return (D.modo || "draft") === "classica";
+}
+
+function precoDe(p) {
+  return (p.now_cost || 0) / 10;
+}
+
+function minhaEquipaClassica() {
+  return ((D.classica || {}).equipa) || null;
+}
+
+/** Capitão: o dobro dos pontos de um jogador é o maior salto da jornada. */
+function desenharCapitao(meusX) {
+  const equipa = minhaEquipaClassica();
+  const universo = meusX.length
+    ? meusX
+    : comProjecao(D.players.filter((p) => !STATUS_FORA.has(p.status)));
+  const candidatos = universo.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal).slice(0, 5);
+  if (candidatos.length === 0) return;
+
+  const melhor = candidatos[0];
+  $("cap-resumo").textContent = meusX.length
+    ? "do teu plantel" : "de toda a Premier League (sem a tua equipa carregada)";
+
+  $("cap-lista").innerHTML =
+    '<div class="veredicto ok"><p>Capitão sugerido: <strong>' + esc(melhor.p.web_name) +
+      "</strong> (" + nomeClube(melhor.p.team) + ") — projeta " + melhor.pr.ppjCal.toFixed(1) +
+      " pts, <strong>" + (melhor.pr.ppjCal * 2).toFixed(1) + " com a braçadeira</strong>. " +
+      esc(porqueEntra(melhor)) + ".</p></div>" +
+    '<table class="tabela tabela-proj"><thead><tr><th>Candidato</th>' +
+      '<th class="num">Pts/J</th><th class="num">Como capitão</th>' +
+      '<th class="num">Ganho</th></tr></thead><tbody>' +
+      candidatos.map((x) => "<tr><td>" + esc(x.p.web_name) +
+        '<span class="sub">' + nomeClube(x.p.team) + " · " +
+          (POSICOES[x.p.element_type] || "?") +
+          (equipa && equipa.capitao === x.p.id ? " · capitão atual" : "") + "</span></td>" +
+        '<td class="num">' + x.pr.ppjCal.toFixed(1) + "</td>" +
+        '<td class="num forte">' + (x.pr.ppjCal * 2).toFixed(1) + "</td>" +
+        '<td class="num">' + sinal(x.pr.ppjCal) + "</td></tr>").join("") +
+    "</tbody></table>";
+}
+
+/**
+ * Transferências: só compensam se pagarem o que custam.
+ *
+ * A troca tem de caber no dinheiro disponível, respeitar o limite de jogadores
+ * por clube e, se gastar mais do que as transferências livres, render mais do
+ * que os 4 pontos da penalização.
+ */
+function desenharTransferencias(meusX) {
+  const equipa = minhaEquipaClassica();
+  const squad = (D.regras || {}).squad || {};
+  const limiteClube = squad.team_limit || 3;
+  const custo = (D.classica || {}).custo_transferencia || 4;
+
+  if (!equipa || meusX.length === 0) {
+    // Sem a equipa carregada: mostrar quem rende mais por milhão gasto.
+    const valor = comProjecao(D.players.filter((p) => !STATUS_FORA.has(p.status) && p.now_cost))
+      .map((x) => ({ x, racio: x.pr.ppjCal / precoDe(x.p) }))
+      .sort((a, b) => b.racio - a.racio)
+      .slice(0, 12);
+    $("tr-resumo").textContent = "sem a tua equipa: melhor relação pontos/preço";
+    $("tr-lista").innerHTML =
+      '<p class="nota">Define <code>FPL_ENTRY_ID</code> para veres sugestões para o teu ' +
+        "plantel, com orçamento, limite de 3 por clube e o custo de −" + custo + " pontos.</p>" +
+      '<table class="tabela tabela-proj"><thead><tr><th>Jogador</th><th class="num">Preço</th>' +
+        '<th class="num">Pts/J</th><th class="num">Pts por milhão</th></tr></thead><tbody>' +
+        valor.map(({ x, racio }) => "<tr><td>" + esc(x.p.web_name) +
+          '<span class="sub">' + nomeClube(x.p.team) + " · " +
+            (POSICOES[x.p.element_type] || "?") + "</span></td>" +
+          '<td class="num">' + precoDe(x.p).toFixed(1) + "M</td>" +
+          '<td class="num">' + x.pr.ppjCal.toFixed(1) + "</td>" +
+          '<td class="num forte">' + racio.toFixed(2) + "</td></tr>").join("") +
+      "</tbody></table>";
+    return;
+  }
+
+  const banco = equipa.banco || 0;
+  const livres = equipa.transferencias_livres != null ? equipa.transferencias_livres : 1;
+  const porClube = {};
+  meusX.forEach((x) => { porClube[x.p.team] = (porClube[x.p.team] || 0) + 1; });
+
+  const candidatos = comProjecao(D.players.filter((p) =>
+    !meusX.some((x) => x.p.id === p.id) && !STATUS_FORA.has(p.status) && p.now_cost));
+
+  const ideias = [];
+  meusX.forEach((meu) => {
+    const orcamento = banco + precoDe(meu.p);
+    candidatos
+      .filter((c) => c.p.element_type === meu.p.element_type)
+      .filter((c) => precoDe(c.p) <= orcamento + 1e-9)
+      .filter((c) => c.p.team === meu.p.team ||
+        (porClube[c.p.team] || 0) < limiteClube)
+      .forEach((c) => {
+        const ganho = c.pr.ppjCal - meu.pr.ppjCal;
+        if (ganho > 0.2) {
+          ideias.push({ meu, entra: c, ganho, sobra: orcamento - precoDe(c.p) });
+        }
+      });
+  });
+  ideias.sort((a, b) => b.ganho - a.ganho);
+
+  const usados = new Set();
+  const escolhidas = [];
+  ideias.forEach((i) => {
+    if (usados.has(i.meu.p.id) || usados.has(i.entra.p.id) || escolhidas.length >= 5) return;
+    usados.add(i.meu.p.id);
+    usados.add(i.entra.p.id);
+    escolhidas.push(i);
+  });
+
+  $("tr-resumo").textContent = banco.toFixed(1) + "M no banco · " + livres +
+    " transferência" + (livres === 1 ? "" : "s") + " livre" + (livres === 1 ? "" : "s");
+
+  if (escolhidas.length === 0) {
+    $("tr-lista").innerHTML = '<p class="nota">Nenhuma transferência melhora o plantel ' +
+      "o suficiente para valer a pena.</p>";
+    return;
+  }
+
+  $("tr-lista").innerHTML = escolhidas.map((i, idx) => {
+    const paga = idx < livres || i.ganho * 3 > custo; // 3 jornadas para pagar o hit
+    const nota = idx < livres
+      ? "Cabe nas transferências livres."
+      : paga
+        ? "Custa −" + custo + " pts, mas recupera-os em cerca de " +
+          Math.ceil(custo / Math.max(i.ganho, 0.1)) + " jornadas."
+        : "Não compensa pagar −" + custo + " pts por este ganho.";
+    return '<li class="' + (paga ? "" : "cartaz") + '">' +
+      '<div class="troca-linha"><span class="sai">Sai</span> ' + etiquetaJogador(i.meu) +
+        ' <span class="clube">' + precoDe(i.meu.p).toFixed(1) + "M</span></div>" +
+      '<div class="troca-linha"><span class="entra">Entra</span> ' + etiquetaJogador(i.entra) +
+        ' <span class="clube">' + precoDe(i.entra.p).toFixed(1) + "M</span></div>" +
+      '<p class="porque"><strong>' + esc(i.entra.p.web_name) + "</strong> " +
+        esc(porqueEntra(i.entra)) + ". Ganhas <strong>" + i.ganho.toFixed(1) +
+        " pts por jornada</strong> e sobram " + i.sobra.toFixed(1) + "M. " + nota + "</p>" +
+    "</li>";
+  }).join("");
+  $("tr-lista").innerHTML = '<ul class="sugestoes">' + $("tr-lista").innerHTML + "</ul>";
+}
+
+/** Chips: quanto valeria usá-los nesta jornada. */
+function desenharChips(meusX) {
+  const equipa = minhaEquipaClassica();
+  const chips = (D.classica || {}).chips || [];
+  const usados = new Set((equipa && equipa.chips_usados || []).map((c) => c.chip));
+  const ev = D.next_event && D.next_event.id;
+  const disponiveis = chips.filter((c) =>
+    !usados.has(c.nome) && (!ev || (c.inicio <= ev && ev <= c.fim)));
+
+  const xi = meusX.length ? melhorXI(meusX) : [];
+  const banco = meusX.filter((x) => !xi.includes(x));
+  const capitao = xi.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)[0];
+  const valorBanco = banco.reduce((s, x) => s + x.pr.ppjCal, 0);
+
+  const NOMES = {
+    wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost",
+    "3xc": "Triple Captain", manager: "Assistant Manager",
+  };
+  const explicar = (nome) => {
+    if (nome === "bboost") {
+      return meusX.length
+        ? "O teu banco projeta " + valorBanco.toFixed(1) + " pts nesta jornada. Vale a pena " +
+          "guardar para uma jornada dupla, em que o banco rende bem mais."
+        : "Soma os pontos do banco. Guarda para uma jornada dupla.";
+    }
+    if (nome === "3xc") {
+      return capitao
+        ? "Com " + esc(capitao.p.web_name) + " renderia mais " + capitao.pr.ppjCal.toFixed(1) +
+          " pts do que a capitania normal (" + (capitao.pr.ppjCal * 3).toFixed(1) + " no total)."
+        : "Triplica o capitão: guarda para quem tenha jornada dupla e bom calendário.";
+    }
+    if (nome === "wildcard") {
+      return "Refaz o plantel sem custo. Usa quando tiveres três ou mais transferências " +
+        "necessárias ao mesmo tempo.";
+    }
+    if (nome === "freehit") {
+      return "Plantel só por uma jornada, volta ao normal a seguir. Serve para jornadas " +
+        "em branco.";
+    }
+    return "";
+  };
+
+  $("chips-lista").innerHTML = disponiveis.length === 0
+    ? '<p class="nota">Sem chips disponíveis nesta janela.</p>'
+    : '<ul class="sugestoes">' + disponiveis.map((c) =>
+        "<li><p class=\"alvo\"><strong>" + (NOMES[c.nome] || c.nome) + "</strong> " +
+          "(jornadas " + c.inicio + " a " + c.fim + ")</p>" +
+          '<p class="porque">' + explicar(c.nome) + "</p></li>").join("") + "</ul>";
+}
+
+function initClassica() {
+  if (!ehClassica()) return;
+  const equipa = minhaEquipaClassica();
+  const meusIds = new Set((equipa && equipa.picks || []).map((x) => x.id));
+  const meusX = comProjecao(D.players.filter((p) => meusIds.has(p.id)));
+  desenharCapitao(meusX);
+  desenharTransferencias(meusX);
+  desenharChips(meusX);
+}
+
 /* ---------- Analisador de trocas ---------- */
 
 function contaPorPosicao(lista) {
@@ -1882,7 +2139,9 @@ function initTabs() {
 
 async function main() {
   try {
-    const resp = await fetch("data/data.json", { cache: "no-store" });
+    const modo = modoAtual();
+    aplicarModo(modo);
+    const resp = await fetch(MODOS[modo], { cache: "no-store" });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     D = await resp.json();
   } catch (err) {
@@ -1899,14 +2158,18 @@ async function main() {
   initDiagnostico();
   initTicker(noticias);
   initBoletim(ordenarBoletim(noticiasBoletim()));
-  initLiga();
-  initEquipas();
+  initSeletorModo();
+  if (!ehClassica()) {
+    initLiga();
+    initEquipas();
+  }
   initConferencias();
   initProjecoes();
   guardarProjecoes();
   desenharPrecisao();
   initSugestoes();
-  initAnaliseTroca();
+  if (!ehClassica()) initAnaliseTroca();
+  initClassica();
   initSeletorJanela();
   initMercado();
   initJogadores();
