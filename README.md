@@ -19,7 +19,7 @@ para desligar.
 
 ```bash
 LEAGUE_ID=12258 python scripts/fetch_data.py
-python -m http.server 8000 --directory site
+python scripts/servir.py
 ```
 
 e abre <http://localhost:8000>.

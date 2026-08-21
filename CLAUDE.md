@@ -40,7 +40,8 @@ Base: `https://draft.premierleague.com/api`
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
   junta tudo num único `site/data/data.json` (jogadores já com `owner` embutido).
 - `atualizar.cmd` — atalho Windows: corre a recolha (LEAGUE_ID=12258), arranca
-  `python -m http.server 8000 --directory site` e abre o browser. É assim que o site se usa.
+  `scripts/servir.py` (servidor com `Cache-Control: no-cache` — o http.server puro deixava
+  o browser preso a versões antigas do site) e abre o browser. É assim que o site se usa.
 - `site/` — HTML/CSS/JS puro, sem frameworks nem build step. Tema escuro, focus visível,
   `prefers-reduced-motion` respeitado (ticker sem animação).
 - Já **não há** workflow do GitHub Actions (removido quando o projeto passou a só-local);
