@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -23,7 +23,6 @@
 
 <nav class="tabs" role="tablist" aria-label="Secções">
   <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
-  <button role="tab" id="tab-equipa" aria-controls="painel-equipa" aria-selected="false" tabindex="-1" aria-label="A minha equipa">Equipa</button>
   <button role="tab" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
   <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
@@ -41,14 +40,6 @@
     <p class="nota" id="nota-liga" hidden>A classificação aparece depois da primeira jornada.</p>
   </section>
 
-  <section id="painel-equipa" role="tabpanel" aria-labelledby="tab-equipa" hidden>
-    <h2 class="sec-titulo" id="equipa-nome"></h2>
-    <p class="nota" id="equipa-alerta" hidden></p>
-    <div id="plantel"></div>
-    <h2 class="sec-titulo">Alvos de waiver</h2>
-    <p class="nota">Melhores livres por draft rank; lesionados, suspensos e indisponíveis escondidos.</p>
-    <div id="alvos"></div>
-  </section>
 
   <section id="painel-conf" role="tabpanel" aria-labelledby="tab-conf" hidden>
     <h2 class="sec-titulo">Jogadores em risco</h2>
@@ -197,6 +188,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -81,6 +81,26 @@ da GW1 enquanto a API ainda o tinha como disponível).
   API ainda diverge. Os onzes prováveis por jogo do FFS são **imagens**, por isso não dá para
   extrair a equipa provável — só o texto de team news.
 
+## Boletim (ordenação, 2026-08-21)
+
+Ordenado por **quem exige ação**, não por data (o ticker do topo é que ficou cronológico):
+
+1. Grupo por dono — `pesoDono`: meus → de outros gestores → livres, com separador
+   `<li class="grupo">` e contagem.
+2. Gravidade dentro do grupo — `pesoGravidade`: **-1** dado como fora pelo Scout (é a
+   informação mais recente e não aparece em mais lado nenhum), 0 fora pela API, 1 dúvida,
+   2 saída do clube, 3 resto. Data decrescente desempata.
+
+A saída do clube distingue-se pelo **texto** da notícia (`FRASES_SAIDA`), não pelo status: a
+API usa `u`/`n` tanto para quem saiu como para outros indisponíveis. Nota: escrever este
+teste como regex com fronteira de palavra através de heredoc do shell corrompeu o ficheiro
+(a sequência barra-b virou um caracter backspace literal, e nada casava) — daí a verificação
+por `includes`, que também lê melhor.
+
+`noticiasBoletim()` junta as notícias da API com os jogadores que **só o Scout** dá como fora
+(`soNoScout`); esses aparecem com distintivo "Fora (Scout)", a data do artigo e a frase
+original. Quem tem as duas coisas mostra ambas.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
@@ -105,12 +125,13 @@ que já tem fallback.
 - **Fase 1 (feita)**: recolha + página única com cabeçalho (última atualização +
   contagem para o deadline), ticker de notícias, separadores Liga / Boletim / Jogadores
   (pesquisa, filtro por posição, "só livres", ordenado por draft_rank).
-- **Fase 2 (feita)**: separador "Equipa" (aria-label "A minha equipa") — plantel de 15 por
-  posição com estado clínico e alerta; "Alvos de waiver" (10 livres com melhor draft_rank
-  por posição, sem status fora); realce a vermelho de jogadores meus novos no boletim.
-  A deteção de novidades compara com o data.json anterior no fetch_data.py (`news_new`;
-  primeira execução nunca marca nada). A equipa é detetada pelo apelido do gestor
-  (regex /gentil/i em app.js), com fallback para o nome "Buendia Porro".
+- **Fase 2 (feita, separador removido em 2026-08-21)**: existiu um separador "Equipa" com o
+  meu plantel e "Alvos de waiver". Foi **removido a pedido do utilizador** por duplicação: o
+  plantel está no cartão ★ do separador "Equipas" (aberto por omissão) e os livres estão em
+  "Melhores livres" nas Sugestões, aí ordenados por projeção em vez de draft_rank.
+  O que se manteve: `news_new` no fetch_data.py (compara com o data.json anterior; primeira
+  execução nunca marca nada) e a deteção da equipa pelo apelido do gestor (`MEU_GESTOR`,
+  regex /gentil/i em app.js).
 - **Fase 3 (feita)**: separador "Equipas" — cartão `<details>` por gestor, ordenado por rank
   (fallback waiver_pick antes da época): plantel de 15 por posição, contagem "N fora" /
   "N dúvidas" / "plantel completo", equipa do utilizador com ★ e aberta por omissão.

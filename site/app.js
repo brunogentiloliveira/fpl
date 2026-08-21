@@ -116,14 +116,27 @@ function saiuDoClube(p) {
 
 const GRUPOS_BOLETIM = ["Do teu plantel", "De outros gestores", "Livres"];
 
+/** Quem o Scout dá como fora sem a API ainda ter notícia dele. */
+function soNoScout(p) {
+  const f = ffsDe(p);
+  return !!(f && f.estado === "fora" && !(p.news && p.news.trim()));
+}
+
+/** O boletim junta as notícias da API com o que só o Scout sabe. */
+function noticiasBoletim() {
+  return comNoticias().concat(D.players.filter(soNoScout));
+}
+
 /** Primeiro os meus, depois os de outros gestores, por fim os livres. */
 function pesoDono(p, eu) {
   if (eu && p.owner === eu.entry_id) return 0;
   return p.owner != null ? 1 : 2;
 }
 
-/** Fora > dúvida > saída do clube > resto. */
+/** Scout > fora > dúvida > saída do clube > resto. */
 function pesoGravidade(p) {
+  const f = ffsDe(p);
+  if (f && f.estado === "fora") return -1;
   if (saiuDoClube(p)) return 2;
   if (STATUS_FORA.has(p.status)) return 0;
   if (p.status === "d") return 1;
@@ -159,15 +172,25 @@ function initBoletim(noticias) {
     }
     const est = estadoDe(p);
     const dono = nomeDono(p.owner);
-    const data = p.news_added ? fmtDataHora.format(new Date(p.news_added)) : "";
-    return cabecalho + '<li class="' + est.sev + '">' +
+    const ffs = ffsDe(p);
+    const scoutFora = !!(ffs && ffs.estado === "fora");
+    const artigo = (D.ffs || {}).artigo;
+    const quando = p.news_added || (scoutFora && artigo ? artigo.data : null);
+    const data = quando ? fmtDataHora.format(new Date(quando)) : "";
+    const sev = scoutFora ? "bad" : est.sev;
+    return cabecalho + '<li class="' + sev + '">' +
       '<div class="linha1">' +
         '<span class="nome">' + esc(p.web_name) + "</span>" +
         '<span class="clube">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") + "</span>" +
-        '<span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" +
+        (scoutFora ? '<span class="estado bad">Fora (Scout)</span>' : "") +
+        (p.news ? '<span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "") +
         '<span class="data">' + data + "</span>" +
       "</div>" +
-      '<p class="news">' + esc(p.news) + "</p>" +
+      (p.news ? '<p class="news">' + esc(p.news) + "</p>" : "") +
+      (scoutFora
+        ? '<p class="news fonte-scout">Fantasy Football Scout: “' + esc(ffs.frase) + "”" +
+          (p.news ? "" : " — a API oficial ainda não tem notícia dele.") + "</p>"
+        : "") +
       '<p class="dono">' + (dono ? "Dono: <strong>" + esc(dono) + "</strong>" : "Livre") + "</p>" +
     "</li>";
   }).join("");
@@ -197,36 +220,6 @@ function grupoPosHTML(pos, jogadores, realcarNovos) {
   }).join("");
   return '<section class="grupo-pos"><h3>' + POS_NOMES[pos] + " (" + jogadores.length + ")</h3>" +
     '<ul class="lista-jog">' + linhas + "</ul></section>";
-}
-
-function initMinhaEquipa() {
-  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager)) ||
-    D.entries.find((e) => e.entry_name === "Buendia Porro");
-  if (!eu) {
-    $("equipa-nome").textContent = "A minha equipa";
-    $("equipa-alerta").textContent = "Não encontrei a equipa nos dados da liga.";
-    $("equipa-alerta").hidden = false;
-    return;
-  }
-  $("equipa-nome").textContent = eu.entry_name + " · " + eu.manager;
-
-  const meus = D.players.filter((p) => p.owner === eu.entry_id);
-  const novos = meus.filter((p) => p.news_new && p.news);
-  if (novos.length > 0) {
-    $("equipa-alerta").textContent = "⚠ " + novos.length +
-      (novos.length === 1 ? " jogador teu entrou" : " jogadores teus entraram") +
-      " no boletim desde a última atualização.";
-    $("equipa-alerta").hidden = false;
-    $("equipa-alerta").classList.add("alerta");
-  }
-  $("plantel").innerHTML = [1, 2, 3, 4].map((pos) =>
-    grupoPosHTML(pos, meus.filter((p) => p.element_type === pos).sort(porDraftRank), true)
-  ).join("");
-
-  const livres = D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status));
-  $("alvos").innerHTML = [1, 2, 3, 4].map((pos) =>
-    grupoPosHTML(pos, livres.filter((p) => p.element_type === pos).sort(porDraftRank).slice(0, 10), false)
-  ).join("");
 }
 
 /* ---------- Equipas (cartão por gestor) ---------- */
@@ -1204,9 +1197,8 @@ async function main() {
   const noticias = comNoticias();
   initCabecalho();
   initTicker(noticias);
-  initBoletim(ordenarBoletim(noticias));
+  initBoletim(ordenarBoletim(noticiasBoletim()));
   initLiga();
-  initMinhaEquipa();
   initEquipas();
   initConferencias();
   initProjecoes();
