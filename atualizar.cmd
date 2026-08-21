@@ -22,5 +22,5 @@ if errorlevel 1 (
 
 echo A abrir o dashboard em http://localhost:8000 ...
 echo Fecha esta janela para desligar o servidor.
-start "" http://localhost:8000
+start "" "http://localhost:8000/?abrir=%RANDOM%"
 "%PY%" scripts\servir.py 8000
