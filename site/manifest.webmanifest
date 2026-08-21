@@ -1,0 +1,15 @@
+{
+  "name": "Haaland of Fame · FPL Draft",
+  "short_name": "Haaland of Fame",
+  "description": "Dashboard da liga privada de FPL Draft (servido pelo PC na rede local)",
+  "lang": "pt-PT",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1420",
+  "theme_color": "#0f1420",
+  "icons": [
+    { "src": "icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

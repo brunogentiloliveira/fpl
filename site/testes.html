@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testes do modelo · FPL Draft</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topo">
+  <h1>Testes do modelo</h1>
+  <p class="meta" id="resumo">A correr…</p>
+</header>
+<main>
+  <ul class="riscos" id="resultados"></ul>
+</main>
+
+<script>window.__TESTES__ = true;</script>
+<script src="app.js"></script>
+<script>
+/* Dados sintéticos: um plantel meu, um de outro gestor e alguns livres.
+   Serve para verificar as regras do modelo sem depender da API. */
+function jog(id, nome, tipo, equipa, dono, extras) {
+  return Object.assign({
+    id: id, web_name: nome, first_name: nome, second_name: nome,
+    element_type: tipo, team: equipa, owner: dono, draft_rank: id,
+    status: "a", news: "", news_added: null, chance_of_playing_next_round: null,
+    total_points: 100, minutes: 2700, starts: 30,
+  }, extras || {});
+}
+
+function historicoSintetico(jogadores) {
+  const h = {};
+  jogadores.forEach(function (p) {
+    h[p.id] = {
+      minutes: p.minutes, starts: p.starts, total_points: p.total_points,
+      goals_scored: 5, assists: 5, clean_sheets: 8, saves: p.element_type === 1 ? 90 : 0,
+      bonus: 10, penalties_saved: 0, yellow_cards: 3, red_cards: 0, own_goals: 0,
+      expected_goals: "6.0", expected_assists: "4.0", expected_goals_conceded: "40.0",
+    };
+  });
+  return h;
+}
+
+const meus = [
+  jog(1, "GR1", 1, 1, 100), jog(2, "GR2", 1, 2, 100),
+  jog(3, "DEF1", 2, 1, 100), jog(4, "DEF2", 2, 2, 100), jog(5, "DEF3", 2, 3, 100),
+  jog(6, "DEF4", 2, 4, 100), jog(7, "DEF5", 2, 5, 100),
+  jog(8, "MED1", 3, 1, 100), jog(9, "MED2", 3, 2, 100), jog(10, "MED3", 3, 3, 100),
+  jog(11, "MED4", 3, 4, 100), jog(12, "MED5", 3, 5, 100),
+  jog(13, "AV1", 4, 1, 100), jog(14, "AV2", 4, 2, 100), jog(15, "AV3", 4, 3, 100),
+];
+const deles = [];
+for (let i = 0; i < 15; i += 1) {
+  deles.push(jog(100 + i, "O" + i, meus[i].element_type, (i % 5) + 1, 200));
+}
+const livres = [jog(300, "LivreMED", 3, 1, null), jog(301, "LivreDEF", 2, 2, null)];
+const todos = meus.concat(deles, livres);
+
+D = {
+  league_id: 1,
+  generated_at: new Date().toISOString(),
+  game: { current_event: null },
+  next_event: { id: 1, name: "Gameweek 1", deadline_time: new Date(Date.now() + 36e5).toISOString() },
+  entries: [
+    { id: 1, entry_id: 100, entry_name: "Buendia Porro", manager: "Bruno Gentil", waiver_pick: 4 },
+    { id: 2, entry_id: 200, entry_name: "Rival", manager: "Outro Gestor", waiver_pick: 1 },
+  ],
+  standings: [], teams: {}, players: todos, fixtures: {}, jornadas: {},
+  historico: historicoSintetico(todos), preepoca: {}, transferencias: {}, bolaparada: {},
+  ffs: { feed: [], artigo: null, jogadores: {} },
+  mercado: { noticias: [], transacoes: [] }, conferencias: { clubes: [] },
+  regras: {
+    scoring: {
+      long_play: 2, goals_scored_GKP: 10, goals_scored_DEF: 6, goals_scored_MID: 5,
+      goals_scored_FWD: 4, assists: 3, clean_sheets_GKP: 4, clean_sheets_DEF: 4,
+      clean_sheets_MID: 1, clean_sheets_FWD: 0, goals_conceded_GKP: -1,
+      goals_conceded_DEF: -1, concede_limit: 2, saves: 1, saves_limit: 3,
+      penalties_saved: 5, yellow_cards: -1, red_cards: -3, own_goals: -2,
+    },
+    squad: {
+      play: 11, min_play_GKP: 1, max_play_GKP: 1, min_play_DEF: 3, max_play_DEF: 5,
+      min_play_MID: 2, max_play_MID: 5, min_play_FWD: 1, max_play_FWD: 3,
+    },
+  },
+};
+for (let i = 1; i <= 5; i += 1) D.teams[i] = { name: "Clube " + i, short_name: "C" + i };
+jogadoresPorId = Object.fromEntries(todos.map(function (p) { return [p.id, p]; }));
+construirPriors();
+
+const falhas = [];
+function verificar(nome, condicao, detalhe) {
+  const ok = !!condicao;
+  if (!ok) falhas.push(nome);
+  document.getElementById("resultados").insertAdjacentHTML("beforeend",
+    '<li class="risco ' + (ok ? "" : "bad") + '"><div class="linha">' +
+      '<span class="nome">' + (ok ? "ok" : "FALHA") + "</span>" +
+      '<span class="clube">' + nome + "</span></div>" +
+      (ok || detalhe === undefined ? "" : '<ul class="motivos"><li>' + detalhe + "</li></ul>") +
+    "</li>");
+}
+
+/* --- Onze inicial --- */
+const meusX = comProjecao(meus);
+const xi = melhorXI(meusX);
+const conta = { 1: 0, 2: 0, 3: 0, 4: 0 };
+xi.forEach(function (x) { conta[x.p.element_type] += 1; });
+verificar("o onze tem 11 jogadores", xi.length === 11, "tem " + xi.length);
+verificar("1 guarda-redes exatamente", conta[1] === 1, conta[1]);
+verificar("defesas entre 3 e 5", conta[2] >= 3 && conta[2] <= 5, conta[2]);
+verificar("médios entre 2 e 5", conta[3] >= 2 && conta[3] <= 5, conta[3]);
+verificar("avançados entre 1 e 3", conta[4] >= 1 && conta[4] <= 3, conta[4]);
+verificar("limites lidos das regras da liga", limitesXI()[2][1] === 5);
+
+/* --- Ausências --- */
+const lesionado = D.players.find(function (p) { return p.web_name === "MED1"; });
+const antesLesao = projecao(lesionado).ppj;
+lesionado.status = "i";
+verificar("lesionado projeta zero", projecao(lesionado).ppj === 0);
+verificar("mas recuperado mantém valor", ppjSaudavel(lesionado) > 0.5);
+lesionado.status = "a";
+
+D.ffs.jogadores[lesionado.id] = { estado: "fora", frase: "out", clube: "Clube 1" };
+verificar("Scout a dar como fora também zera", projecao(lesionado).ppj === 0);
+verificar("ppjSaudavel ignora a ausência do Scout", ppjSaudavel(lesionado) > 0.5);
+delete D.ffs.jogadores[lesionado.id];
+verificar("sem ausência volta ao valor original",
+  Math.abs(projecao(lesionado).ppj - antesLesao) < 0.001);
+
+/* --- Pontuação da liga --- */
+const gr = D.players.find(function (p) { return p.web_name === "GR1"; });
+verificar("golo de guarda-redes vale 10", regraPos("goals_scored", 1, 0) === 10);
+verificar("golos sofridos castigam defesas",
+  castigoGolosSofridos(2, 1.3) < -0.3 && castigoGolosSofridos(2, 1.3) > -0.6,
+  castigoGolosSofridos(2, 1.3));
+verificar("avançados não são castigados por golos sofridos",
+  castigoGolosSofridos(4, 1.3) === 0);
+verificar("guarda-redes ganha pontos com defesas",
+  componentesPP90(gr, historicoDe(gr)).defesas > 0);
+
+/* --- Bola parada --- */
+const veterano = D.players.find(function (p) { return p.web_name === "MED2"; });
+const estreante = D.players.find(function (p) { return p.web_name === "MED3"; });
+estreante.minutes = 0;
+D.historico[estreante.id].minutes = 0;
+D.bolaparada[veterano.id] = { pen: 1, confianca: "alta" };
+D.bolaparada[estreante.id] = { pen: 1, confianca: "alta" };
+const extraVeterano = pontosBolaParada(veterano, historicoDe(veterano));
+const extraEstreante = pontosBolaParada(estreante, historicoDe(estreante));
+verificar("cargo de penáltis acrescenta pontos", extraVeterano > 0);
+verificar("acréscimo é maior para quem não tem historial",
+  extraEstreante > extraVeterano * 2, extraEstreante.toFixed(2) + " vs " + extraVeterano.toFixed(2));
+D.bolaparada[veterano.id].confianca = "media";
+verificar("confiança média vale metade",
+  Math.abs(pontosBolaParada(veterano, historicoDe(veterano)) - extraVeterano / 2) < 0.001);
+
+/* --- Trocas --- */
+const delesX = comProjecao(deles);
+const antes = valorXI(meusX);
+const trocaIgual = valorXI(meusX.filter(function (x) { return x.p.id !== 8; })
+  .concat(delesX.filter(function (x) { return x.p.id === 107; })));
+verificar("trocar médio por médio mantém o onze legal",
+  melhorXI(meusX.filter(function (x) { return x.p.id !== 8; })
+    .concat(delesX.filter(function (x) { return x.p.id === 107; }))).length === 11);
+verificar("valorXI devolve um número positivo", antes > 0 && trocaIgual > 0);
+
+const sugestoes = sugestoesTrocas(meusX, D.entries[0]);
+verificar("sugestões de troca são todas da mesma posição",
+  sugestoes.every(function (t) { return t.meu.p.element_type === t.deles.p.element_type; }),
+  sugestoes.length + " sugestões");
+
+/* --- Projeção nunca negativa --- */
+verificar("nenhuma projeção é negativa",
+  D.players.every(function (p) { return projecao(p).ppj >= 0; }));
+
+document.getElementById("resumo").textContent = falhas.length
+  ? falhas.length + " teste(s) a falhar: " + falhas.join(", ")
+  : "Tudo a passar (" + document.querySelectorAll("#resultados li").length + " verificações).";
+document.getElementById("resumo").style.color = falhas.length ? "var(--perigo)" : "var(--acento)";
+</script>
+</body>
+</html>

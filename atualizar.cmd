@@ -20,7 +20,9 @@ if errorlevel 1 (
   pause
 )
 
-echo A abrir o dashboard em http://localhost:8000 ...
+echo.
+echo A abrir o dashboard. O endereco para o telemovel aparece abaixo.
 echo Fecha esta janela para desligar o servidor.
+echo.
 start "" "http://localhost:8000/?abrir=%RANDOM%"
 "%PY%" scripts\servir.py 8000

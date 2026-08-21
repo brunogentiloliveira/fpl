@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Haaland of Fame">
+  <rect width="192" height="192" rx="34" fill="#0f1420"/>
+  <circle cx="96" cy="88" r="42" fill="none" stroke="#2fd18c" stroke-width="9"/>
+  <path d="M96 60l14 10-5 17H87l-5-17z" fill="#2fd18c"/>
+  <text x="96" y="160" font-family="system-ui, sans-serif" font-size="34" font-weight="700"
+        fill="#e8ecf3" text-anchor="middle">HoF</text>
+</svg>

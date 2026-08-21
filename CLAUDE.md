@@ -124,6 +124,58 @@ realizada: passa a estimar o que o jogador **gera**.
 - A coluna Pts/90 tem `title` com a decomposição (presença · golos · assistências · baliza a
   zero · defesas · bónus · cartões), para o número não ser uma caixa preta.
 
+## Pontuação vinda da liga (2026-08-21)
+
+`bootstrap-static → settings` traz a **tabela de pontuação e as regras de plantel da liga**, que
+antes estavam escritas à mão no app.js — e com erros. Guardada em `data.json → regras` e lida por
+`regra()`/`regraPos()`/`limitesXI()`. Duas correções de facto que isto trouxe:
+
+- **Golo de guarda-redes vale 10**, não 6.
+- **Golos sofridos custam −1 por cada 2** a GR e DEF (`concede_limit: 2`), algo que o modelo
+  ignorava: premiava a baliza a zero e nunca castigava o reverso, inflacionando defesas de
+  equipas fracas. `castigoGolosSofridos()` usa a forma fechada da média de ⌊X/2⌋ numa Poisson:
+  `(λ − (1 − e^(−2λ))/2) / 2`. Efeito real: Gabriel (Arsenal) −0.20 pts/90, Milenković
+  (Forest) −0.60.
+- Também entram penáltis defendidos (×5) e os limites do onze deixam de estar fixos.
+- `calibEsperado` subiu de 1.15 para ~1.21 (o modelo esperado ficou mais baixo por causa do
+  novo castigo); continua a alinhar o nível sem mexer na ordenação.
+
+## Precisão do modelo (2026-08-21)
+
+O site é estático e o modelo vive no JS, por isso **é o browser que guarda o que projetou**:
+`guardarProjecoes()` grava em `localStorage` (`proj:<liga>:<jornada>`) o ppj de cada jogador com
+dono, uma só vez por jornada e só enquanto ela não estiver jogada. Quando a jornada fecha,
+`avaliarPrecisao()` compara com os pontos reais de `data.json → jornadas` e a secção "Precisão do
+modelo" mostra erro médio absoluto, viés (positivo = o modelo ficou aquém) e os maiores desvios.
+Limitação assumida: o histórico é por browser; se mudares de dispositivo, começa do zero.
+
+## Diagnóstico das fontes (2026-08-21)
+
+`registar(fonte, ok, detalhe)` acumula `data.json → diagnostico` — antes os avisos só iam para
+stderr e desapareciam. O rodapé lista cada fonte com ✓/✗ e o detalhe em tooltip. Há ainda um
+banner no topo quando os dados estão velhos: recolha anterior a um deadline **já passado**, ou
+com mais de 12 horas.
+
+## Telemóvel (2026-08-21)
+
+`servir.py` já servia em todas as interfaces, mas o endereço não era visível: passa a imprimir
+`http://<ip-da-rede-local>:porta` (IP obtido por um socket UDP que não envia nada) além do
+localhost. Há `manifest.webmanifest` + `icone.svg` + `theme-color` para "adicionar ao ecrã
+principal". **Não há service worker**: exigem contexto seguro (HTTPS ou localhost) e no telemóvel
+o acesso é por IP em HTTP simples, onde nunca registariam — foi tentado, falhava, e ficou de fora
+em vez de código morto. Consequência: o PC tem de estar com o `atualizar.cmd` a correr.
+
+## Testes (2026-08-21)
+
+- `python scripts/testes.py` — stdlib, sem rede: correspondência de nomes (Ø, apelidos
+  compostos, nome próprio), parsing do Scout com os casos que já falharam a sério (negação
+  "No injury updates", "Nunes" ambíguo), os formatos de `/event/{ev}/live` e a validade dos
+  ficheiros curados.
+- `site/testes.html` — abre no browser e verifica o modelo com um `D` sintético: legalidade do
+  onze, ausências a zerar (API e Scout), `ppjSaudavel` a ignorá-las, a tabela de pontuação, o
+  castigo por golos sofridos e a bola parada a pesar menos para quem tem historial. 22
+  verificações. Exigiu o guarda `window.__TESTES__` antes do `main()` no app.js.
+
 ## Bola parada (batedores, 2026-08-21)
 
 Os campos da API (`penalties_order`, `direct_freekicks_order`, cantos) vêm vazios para os 600

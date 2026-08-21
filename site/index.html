@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=20">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f1420">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icone.svg">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -16,6 +20,8 @@
     <span id="countdown" class="countdown" hidden></span>
   </p>
 </header>
+
+<p class="aviso-velho" id="aviso-velho" role="alert" hidden></p>
 
 <div class="ticker" id="ticker" hidden aria-label="Últimas notícias dos jogadores">
   <div class="ticker-track" id="ticker-track"></div>
@@ -124,6 +130,11 @@
       esta secção mostra quem entrou, quantos minutos fez e quantos pontos deu — e as projeções
       e sugestões passam a contar com isso.</p>
 
+    <h3 class="sub-titulo">Precisão do modelo <span id="precisao-resumo" class="sub-total"></span></h3>
+    <div id="precisao-corpo"></div>
+    <p class="nota" id="nota-precisao" hidden>As projeções desta jornada ficam guardadas neste
+      browser; depois de a jornada ser jogada, aparece aqui a comparação com o que aconteceu.</p>
+
     <h3 class="sub-titulo">Waivers / free agency</h3>
     <ul class="sugestoes" id="sug-livres"></ul>
     <p class="nota" id="nota-sug-livres" hidden>Nenhuma troca com livres compensa de momento.</p>
@@ -223,8 +234,10 @@
 
 <footer class="rodape">
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
+  <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=20"></script>
+
 </body>
 </html>

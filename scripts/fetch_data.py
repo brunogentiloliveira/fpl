@@ -74,7 +74,7 @@ PLAYER_FIELDS = (
     "chance_of_playing_next_round", "form", "points_per_game",
     "minutes", "starts",
     # estatísticas da época anterior, para as projeções
-    "goals_scored", "assists", "clean_sheets", "saves", "bonus",
+    "goals_scored", "assists", "clean_sheets", "saves", "bonus", "penalties_saved",
     "expected_goals", "expected_assists", "expected_goal_involvements",
     "expected_goals_conceded", "yellow_cards", "red_cards", "own_goals",
     "defensive_contribution",
@@ -83,7 +83,7 @@ PLAYER_FIELDS = (
 # Estatísticas congeladas da época anterior: base do modelo de pontos esperados.
 HIST_FIELDS = (
     "minutes", "starts", "total_points", "goals_scored", "assists", "clean_sheets",
-    "saves", "bonus", "yellow_cards", "red_cards", "own_goals",
+    "saves", "bonus", "penalties_saved", "yellow_cards", "red_cards", "own_goals",
     "expected_goals", "expected_assists", "expected_goals_conceded",
 )
 
@@ -98,6 +98,17 @@ RE_FECHADO = re.compile(
 RE_ABERTO = re.compile(
     r"\b(reject\w*|seek\w*|want\w*|target\w*|interest\w*|talks|bid|eye\w*"
     r"|approach\w*|enquir\w*|consider\w*|linked|monitor\w*)\b", re.I)
+
+
+# Registo do que correu bem ou mal em cada fonte. Antes só ia para a consola e
+# desaparecia; agora vai para o data.json e aparece no site.
+DIAGNOSTICO = []
+
+
+def registar(fonte, ok, detalhe=""):
+    DIAGNOSTICO.append({"fonte": fonte, "ok": bool(ok), "detalhe": str(detalhe)[:160]})
+    if not ok:
+        print(f"Aviso: {fonte} — {detalhe}", file=sys.stderr)
 
 
 def get(path):
@@ -153,12 +164,12 @@ def fetch_noticias_mercado():
     try:
         itens = ler_rss(SKY_RSS)
     except Exception as exc:
-        print(f"Aviso: RSS da Sky falhou ({exc}); a seguir sem notícias externas.",
-              file=sys.stderr)
+        registar("Sky · transferências", False, exc)
         return []
     for it in itens:
         baixa = it["titulo"].lower()
         it["rumor"] = baixa.startswith("papers") or "rumour" in baixa
+    registar("Sky · transferências", True, f"{len(itens)} notícias")
     return itens
 
 
@@ -204,7 +215,7 @@ def fetch_ffs(players, nomes_clubes):
             for it in ler_rss(FFS_FEED, limite=12)
         ]
     except Exception as exc:
-        print(f"Aviso: feed do FFS falhou ({exc}).", file=sys.stderr)
+        registar("Fantasy Football Scout", False, exc)
         return saida
 
     artigo = next((i for i in saida["feed"] if "team news" in i["titulo"].lower()), None)
@@ -272,18 +283,24 @@ def fetch_ffs(players, nomes_clubes):
             saida["jogadores"][str(p["id"])] = {
                 "estado": estado, "frase": texto, "clube": clube,
             }
+    registar("Fantasy Football Scout", True,
+             f"{len(saida['jogadores'])} jogadores classificados")
     return saida
 
 
 def fetch_feeds_clubes():
     """Lê uma vez o feed Sky de cada clube: {nome_clube: [itens]}."""
     feeds = {}
+    falhas = []
     for nome, rid in SKY_CLUBES.items():
         try:
             feeds[nome] = ler_rss(f"https://www.skysports.com/rss/{rid}", limite=25)
         except Exception as exc:
-            print(f"Aviso: feed de {nome} falhou ({exc}).", file=sys.stderr)
+            falhas.append(nome)
             feeds[nome] = []
+    registar("Sky · clubes", not falhas,
+             f"{len(SKY_CLUBES) - len(falhas)}/{len(SKY_CLUBES)} feeds" +
+             (f"; falhou {', '.join(falhas)}" if falhas else ""))
     return feeds
 
 
@@ -463,6 +480,8 @@ def fetch_jornadas(game, anterior):
             "equipas": equipas,
             "stats": stats,
         }
+    if saida:
+        registar("Jornadas disputadas", True, f"{len(saida)} jornadas")
     return saida
 
 
@@ -504,7 +523,7 @@ def fetch_preepoca(nomes_clubes, players):
         with open(caminho, encoding="utf-8") as f:
             bruto = json.load(f)
     except (OSError, ValueError) as exc:
-        print(f"Aviso: preepoca.json não lido ({exc}).", file=sys.stderr)
+        registar("Pré-época", False, exc)
         return {}
 
     por_clube = {}
@@ -536,6 +555,7 @@ def fetch_preepoca(nomes_clubes, players):
             "titulares": ids(dados.get("titulares")),
             "suplentes": ids(dados.get("suplentes")),
         }
+    registar("Pré-época", True, f"{len(saida)} clubes com onze")
     return saida
 
 
@@ -550,7 +570,7 @@ def fetch_bolaparada(nomes_clubes, players):
         with open(caminho, encoding="utf-8") as f:
             bruto = json.load(f)
     except (OSError, ValueError) as exc:
-        print(f"Aviso: bolaparada.json não lido ({exc}).", file=sys.stderr)
+        registar("Bola parada", False, exc)
         return {}
 
     por_clube = {}
@@ -574,6 +594,7 @@ def fetch_bolaparada(nomes_clubes, players):
                     continue
                 registo = saida.setdefault(str(pid), {"confianca": dados.get("confianca", "media")})
                 registo.setdefault(chave, ordem)
+    registar("Bola parada", True, f"{len(saida)} jogadores com cargo")
     return saida
 
 
@@ -613,6 +634,8 @@ def main():
     details = get(f"/league/{league_id}/details")
     status = get(f"/league/{league_id}/element-status")
     transacoes = get(f"/draft/league/{league_id}/transactions")["transactions"]
+    registar("API do FPL Draft", True,
+             f"{len(bootstrap['elements'])} jogadores, {len(details['league_entries'])} equipas")
 
     owners = {es["element"]: es["owner"] for es in status["element_status"]}
     out_path = os.path.join(OUT_DIR, "data.json")
@@ -674,6 +697,13 @@ def main():
             for e in details["league_entries"]
         ],
         "standings": details["standings"],
+        # A liga publica a sua tabela de pontuação e as regras de plantel: o
+        # modelo passa a usá-las em vez de valores escritos à mão.
+        "diagnostico": DIAGNOSTICO,
+        "regras": {
+            "scoring": bootstrap.get("settings", {}).get("scoring", {}),
+            "squad": bootstrap.get("settings", {}).get("squad", {}),
+        },
         "teams": {str(t["id"]): {"name": t["name"], "short_name": t["short_name"]}
                   for t in bootstrap["teams"]},
         "players": players,

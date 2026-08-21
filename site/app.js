@@ -389,10 +389,53 @@ function utilizacao(p) {
 
 /* --- Pontos esperados a partir das estatísticas subjacentes --- */
 
-// Tabela de pontos do FPL, por posição (1 GR, 2 DEF, 3 MED, 4 AV).
-const PONTOS_GOLO = { 1: 6, 2: 6, 3: 5, 4: 4 };
-const PONTOS_CS = { 1: 4, 2: 4, 3: 1, 4: 0 };
-const PONTOS_PRESENCA = 2; // por 90 minutos jogados
+// Valores de recurso, caso a liga não publique a tabela (nunca aconteceu).
+const LIMITES_XI_OMISSAO = { 1: [1, 1], 2: [3, 5], 3: [2, 5], 4: [1, 3] };
+
+/* --- Pontuação: vem da própria liga, não de valores escritos à mão --- */
+
+const POS_SIGLA = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+
+function regra(chave, omissao) {
+  const v = ((D.regras || {}).scoring || {})[chave];
+  return v === undefined || v === null ? omissao : v;
+}
+
+/** Valor de um acontecimento para a posição do jogador (ex.: golo de GR vale 10). */
+function regraPos(prefixo, pos, omissao) {
+  return regra(prefixo + "_" + (POS_SIGLA[pos] || "MID"), omissao);
+}
+
+/** Limites de formação do onze, tal como a liga os define. */
+function limitesXI() {
+  const sq = (D.regras || {}).squad || {};
+  const lim = {};
+  [1, 2, 3, 4].forEach((pos) => {
+    const s = POS_SIGLA[pos];
+    lim[pos] = [
+      sq["min_play_" + s] ?? LIMITES_XI_OMISSAO[pos][0],
+      sq["max_play_" + s] ?? LIMITES_XI_OMISSAO[pos][1],
+    ];
+  });
+  return lim;
+}
+
+/**
+ * Penalização esperada por golos sofridos (GR e DEF perdem 1 ponto por cada 2).
+ *
+ * Com os golos sofridos a seguir uma Poisson de média λ, o número de castigos é
+ * ⌊X/2⌋, cuja média tem forma fechada: (λ − P(X ímpar)) / 2, com
+ * P(X ímpar) = (1 − e^(−2λ)) / 2. É o contrapeso da baliza a zero, que o modelo
+ * já premiava sem nunca castigar o lado de lá.
+ */
+function castigoGolosSofridos(pos, xgc90) {
+  const porCada = regraPos("goals_conceded", pos, 0);
+  if (!porCada || xgc90 <= 0) return 0;
+  const limite = regra("concede_limit", 2);
+  const impar = (1 - Math.exp(-2 * xgc90)) / 2;
+  const castigos = limite === 2 ? (xgc90 - impar) / 2 : xgc90 / limite;
+  return castigos * porCada;
+}
 // Peso do modelo de xG/xA contra a taxa de pontos que o jogador fez mesmo.
 // As estatísticas subjacentes preveem melhor o futuro; os pontos reais apanham
 // o que o modelo não tem (bónus por BPS, contribuições defensivas).
@@ -439,25 +482,33 @@ function componentesPP90(p, hist, semCalibrar) {
   const por90 = (v) => (num(v) / min) * 90;
   const pos = p.element_type;
 
-  const golos = por90(hist.expected_goals) * (PONTOS_GOLO[pos] || 4);
-  const assist = por90(hist.expected_assists) * 3;
+  const golos = por90(hist.expected_goals) * regraPos("goals_scored", pos, 4);
+  const assist = por90(hist.expected_assists) * regra("assists", 3);
   // Poisson: probabilidade de a equipa não sofrer, dado o xG concedido por 90.
   const xgc90 = por90(hist.expected_goals_conceded);
-  const baliza = Math.exp(-xgc90) * (PONTOS_CS[pos] || 0);
-  const defesas = pos === 1 ? por90(hist.saves) / 3 : 0;
+  const baliza = Math.exp(-xgc90) * regraPos("clean_sheets", pos, 0);
+  // ... e o reverso, que faltava: cada 2 golos sofridos tiram 1 ponto a GR e DEF.
+  const sofridos = castigoGolosSofridos(pos, xgc90);
+  const defesas = pos === 1
+    ? (por90(hist.saves) / regra("saves_limit", 3)) * regra("saves", 1) +
+      por90(hist.penalties_saved) * regra("penalties_saved", 5)
+    : 0;
   const bonus = por90(hist.bonus);
-  const cartoes = -por90(hist.yellow_cards) - 3 * por90(hist.red_cards);
-  const autoGolos = -2 * por90(hist.own_goals);
+  const cartoes = por90(hist.yellow_cards) * regra("yellow_cards", -1) +
+    por90(hist.red_cards) * regra("red_cards", -3);
+  const autoGolos = por90(hist.own_goals) * regra("own_goals", -2);
 
-  const total = PONTOS_PRESENCA + golos + assist + baliza + defesas + bonus +
+  const presenca = regra("long_play", 2);
+  const total = presenca + golos + assist + baliza + sofridos + defesas + bonus +
     cartoes + autoGolos;
   const k = semCalibrar ? 1 : calibEsperado;
   return {
     total: Math.max(0, total) * k,
-    presenca: PONTOS_PRESENCA * k,
+    presenca: presenca * k,
     golos: golos * k,
     assist: assist * k,
     baliza: baliza * k,
+    sofridos: sofridos * k,
     defesas: defesas * k,
     bonus: bonus * k,
     penalizacoes: (cartoes + autoGolos) * k,
@@ -498,7 +549,8 @@ function pontosBolaParada(p, hist) {
   if (!bp) return 0;
   const golos90 = PEN_GOLOS_90 * (QUOTA_PEN[bp.pen] || 0) + (FK_GOLOS_90[bp.fk] || 0);
   const assist90 = CANTOS_XA90[bp.cantos] || 0;
-  return (golos90 * (PONTOS_GOLO[p.element_type] || 4) + assist90 * 3) *
+  return (golos90 * regraPos("goals_scored", p.element_type, 4) +
+    assist90 * regra("assists", 3)) *
     pesoBolaParada(p, hist);
 }
 
@@ -663,6 +715,7 @@ function decomporPP90(c, extra) {
   if (c.baliza >= 0.05) partes.push("baliza a zero " + c.baliza.toFixed(1));
   if (c.defesas >= 0.05) partes.push("defesas " + c.defesas.toFixed(1));
   if (c.bonus >= 0.05) partes.push("bónus " + c.bonus.toFixed(1));
+  if (c.sofridos <= -0.05) partes.push("golos sofridos " + c.sofridos.toFixed(1));
   if (c.penalizacoes <= -0.05) partes.push("cartões " + c.penalizacoes.toFixed(1));
   const txt = partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
   return extra >= 0.05 ? txt + " (+" + extra.toFixed(2) + " de bola parada)" : txt;
@@ -742,13 +795,13 @@ function initProjecoes() {
 
 /* ---------- Sugestões da jornada ---------- */
 
-// Formações válidas no FPL: 1 GR, 3-5 DEF, 2-5 MED, 1-3 AV (11 titulares).
-const LIMITES_XI = { 1: [1, 1], 2: [3, 5], 3: [2, 5], 4: [1, 3] };
+// Formações válidas: lidas de settings.squad da liga (1 GR, 3-5 DEF, 2-5 MED, 1-3 AV).
 const GANHO_MIN_LIVRE = 0.4;  // pts/jornada abaixo disto não vale o waiver
 const GANHO_MIN_TROCA = 0.25; // ambos os lados têm de ganhar pelo menos isto
 
 /** Melhor onze possível de um plantel, por projeção. */
 function melhorXI(plantel) {
+  const LIMITES_XI = limitesXI();
   const porPos = { 1: [], 2: [], 3: [], 4: [] };
   plantel.forEach((x) => porPos[x.p.element_type].push(x));
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppj - a.pr.ppj));
@@ -765,7 +818,7 @@ function melhorXI(plantel) {
   [1, 2, 3, 4].forEach((pos) => resto.push(...porPos[pos].slice(usados[pos])));
   resto.sort((a, b) => b.pr.ppj - a.pr.ppj);
   for (const x of resto) {
-    if (xi.length >= 11) break;
+    if (xi.length >= (((D.regras || {}).squad || {}).play || 11)) break;
     const pos = x.p.element_type;
     if (usados[pos] < LIMITES_XI[pos][1]) { xi.push(x); usados[pos] += 1; }
   }
@@ -1118,6 +1171,133 @@ function initSugestoes() {
       "</li>";
     }).join("");
   }
+}
+
+/** Estado da última recolha e aviso quando os dados já não servem. */
+function initDiagnostico() {
+  const fontes = D.diagnostico || [];
+  if (fontes.length) {
+    $("estado-fontes").innerHTML = "Fontes: " + fontes.map((f) =>
+      '<span class="fonte ' + (f.ok ? "ok" : "falhou") + '" title="' + esc(f.detalhe) + '">' +
+      (f.ok ? "✓ " : "✗ ") + esc(f.fonte) + "</span>").join(" · ");
+  }
+
+  const gerado = new Date(D.generated_at);
+  const horas = (Date.now() - gerado) / 36e5;
+  const deadline = D.next_event ? new Date(D.next_event.deadline_time) : null;
+  // Recolha feita antes de um deadline que já passou: as escolhas mudaram desde então.
+  const passouDeadline = deadline && Date.now() > deadline && gerado < deadline;
+  if (!passouDeadline && horas < 12) return;
+
+  $("aviso-velho").innerHTML = passouDeadline
+    ? "⚠ Estes dados foram recolhidos antes do deadline da " + esc(D.next_event.name) +
+      ", que já passou. Corre o <strong>atualizar.cmd</strong> para veres a jornada atual."
+    : "⚠ Dados com " + Math.round(horas) + " horas. Corre o <strong>atualizar.cmd</strong> " +
+      "para atualizar lesões, notícias e escolhas da liga.";
+  $("aviso-velho").hidden = false;
+}
+
+/* ---------- Precisão do modelo ---------- */
+
+// O site é estático e não escreve ficheiros, e o modelo vive aqui no browser:
+// por isso é o próprio browser que guarda o que projetou, antes de a jornada
+// ser jogada. Sem isto não há como saber se o modelo acerta.
+const CHAVE_PROJ = "proj";
+
+function chaveProjecoes(evento) {
+  return CHAVE_PROJ + ":" + D.league_id + ":" + evento;
+}
+
+function lerGuardado(chave) {
+  try {
+    const txt = localStorage.getItem(chave);
+    return txt ? JSON.parse(txt) : null;
+  } catch (err) {
+    return null; // localStorage pode estar bloqueado; a app segue sem histórico
+  }
+}
+
+/** Congela as projeções da jornada por disputar, uma só vez. */
+function guardarProjecoes() {
+  const ev = D.next_event && D.next_event.id;
+  if (!ev) return;
+  const jornada = (D.jornadas || {})[String(ev)];
+  if (jornada && jornada.finalizada) return; // já foi jogada
+  const chave = chaveProjecoes(ev);
+  if (lerGuardado(chave)) return;
+
+  const valores = {};
+  D.players.filter((p) => p.owner != null).forEach((p) => {
+    valores[p.id] = Math.round(projecao(p).ppj * 100) / 100;
+  });
+  try {
+    localStorage.setItem(chave, JSON.stringify({
+      gravado: new Date().toISOString(),
+      evento: ev,
+      valores,
+    }));
+  } catch (err) {
+    /* sem espaço ou bloqueado: não é crítico */
+  }
+}
+
+/** Compara o que foi projetado com o que aconteceu, jornada a jornada. */
+function avaliarPrecisao() {
+  const linhas = [];
+  Object.keys(D.jornadas || {}).map(Number).sort((a, b) => a - b).forEach((ev) => {
+    const jornada = D.jornadas[String(ev)];
+    if (!jornada.finalizada) return;
+    const guardado = lerGuardado(chaveProjecoes(ev));
+    if (!guardado) return;
+
+    const casos = [];
+    Object.entries(guardado.valores).forEach(([id, projetado]) => {
+      const p = jogadoresPorId[Number(id)];
+      if (!p) return;
+      const equipas = jornada.equipas || [];
+      if (equipas.length && !equipas.includes(p.team)) return; // jornada em branco
+      const real = (jornada.stats[id] || [0, 0])[1];
+      casos.push({ p, projetado, real, erro: real - projetado });
+    });
+    if (casos.length === 0) return;
+
+    const erroAbs = casos.reduce((s, c) => s + Math.abs(c.erro), 0) / casos.length;
+    const vies = casos.reduce((s, c) => s + c.erro, 0) / casos.length;
+    linhas.push({ evento: ev, casos, erroAbs, vies });
+  });
+  return linhas;
+}
+
+function desenharPrecisao() {
+  const linhas = avaliarPrecisao();
+  if (linhas.length === 0) { $("nota-precisao").hidden = false; return; }
+
+  const total = linhas.reduce((s, l) => s + l.erroAbs * l.casos.length, 0) /
+    linhas.reduce((s, l) => s + l.casos.length, 0);
+  $("precisao-resumo").textContent = "erro médio de " + total.toFixed(1) + " pts por jogador";
+
+  const ultima = linhas[linhas.length - 1];
+  const ordenados = ultima.casos.slice().sort((a, b) => b.erro - a.erro);
+  const destaque = (c) => "<li><strong>" + esc(c.p.web_name) + "</strong> (" +
+    nomeClube(c.p.team) + "): projetado " + c.projetado.toFixed(1) + ", fez " + c.real +
+    " (" + sinal(c.erro) + ")</li>";
+
+  $("precisao-corpo").innerHTML =
+    '<table class="tabela tabela-proj"><thead><tr><th>Jornada</th>' +
+      '<th class="num">Jogadores</th><th class="num">Erro médio</th><th class="num">Viés</th>' +
+      "</tr></thead><tbody>" +
+      linhas.map((l) => "<tr><td>GW" + l.evento + "</td>" +
+        '<td class="num">' + l.casos.length + "</td>" +
+        '<td class="num forte">' + l.erroAbs.toFixed(1) + "</td>" +
+        '<td class="num">' + sinal(l.vies) + "</td></tr>").join("") +
+    "</tbody></table>" +
+    '<p class="nota">Viés positivo significa que o modelo ficou aquém do que aconteceu; ' +
+      "negativo, que foi otimista.</p>" +
+    '<h4 class="sub-titulo">Maiores desvios na GW' + ultima.evento + "</h4>" +
+    '<ul class="detalhe-troca">' +
+      ordenados.slice(0, 3).map(destaque).join("") +
+      ordenados.slice(-3).reverse().map(destaque).join("") +
+    "</ul>";
 }
 
 /* ---------- Analisador de trocas ---------- */
@@ -1646,12 +1826,15 @@ async function main() {
   jogadoresPorId = Object.fromEntries(D.players.map((p) => [p.id, p]));
   const noticias = comNoticias();
   initCabecalho();
+  initDiagnostico();
   initTicker(noticias);
   initBoletim(ordenarBoletim(noticiasBoletim()));
   initLiga();
   initEquipas();
   initConferencias();
   initProjecoes();
+  guardarProjecoes();
+  desenharPrecisao();
   initSugestoes();
   initAnaliseTroca();
   initMercado();
@@ -1659,4 +1842,5 @@ async function main() {
   initTabs();
 }
 
-main();
+// A página de testes carrega este ficheiro e monta o seu próprio D.
+if (!window.__TESTES__) main();

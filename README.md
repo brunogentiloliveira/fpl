@@ -24,6 +24,22 @@ python scripts/servir.py
 
 e abre <http://localhost:8000>.
 
+## No telemóvel
+
+O `atualizar.cmd` mostra, além do endereço local, o endereço desta máquina na rede
+(`http://192.168.x.x:8000`). Abre-o no telemóvel ligado ao mesmo Wi-Fi — na primeira vez o
+Windows pode pedir para autorizar o Python em redes privadas. No iPhone, "Partilhar → Adicionar
+ao ecrã principal" fica com ícone próprio e abre em ecrã inteiro. O PC tem de estar com o
+`atualizar.cmd` a correr.
+
+## Testes
+
+```bash
+python scripts/testes.py
+```
+
+E abre <http://localhost:8000/testes.html> para os testes do modelo.
+
 ## Estrutura
 
 - `atualizar.cmd` — atalho Windows: recolha + servidor + browser
