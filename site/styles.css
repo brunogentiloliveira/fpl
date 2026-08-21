@@ -1,0 +1,173 @@
+:root {
+  --fundo: #0f1420;
+  --painel: #1a2130;
+  --painel-2: #222b3d;
+  --texto: #e8ecf3;
+  --texto-2: #9aa5b8;
+  --acento: #2fd18c;
+  --aviso: #f2c14e;
+  --perigo: #f26d6d;
+  --borda: #2c3648;
+  --foco: #7ab8ff;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+:focus-visible {
+  outline: 3px solid var(--foco);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Cabeçalho */
+.topo { padding: 1rem 1rem 0.5rem; }
+.topo h1 { margin: 0; font-size: 1.35rem; }
+.meta {
+  margin: 0.25rem 0 0;
+  color: var(--texto-2);
+  font-size: 0.85rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+.countdown { color: var(--acento); font-variant-numeric: tabular-nums; }
+.countdown.urgente { color: var(--perigo); }
+
+/* Ticker de notícias */
+.ticker {
+  background: var(--painel);
+  border-block: 1px solid var(--borda);
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 0.4rem 0;
+  font-size: 0.85rem;
+}
+.ticker-track { display: inline-block; padding-left: 100%; animation: desfilar 60s linear infinite; }
+.ticker:hover .ticker-track,
+.ticker:focus-within .ticker-track { animation-play-state: paused; }
+.ticker-item { margin-right: 2.5rem; }
+.ticker-item .nome { font-weight: 600; }
+.ticker-item .clube { color: var(--texto-2); }
+@keyframes desfilar {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker { overflow-x: auto; }
+  .ticker-track { animation: none; padding-left: 0; }
+}
+
+/* Separadores */
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--borda);
+  padding: 0 0.5rem;
+  position: sticky;
+  top: 0;
+  background: var(--fundo);
+  z-index: 2;
+}
+.tabs [role="tab"] {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--texto-2);
+  font: inherit;
+  font-weight: 600;
+  padding: 0.7rem 0.25rem;
+  cursor: pointer;
+}
+.tabs [role="tab"][aria-selected="true"] {
+  color: var(--texto);
+  border-bottom-color: var(--acento);
+}
+
+main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
+
+/* Tabelas */
+.tabela { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.tabela th, .tabela td {
+  text-align: left;
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--borda);
+}
+.tabela th { color: var(--texto-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.tabela .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tabela .sub { display: block; color: var(--texto-2); font-size: 0.78rem; }
+
+/* Estados clínicos */
+.estado { display: inline-block; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.estado.warn { background: color-mix(in srgb, var(--aviso) 18%, transparent); color: var(--aviso); }
+.estado.bad { background: color-mix(in srgb, var(--perigo) 18%, transparent); color: var(--perigo); }
+
+/* Boletim */
+.boletim { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.boletim li {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--texto-2);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.boletim li.warn { border-left-color: var(--aviso); }
+.boletim li.bad { border-left-color: var(--perigo); }
+.boletim .linha1 { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: baseline; }
+.boletim .nome { font-weight: 700; }
+.boletim .clube, .boletim .data { color: var(--texto-2); font-size: 0.8rem; }
+.boletim .news { margin: 0.25rem 0 0; font-size: 0.88rem; }
+.boletim .dono { font-size: 0.8rem; color: var(--texto-2); margin-top: 0.25rem; }
+.boletim .dono strong { color: var(--texto); font-weight: 600; }
+
+/* Filtros */
+.filtros { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
+.filtros input[type="search"], .filtros select {
+  width: 100%;
+  background: var(--painel);
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+}
+.filtros-linha { display: flex; gap: 0.75rem; align-items: center; }
+.filtros-linha select { flex: 1; }
+.check { display: flex; gap: 0.35rem; align-items: center; white-space: nowrap; font-size: 0.9rem; }
+.check input { width: 1.1rem; height: 1.1rem; accent-color: var(--acento); }
+
+.nota { color: var(--texto-2); font-size: 0.85rem; }
+
+.mostrar-mais {
+  display: block;
+  margin: 1rem auto;
+  background: var(--painel-2);
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.6rem 1.4rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rodape { padding: 1.5rem 1rem 2rem; color: var(--texto-2); font-size: 0.78rem; text-align: center; }
+
+@media (min-width: 40rem) {
+  .topo h1 { font-size: 1.6rem; }
+  .filtros { grid-template-columns: 1fr auto; align-items: center; }
+}

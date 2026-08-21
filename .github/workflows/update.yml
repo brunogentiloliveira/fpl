@@ -1,0 +1,53 @@
+name: Atualizar dados e publicar
+
+on:
+  schedule:
+    # Cron corre em UTC. Europe/Lisbon = UTC+1 no verão (WEST), UTC+0 no inverno.
+    - cron: "30 6 * * *"    # diário de manhã (07:30 verão / 06:30 inverno)
+    - cron: "45 17 * * 4,5" # qui+sex após waivers/deadline das 18:30 (verão)
+    - cron: "45 18 * * 4,5" # qui+sex após waivers/deadline das 18:30 (inverno)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recolher dados da API
+        env:
+          LEAGUE_ID: ${{ vars.LEAGUE_ID }}
+        run: python3 scripts/fetch_data.py
+
+      - name: Commit dos JSONs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/data
+          if git diff --cached --quiet; then
+            echo "Sem alterações nos dados."
+          else
+            git commit -m "Atualização automática dos dados"
+            git push
+          fi
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empacotar site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar no Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
