@@ -4,6 +4,7 @@
 Uso: LEAGUE_ID=12258 python scripts/fetch_data.py
 Só usa a stdlib. A API é pública e não requer autenticação.
 """
+import html
 import json
 import os
 import re
@@ -16,6 +17,30 @@ from email.utils import parsedate_to_datetime
 
 BASE = "https://draft.premierleague.com/api"
 SKY_RSS = "https://www.skysports.com/rss/12691"  # Sky Sports Transfer Centre
+
+# Fantasy Football Scout: notícias específicas de fantasy, com o resumo de team
+# news da jornada. O robots.txt permite tudo (Disallow: vazio, visto 2026-08-21).
+FFS_FEED = "https://www.fantasyfootballscout.co.uk/feed/"
+# Estado atribuído a cada nome pela palavra-chave que aparece A SEGUIR a ele:
+# "Porro + van de Ven out, Solanke + Maddison fit" -> 2 fora, 2 aptos.
+FFS_ESTADOS = (
+    ("fora", re.compile(
+        r"\b(out|absentee|absent|sidelined|injured|injury|ruled out|miss(?:es|ing)?"
+        r"|ban(?:ned)?|suspended|unavailable)\b", re.I)),
+    ("duvida", re.compile(r"\b(doubt(?:ful)?|could|may|hoping|touch and go|close)\b", re.I)),
+    ("apto", re.compile(r"\b(fit|available|recovers?|returns?|back|in contention)\b", re.I)),
+)
+# "No injury updates" não é uma lesão: negações antes da palavra-chave anulam-na.
+FFS_NEGACAO = re.compile(r"\b(no|not|n't|without|free from|zero)\s+(\w+\s+){0,2}$", re.I)
+# Nome do clube no artigo -> nome no bootstrap-static.
+FFS_CLUBES = {
+    "Manchester City": "Man City", "Manchester United": "Man Utd",
+    "Tottenham Hotspur": "Spurs", "Nottingham Forest": "Nott'm Forest",
+    "Newcastle United": "Newcastle", "Brighton and Hove Albion": "Brighton",
+    "Leeds United": "Leeds", "AFC Bournemouth": "Bournemouth",
+    "Ipswich Town": "Ipswich Town", "Hull City": "Hull City",
+    "Coventry City": "Coventry City",
+}
 
 # Feeds por clube do Sky Sports (ids confirmados por sondagem em 2026-08-21).
 # Chave = "name" do clube no bootstrap-static.
@@ -151,6 +176,95 @@ def padroes_nome_split(p):
     outros = set(p["second_name"].split()) if p.get("second_name") else set()
     outros.discard(p["web_name"])
     return principal, _rx_nomes(outros)
+
+
+def _texto_html(bruto):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", bruto))).strip()
+
+
+def fetch_ffs(players, nomes_clubes):
+    """Team news do Fantasy Football Scout: quem está fora, em dúvida ou apto.
+
+    O artigo da jornada traz um resumo em lista, com o clube em negrito e os
+    jogadores a seguir. Isso permite cruzar nomes **dentro do clube certo**,
+    que é o que evita falsos positivos. Se o formato mudar, devolve vazio e o
+    resto da recolha segue na mesma."""
+    saida = {"feed": [], "artigo": None, "jogadores": {}}
+    try:
+        saida["feed"] = [
+            {k: it[k] for k in ("titulo", "link", "data", "resumo")}
+            for it in ler_rss(FFS_FEED, limite=12)
+        ]
+    except Exception as exc:
+        print(f"Aviso: feed do FFS falhou ({exc}).", file=sys.stderr)
+        return saida
+
+    artigo = next((i for i in saida["feed"] if "team news" in i["titulo"].lower()), None)
+    if not artigo:
+        return saida
+    try:
+        req = urllib.request.Request(artigo["link"], headers={"User-Agent": "fpl-draft-dashboard"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            pagina = resp.read().decode("utf-8", "ignore")
+    except Exception as exc:
+        print(f"Aviso: artigo de team news do FFS falhou ({exc}).", file=sys.stderr)
+        return saida
+
+    corpo = re.search(r'<section class="entry-content">(.*?)<div class="entry-links"',
+                      pagina, re.S)
+    if not corpo:
+        print("Aviso: corpo do artigo do FFS não reconhecido.", file=sys.stderr)
+        return saida
+
+    por_clube = {}
+    for p in players:
+        por_clube.setdefault(nomes_clubes.get(p["team"]), []).append(p)
+
+    saida["artigo"] = {k: artigo[k] for k in ("titulo", "link", "data")}
+    for li in re.findall(r"<li>(.*?)</li>", corpo.group(1), re.S):
+        m = re.match(r"\s*<strong>(.*?)</strong>\s*:?(.*)", li, re.S)
+        if not m:
+            continue
+        clube = _texto_html(m.group(1))
+        texto = _texto_html(m.group(2))
+        candidatos = por_clube.get(FFS_CLUBES.get(clube, clube))
+        if not candidatos or not texto:
+            continue
+
+        marcas = sorted(
+            (mm.start(), estado)
+            for estado, rx in FFS_ESTADOS for mm in rx.finditer(texto)
+            if not FFS_NEGACAO.search(texto[:mm.start()])
+        )
+        if not marcas:
+            continue
+
+        normalizado = sem_acentos(texto).lower()
+        achados = {}
+        for p in candidatos:
+            rx = padrao_nome(p)
+            achado = rx.search(normalizado) if rx else None
+            if not achado:
+                continue
+            # Só conta a palavra-chave que vem DEPOIS do nome ("Porro ... out");
+            # sem nenhuma a seguir, não se classifica (melhor do que adivinhar).
+            seguintes = [e for pos, e in marcas if pos >= achado.start()]
+            if seguintes:
+                achados.setdefault(achado.start(), []).append((p, seguintes[0]))
+
+        for pos, lista in achados.items():
+            if len(lista) > 1:
+                # Dois jogadores do mesmo clube no mesmo sítio do texto (apelidos
+                # partilhados): fica o que bate pelo web_name, senão nenhum.
+                lista = [(p, e) for p, e in lista
+                         if _tokens(p["web_name"]) & _tokens(normalizado[pos:pos + 40])]
+                if len(lista) != 1:
+                    continue
+            p, estado = lista[0]
+            saida["jogadores"][str(p["id"])] = {
+                "estado": estado, "frase": texto, "clube": clube,
+            }
+    return saida
 
 
 def fetch_feeds_clubes():
@@ -519,6 +633,7 @@ def main():
         "fixtures": fixtures,
         "jornadas": fetch_jornadas(game, anterior),
         "preepoca": fetch_preepoca(nomes_clubes, players),
+        "ffs": fetch_ffs(players, nomes_clubes),
         "historico": snapshot_historico(players, anterior),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),

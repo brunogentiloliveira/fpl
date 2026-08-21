@@ -375,6 +375,11 @@ function priorDe(p) {
   return { pp90: mediana(viz.map((v) => v.pp90)), minJogo: mediana(viz.map((v) => v.minJogo)) };
 }
 
+/** Team news do Fantasy Football Scout (chega antes da API oficial). */
+function ffsDe(p) {
+  return ((D.ffs || {}).jogadores || {})[p.id] || null;
+}
+
 /** Como o jogador apareceu no último ensaio de pré-época do clube. */
 function preEpocaDe(p) {
   const e = (D.preepoca || {})[String(p.team)];
@@ -446,7 +451,9 @@ function projecao(p) {
       xmin *= 1 - 0.15 * forca;
     }
   }
-  if (STATUS_FORA.has(p.status)) {
+  // O Scout costuma saber da conferência de imprensa antes de a API atualizar.
+  const ffs = ffsDe(p);
+  if (STATUS_FORA.has(p.status) || (ffs && ffs.estado === "fora")) {
     xmin = 0;
   } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
     xmin *= p.chance_of_playing_next_round / 100;
@@ -458,7 +465,7 @@ function projecao(p) {
   const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !STATUS_FORA.has(p.status);
-  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe };
+  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs };
 }
 
 function linhaProjecao(p, pr) {
@@ -701,6 +708,9 @@ function porqueSai(x) {
   if (STATUS_FORA.has(x.p.status)) {
     return "está " + est.rotulo.toLowerCase() + " e não pontua";
   }
+  if (x.pr.ffs && x.pr.ffs.estado === "fora") {
+    return "está fora desta jornada segundo o team news do Fantasy Football Scout";
+  }
   if (x.pr.naoUsado) {
     return "não saiu do banco nos últimos " + x.pr.ultimos.length + " jogos";
   }
@@ -936,11 +946,16 @@ function riscoJogador(p, mencionados) {
   const motivos = [];
   let nivel = 0;
   const est = estadoDe(p);
+  const ffs = ffsDe(p);
+  if (ffs && ffs.estado === "fora") {
+    nivel = 3;
+    motivos.push("Fantasy Football Scout: “" + ffs.frase + "”");
+  }
   if (STATUS_FORA.has(p.status)) {
     nivel = 3;
     motivos.push(est.rotulo + (p.news ? " — " + p.news : ""));
   } else if (p.status === "d") {
-    nivel = 2;
+    nivel = Math.max(nivel, 2); // não baixar se o Scout já o deu como fora
     motivos.push(est.rotulo + (p.news ? " — " + p.news : ""));
   }
   const rot = nivel < 3 ? riscoRotacao(p) : null; // se já não joga, rotação é ruído
@@ -990,6 +1005,39 @@ function initConferencias() {
       "</li>";
     }).join("");
   }
+
+  // --- Fantasy Football Scout ---
+  const ffs = D.ffs || { feed: [], jogadores: {} };
+  if (ffs.artigo) {
+    $("ffs-artigo").innerHTML = '<a href="' + esc(ffs.artigo.link) + '" target="_blank" ' +
+      'rel="noopener">' + esc(ffs.artigo.titulo) + "</a>";
+  }
+  const ROTULO_FFS = { fora: ["Fora", "bad"], duvida: ["Dúvida", "warn"], apto: ["Apto", "ok"] };
+  const meusFFS = meus.map((p) => ({ p, f: ffsDe(p) })).filter((x) => x.f)
+    .sort((a, b) => (a.f.estado === "fora" ? 0 : 1) - (b.f.estado === "fora" ? 0 : 1));
+  if (meusFFS.length === 0) {
+    $("nota-ffs").hidden = false;
+  } else {
+    $("ffs-meus").innerHTML = meusFFS.map(({ p, f }) => {
+      const [rotulo, cor] = ROTULO_FFS[f.estado] || ["?", ""];
+      return '<li class="risco ' + cor + '">' +
+        '<div class="linha">' +
+          '<span class="nome">' + esc(p.web_name) + "</span>" +
+          '<span class="clube">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") + "</span>" +
+          '<span class="estado ' + cor + '">' + rotulo + "</span>" +
+        "</div>" +
+        '<ul class="motivos"><li>“' + esc(f.frase) + "”</li>" +
+          (f.estado === "fora" && !STATUS_FORA.has(p.status)
+            ? "<li>A API oficial ainda o dá como disponível — a projeção já o põe a zero.</li>"
+            : "") +
+        "</ul></li>";
+    }).join("");
+  }
+  $("ffs-feed").innerHTML = (ffs.feed || []).slice(0, 8).map((n) => {
+    const data = n.data ? fmtDataHora.format(new Date(n.data)) : "";
+    return "<li><a href=\"" + esc(n.link) + '" target="_blank" rel="noopener">' +
+      esc(n.titulo) + "</a> <span class=\"data\">" + data + "</span></li>";
+  }).join("");
 
   // --- Antevisões por clube ---
   if (c.clubes.length === 0) { $("nota-conf").hidden = false; return; }

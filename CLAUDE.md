@@ -57,6 +57,30 @@ bootstrap). Itens: title, description, link, pubDate (BST/GMT), category. Altern
 feeds por clube da BBC (`feeds.bbci.co.uk/sport/football/teams/{slug}/rss.xml`) — funcionam mas
 com slugs irregulares (`afc-bournemouth`, `manchester-united`) e menos citações de treinador.
 
+## Fantasy Football Scout (fonte acrescentada em 2026-08-21, sugerida pelo utilizador)
+
+`https://www.fantasyfootballscout.co.uk/feed/` — RSS (12 itens) de um site especializado em
+fantasy da PL. O `robots.txt` permite tudo (`Disallow:` vazio) e o artigo de team news da
+jornada está fora do members area. **Porque é que vale a pena**: apanha as conferências de
+imprensa antes de a API oficial mudar o `status` (ex.: em 2026-08-21 dava o Pedro Porro fora
+da GW1 enquanto a API ainda o tinha como disponível).
+
+- `fetch_ffs()` lê o feed, escolhe o item cujo título tem "team news", vai à página e parseia
+  o resumo em lista dentro de `<section class="entry-content">`: cada `<li>` tem
+  `<strong>Clube</strong>: notas`. O clube dá o contexto para cruzar nomes **só com o plantel
+  desse clube** (é o que evita falsos positivos).
+- Estado por proximidade: cada nome fica com a palavra-chave que aparece **a seguir** a ele
+  ("Porro + van de Ven out, Solanke + Maddison fit" → 2 fora, 2 aptos). Sem palavra-chave a
+  seguir, não classifica — adivinhar pelo texto anterior dava erros.
+- Dois travões aprendidos com falsos positivos reais: `FFS_NEGACAO` anula palavras-chave
+  precedidas de "no/not/without" ("No injury updates, Iraola on Isak + Gakpo" marcava Isak e
+  Gakpo como fora), e nomes de dois jogadores do mesmo clube na mesma posição do texto só
+  contam se um deles bater pelo `web_name` (o "Nunes" apanhava o Vitor Reis).
+- Só o estado "fora" mexe no modelo (`xmin = 0`, como se estivesse lesionado); "dúvida" e
+  "apto" são informativos. O separador Conferências mostra a frase original e avisa quando a
+  API ainda diverge. Os onzes prováveis por jogo do FFS são **imagens**, por isso não dá para
+  extrair a equipa provável — só o texto de team news.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;

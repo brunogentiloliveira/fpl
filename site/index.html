@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -55,6 +55,14 @@
     <p class="nota" id="risco-legenda"></p>
     <ul class="riscos" id="lista-risco"></ul>
     <p class="nota" id="nota-risco" hidden>Nenhum jogador teu com risco assinalável.</p>
+    <h2 class="sec-titulo">Team news do Fantasy Football Scout <span id="ffs-artigo" class="sub-total"></span></h2>
+    <p class="nota">Site especializado em fantasy da Premier League: costuma ter a informação
+      das conferências antes de a API oficial a refletir. Quem aparece como fora vai a zero
+      nas projeções, mesmo que a API ainda o dê como disponível.</p>
+    <ul class="riscos" id="ffs-meus"></ul>
+    <p class="nota" id="nota-ffs" hidden>Sem referências a jogadores teus nesta atualização.</p>
+    <ul class="wire" id="ffs-feed"></ul>
+
     <h2 class="sec-titulo">Antevisões e conferências por clube</h2>
     <p class="nota">Fonte: Sky Sports (em inglês), só os clubes onde tens jogadores.
       ⚑ marca notícias que referem jogadores teus.</p>
@@ -189,6 +197,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
