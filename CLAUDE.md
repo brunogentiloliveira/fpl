@@ -34,6 +34,10 @@ Base: `https://draft.premierleague.com/api`
   `standings[]` (league_entry, rank, last_rank, total, event_total) — rank/total são null antes da GW1.
 - `GET /league/{id}/element-status`: `element_status[]` (element, owner [**entry_id** de league_entries
   ou null se livre], status, in_accepted_trade).
+- `GET /element-summary/{element_id}`: `fixtures[]` (event, opponent, is_home, **difficulty** 1-5)
+  e `history[]` (por jornada, vazio antes da época). **Não tem** épocas anteriores. As fixtures
+  são do clube do jogador, por isso basta 1 jogador por equipa (20 pedidos) para ter tudo;
+  o `fixtures` do bootstrap-static só traz 3 jornadas e **sem** dificuldade.
 - Explorados em 2026-08-21 (pré-época): `GET /entry/{entry_id}/public` (entry com event_points/
   overall_points, null antes da GW1); `GET /entry/{entry_id}/history` (**resultados por jornada**,
   `history: []` antes da época); `GET /entry/{entry_id}/event/{ev}` (404 "No pick history" antes
@@ -107,3 +111,21 @@ que já tem fallback.
     antes da época compara com 38 jornadas (≤12 titularidades = risco alto, ≤21 = vigiar);
     com época a decorrer usa `starts/current_event` (<0.4 alto, <0.7 vigiar) e só a partir da
     GW3. Se o jogador já não joga, a linha de rotação é omitida.
+- **Separador "Projeções" (feito 2026-08-21, pedido do utilizador)**: pontos estimados por
+  jornada para qualquer jogador, com o meu plantel e os melhores livres; a tabela de Jogadores
+  ganhou coluna "Pts/J" e ordenação (rank / projeção / pontos).
+  - Modelo (em app.js, `projecao`, propositadamente transparente e afinável):
+    `pp90` = pontos por 90 da época passada **com encolhimento** para o prior (mediana dos
+    K=15 jogadores de draft rank vizinho na mesma posição, `MIN_PRIOR=900` minutos de peso) —
+    evita valores absurdos de quem jogou pouco e dá estimativa a quem tem 0 minutos na PL.
+    `xmin` = minutos/38 da época passada (ou o prior, se estreante), com **piso por transferência
+    cara confirmada** (≥50M→75, ≥30M→68, ≥15M→58, senão 50), 0 se fora e ×chance se dúvida.
+    `ppj` = pp90 × xmin/90; "Próx. 3" soma 3 jornadas com fator de dificuldade
+    `1 + (3-dif)×0.06`. Ex. real: Savinho passou de 1.1 para 3.8 pts/jornada com os £85M.
+  - Transferências: `extrair_transferencias()` lê valores (`£/€/$ Xm`) nos feeds Sky de **todos**
+    os clubes + Transfer Centre. Classificação pelo **título** (o resumo mistura negociações):
+    `RE_FECHADO` sem `RE_ABERTO` = confirmada, caso contrário rumor (sem efeito na projeção).
+    Correspondência de nomes com precedência: `web_name` primeiro, apelidos soltos do
+    `second_name` só se ninguém bater pelo principal — apelidos compostos ("Martínez Romero")
+    davam falsos positivos. Saídas da PL ficam com status "u" e projeção 0, portanto não
+    beneficiam do piso.

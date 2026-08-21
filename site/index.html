@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -28,6 +28,7 @@
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
   <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
+  <button role="tab" id="tab-proj" aria-controls="painel-proj" aria-selected="false" tabindex="-1">Projeções</button>
   <button role="tab" id="tab-mercado" aria-controls="painel-mercado" aria-selected="false" tabindex="-1">Mercado</button>
 </nav>
 
@@ -86,14 +87,57 @@
         </select>
         <label class="check"><input type="checkbox" id="so-livres"> Só livres</label>
       </div>
+      <div class="filtros-linha">
+        <label class="visually-hidden" for="ordenar">Ordenar por</label>
+        <select id="ordenar">
+          <option value="rank">Ordenar por draft rank</option>
+          <option value="proj">Ordenar por projeção</option>
+          <option value="pontos">Ordenar por pontos da época passada</option>
+        </select>
+      </div>
     </form>
     <p class="nota" id="contagem-jogadores" role="status"></p>
     <table class="tabela" id="tabela-jogadores">
-      <thead><tr><th class="num">Rank</th><th>Jogador</th><th>Pos</th><th class="num">Pts</th><th>Dono</th></tr></thead>
+      <thead><tr><th>Jogador</th><th>Pos</th><th class="num">Pts</th><th class="num">Pts/J</th><th>Dono</th></tr></thead>
       <tbody></tbody>
     </table>
     <button type="button" class="mostrar-mais" id="mostrar-mais" hidden>Mostrar mais</button>
   </section>
+  <section id="painel-proj" role="tabpanel" aria-labelledby="tab-proj" hidden>
+    <details class="cartao explicacao">
+      <summary><span class="nome">Como é calculada a projeção</span></summary>
+      <div class="corpo">
+        <p><strong>Pts/90</strong>: pontos por 90 minutos na época passada, puxados para a média
+          de jogadores com draft rank parecido na mesma posição — assim quem jogou pouco não fica
+          com um valor inflacionado por uma amostra pequena.</p>
+        <p><strong>Min</strong>: minutos esperados por jornada, a partir dos minutos da época
+          passada. Uma <strong>transferência cara confirmada</strong> sobe este valor (≥50M → 75 min,
+          ≥30M → 68, ≥15M → 58), porque quem custa caro tende a ser titular. Lesionados e suspensos
+          ficam a 0 e as dúvidas são multiplicadas pela probabilidade de jogar.</p>
+        <p><strong>Pts/J</strong> = Pts/90 × Min ÷ 90. <strong>Próx. 3</strong> soma as próximas
+          três jornadas ajustando à dificuldade do adversário (1 fácil a 5 difícil).</p>
+        <p class="nota">Base: estatísticas e pontos da época anterior da API do FPL Draft —
+          é uma estimativa, não uma garantia.</p>
+      </div>
+    </details>
+
+    <h2 class="sec-titulo">O meu plantel <span id="proj-total" class="sub-total"></span></h2>
+    <div id="proj-plantel"></div>
+
+    <h2 class="sec-titulo">Melhores livres</h2>
+    <form class="filtros" id="filtros-proj" autocomplete="off">
+      <label class="visually-hidden" for="proj-pos">Posição</label>
+      <select id="proj-pos">
+        <option value="">Todas as posições</option>
+        <option value="1">Guarda-redes</option>
+        <option value="2">Defesas</option>
+        <option value="3">Médios</option>
+        <option value="4">Avançados</option>
+      </select>
+    </form>
+    <div id="proj-livres"></div>
+  </section>
+
   <section id="painel-mercado" role="tabpanel" aria-labelledby="tab-mercado" hidden>
     <h2 class="sec-titulo">Movimentos da liga</h2>
     <ul class="movimentos" id="lista-movimentos"></ul>
@@ -109,6 +153,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

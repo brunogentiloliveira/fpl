@@ -48,7 +48,23 @@ PLAYER_FIELDS = (
     "draft_rank", "total_points", "status", "news", "news_added",
     "chance_of_playing_next_round", "form", "points_per_game",
     "minutes", "starts",
+    # estatísticas da época anterior, para as projeções
+    "goals_scored", "assists", "clean_sheets", "saves", "bonus",
+    "expected_goals", "expected_assists", "expected_goal_involvements",
+    "defensive_contribution",
 )
+
+# Valores de transferência nos títulos/resumos das notícias (ex.: "£85m deal").
+RE_VALOR = re.compile(
+    r"(?P<moeda>[£€$])\s?(?P<valor>\d+(?:[.,]\d+)?)\s?(?P<mult>m\b|million|bn\b|billion)", re.I)
+# Negócio fechado (mesmo que a notícia também fale de conversas/interesse).
+RE_FECHADO = re.compile(
+    r"\b(completes?d?|has joined|joins|joined|sealed?|medical"
+    r"|agreed? (?:a )?(?:[£€$]?[\d.,]+m? )?deal|signs?\b[^.]{0,60}\bdeal)\b", re.I)
+# Ainda em aberto: só rumor, não mexe na projeção.
+RE_ABERTO = re.compile(
+    r"\b(reject\w*|seek\w*|want\w*|target\w*|interest\w*|talks|bid|eye\w*"
+    r"|approach\w*|enquir\w*|consider\w*|linked|monitor\w*)\b", re.I)
 
 
 def get(path):
@@ -107,42 +123,141 @@ def fetch_noticias_mercado():
     return itens
 
 
-def fetch_conferencias(clubes, meus):
+def _rx_nomes(nomes):
+    partes = [re.escape(sem_acentos(n).lower()) for n in nomes if len(n) >= 4]
+    return re.compile(r"\b(" + "|".join(partes) + r")\b") if partes else None
+
+
+def padrao_nome(p):
+    """Regex do nome de um jogador (sem acentos, fronteiras de palavra)."""
+    nomes = {p["web_name"]}
+    if p.get("second_name"):
+        nomes.update(p["second_name"].split())
+    return _rx_nomes(nomes)
+
+
+def padroes_nome_split(p):
+    """(principal, secundário): o web_name vale mais do que um apelido solto.
+
+    Apelidos compostos (ex.: "Martínez Romero") geram falsos positivos, por isso
+    só se usa o secundário quando nenhum jogador bate pelo nome principal."""
+    principal = _rx_nomes({p["web_name"]})
+    outros = set(p["second_name"].split()) if p.get("second_name") else set()
+    outros.discard(p["web_name"])
+    return principal, _rx_nomes(outros)
+
+
+def fetch_feeds_clubes():
+    """Lê uma vez o feed Sky de cada clube: {nome_clube: [itens]}."""
+    feeds = {}
+    for nome, rid in SKY_CLUBES.items():
+        try:
+            feeds[nome] = ler_rss(f"https://www.skysports.com/rss/{rid}", limite=25)
+        except Exception as exc:
+            print(f"Aviso: feed de {nome} falhou ({exc}).", file=sys.stderr)
+            feeds[nome] = []
+    return feeds
+
+
+def extrair_transferencias(feeds, players, nomes_clubes):
+    """Valores de transferência detetados nas notícias, por jogador.
+
+    Uma transferência cara é sinal de que o jogador vai ser titular, por isso
+    guarda-se o maior valor confirmado (rumores ficam marcados à parte)."""
+    padroes = [(p,) + padroes_nome_split(p) for p in players]
+    achados = {}
+
+    for nome_clube, itens in feeds.items():
+        for it in itens:
+            texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
+            m = RE_VALOR.search(texto)
+            if not m:
+                continue
+            valor = float(m.group("valor").replace(",", "."))
+            if m.group("mult").lower().startswith(("bn", "billion")):
+                valor *= 1000
+            if valor < 1 or valor > 500:  # ignora ruído (audiências, receitas)
+                continue
+            # Classificar pelo título: é escrito com precisão, o resumo mistura
+            # o negócio fechado com as negociações à volta.
+            titulo = sem_acentos(it["titulo"]).lower()
+            confirmada = bool(RE_FECHADO.search(titulo)) and not RE_ABERTO.search(titulo)
+            if not confirmada and not RE_ABERTO.search(texto):
+                continue
+
+            # O web_name manda; apelidos soltos só se ninguém bater pelo principal.
+            candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
+            if not candidatos:
+                candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
+            if not candidatos or len(candidatos) > 3:  # ambíguo demais
+                continue
+            for p in candidatos:
+                ant = achados.get(p["id"])
+                melhor = (confirmada, valor)
+                if ant is None or melhor > (ant["confirmada"], ant["valor"]):
+                    achados[p["id"]] = {
+                        "valor": round(valor, 1),
+                        "moeda": m.group("moeda"),
+                        "confirmada": confirmada,
+                        "titulo": it["titulo"],
+                        "link": it["link"],
+                        "data": it["data"],
+                        "fonte": nome_clube,
+                    }
+    return {str(k): v for k, v in achados.items()}
+
+
+def fetch_fixtures(bootstrap, desde_evento):
+    """Próximos jogos por clube, com dificuldade (1-5).
+
+    A dificuldade só existe em /element-summary, que é por jogador mas devolve
+    o calendário do clube — basta um jogador por equipa (20 pedidos)."""
+    representante = {}
+    for el in bootstrap["elements"]:
+        representante.setdefault(el["team"], el["id"])
+
+    saida = {}
+    for team_id, el_id in representante.items():
+        try:
+            jogos = get(f"/element-summary/{el_id}")["fixtures"]
+        except Exception as exc:
+            print(f"Aviso: calendário da equipa {team_id} falhou ({exc}).", file=sys.stderr)
+            continue
+        saida[str(team_id)] = [
+            {
+                "event": j["event"],
+                "opponent": j["opponent"],
+                "is_home": j["is_home"],
+                "difficulty": j["difficulty"],
+            }
+            for j in jogos
+            if j.get("event") and j["event"] >= desde_evento and not j.get("finished")
+        ][:10]
+    return saida
+
+
+def fetch_conferencias(clubes, meus, feeds):
     """Antevisões/conferências dos clubes onde tenho jogadores.
 
     `clubes`: [(team_id, nome)]. Cruza cada item com os nomes do meu plantel
-    para assinalar quem é mencionado. Falhas de feed são toleradas."""
-    def padrao(p):
-        nomes = {p["web_name"]}
-        if p.get("second_name"):
-            nomes.add(p["second_name"].split()[-1])
-        partes = [re.escape(sem_acentos(n).lower()) for n in nomes if len(n) >= 4]
-        return re.compile(r"\b(" + "|".join(partes) + r")\b") if partes else None
-
+    para assinalar quem é mencionado."""
     saida = []
     for team_id, nome in clubes:
         # Só cruzar com os meus jogadores deste clube: evita falsos positivos
         # (apelidos comuns) em notícias que mencionam outras equipas.
-        alvos = [(p["id"], padrao(p)) for p in meus if p["team"] == team_id]
+        alvos = [(p["id"], padrao_nome(p)) for p in meus if p["team"] == team_id]
         alvos = [(pid, rx) for pid, rx in alvos if rx]
-        rid = SKY_CLUBES.get(nome)
-        if not rid:
-            print(f"Aviso: sem feed conhecido para {nome}.", file=sys.stderr)
-            continue
-        try:
-            itens = ler_rss(f"https://www.skysports.com/rss/{rid}", limite=25)
-        except Exception as exc:
-            print(f"Aviso: feed de {nome} falhou ({exc}).", file=sys.stderr)
-            continue
+        itens = feeds.get(nome, [])
 
         filtrados = []
         for it in itens:
             texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
             if any(r in texto for r in CONF_RUIDO):
                 continue
-            it["conferencia"] = any(k in texto for k in CONF_PADROES)
-            it["mencoes"] = [pid for pid, rx in alvos if rx.search(texto)]
-            filtrados.append(it)
+            item = dict(it)  # os feeds são partilhados com as transferências
+            item["conferencia"] = any(k in texto for k in CONF_PADROES)
+            item["mencoes"] = [pid for pid, rx in alvos if rx.search(texto)]
+            filtrados.append(item)
         # Data mais recente primeiro; depois menções e conferências ao topo.
         filtrados.sort(key=lambda i: i["data"] or "", reverse=True)
         filtrados.sort(key=lambda i: (not i["mencoes"], not i["conferencia"]))
@@ -214,6 +329,10 @@ def main():
     if not eu:
         print(f"Aviso: gestor '{apelido}' não encontrado; sem conferências.", file=sys.stderr)
 
+    feeds = fetch_feeds_clubes()
+    fixtures = fetch_fixtures(bootstrap, next_ev["id"] if next_ev else 1)
+    noticias_mercado = fetch_noticias_mercado()
+
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "league_id": int(league_id),
@@ -245,12 +364,15 @@ def main():
         "teams": {str(t["id"]): {"name": t["name"], "short_name": t["short_name"]}
                   for t in bootstrap["teams"]},
         "players": players,
+        "fixtures": fixtures,
+        "transferencias": extrair_transferencias(
+            {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
         "conferencias": {
             "equipa": eu["entry_name"] if eu else None,
-            "clubes": fetch_conferencias(clubes, meus),
+            "clubes": fetch_conferencias(clubes, meus, feeds),
         },
         "mercado": {
-            "noticias": fetch_noticias_mercado(),
+            "noticias": noticias_mercado,
             "transacoes": [
                 {k: t.get(k) for k in ("added", "element_in", "element_out",
                                        "entry", "event", "kind", "result")}

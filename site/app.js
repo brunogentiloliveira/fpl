@@ -254,7 +254,16 @@ function aplicarFiltros() {
       if (!alvo.includes(termo)) return false;
     }
     return true;
-  }).sort((a, b) => (a.draft_rank ?? 1e9) - (b.draft_rank ?? 1e9));
+  });
+
+  const ordem = $("ordenar").value;
+  if (ordem === "proj") {
+    filtrados.sort((a, b) => projecao(b).ppj - projecao(a).ppj);
+  } else if (ordem === "pontos") {
+    filtrados.sort((a, b) => b.total_points - a.total_points);
+  } else {
+    filtrados.sort((a, b) => (a.draft_rank ?? 1e9) - (b.draft_rank ?? 1e9));
+  }
 
   visiveis = PASSO;
   desenharJogadores();
@@ -269,11 +278,15 @@ function desenharJogadores() {
     const marca = est.sev
       ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>"
       : "";
+    const tr = (D.transferencias || {})[p.id];
+    const dinheiro = tr && tr.confirmada
+      ? ' <span class="estado ok">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
     return "<tr>" +
-      '<td class="num">' + (p.draft_rank ?? "–") + "</td>" +
-      "<td>" + esc(p.web_name) + marca + '<span class="sub">' + nomeClube(p.team) + "</span></td>" +
+      "<td>" + esc(p.web_name) + marca + dinheiro +
+        '<span class="sub">' + nomeClube(p.team) + " · #" + (p.draft_rank ?? "–") + "</span></td>" +
       "<td>" + (POSICOES[p.element_type] || "?") + "</td>" +
       '<td class="num">' + p.total_points + "</td>" +
+      '<td class="num forte">' + projecao(p).ppj.toFixed(1) + "</td>" +
       "<td>" + (dono ? esc(dono) : '<span class="sub">Livre</span>') + "</td>" +
     "</tr>";
   }).join("");
@@ -287,12 +300,150 @@ function initJogadores() {
   $("pesquisa").addEventListener("input", aplicarFiltros);
   $("filtro-pos").addEventListener("change", aplicarFiltros);
   $("so-livres").addEventListener("change", aplicarFiltros);
+  $("ordenar").addEventListener("change", aplicarFiltros);
   $("filtros").addEventListener("submit", (ev) => ev.preventDefault());
   $("mostrar-mais").addEventListener("click", () => {
     visiveis += PASSO;
     desenharJogadores();
   });
   aplicarFiltros();
+}
+
+/* ---------- Projeção de pontos ---------- */
+
+const MIN_PRIOR = 900;    // minutos de "prior" no encolhimento do pts/90
+const JOGOS_EPOCA = 38;
+const K_VIZINHOS = 15;    // jogadores de draft rank parecido usados como prior
+
+let priorsPos = {};       // element_type -> [{rank, pp90, minJogo}] ordenado por rank
+
+function mediana(v) {
+  if (v.length === 0) return 0;
+  const s = v.slice().sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function construirPriors() {
+  priorsPos = {};
+  [1, 2, 3, 4].forEach((pos) => {
+    priorsPos[pos] = D.players
+      .filter((p) => p.element_type === pos && p.minutes >= MIN_PRIOR)
+      .map((p) => ({
+        rank: p.draft_rank ?? 1e9,
+        pp90: (p.total_points / p.minutes) * 90,
+        minJogo: Math.min(90, p.minutes / JOGOS_EPOCA),
+      }))
+      .sort((a, b) => a.rank - b.rank);
+  });
+}
+
+/** Referência de quem tem draft rank parecido na mesma posição. */
+function priorDe(p) {
+  const lista = priorsPos[p.element_type] || [];
+  if (lista.length === 0) return { pp90: 3, minJogo: 45 };
+  const rank = p.draft_rank ?? 1e9;
+  let i = lista.findIndex((x) => x.rank >= rank);
+  if (i < 0) i = lista.length - 1;
+  const ini = Math.max(0, Math.min(i - Math.floor(K_VIZINHOS / 2), lista.length - K_VIZINHOS));
+  const viz = lista.slice(ini, ini + K_VIZINHOS);
+  return { pp90: mediana(viz.map((v) => v.pp90)), minJogo: mediana(viz.map((v) => v.minJogo)) };
+}
+
+/** Uma transferência cara confirmada é sinal de titularidade. */
+function pisoTransferencia(valor) {
+  if (valor >= 50) return 75;
+  if (valor >= 30) return 68;
+  if (valor >= 15) return 58;
+  return 50;
+}
+
+function fatorDificuldade(d) {
+  return 1 + (3 - d) * 0.06; // adversário fácil (1) 1.12 … difícil (5) 0.88
+}
+
+function projecao(p) {
+  const prior = priorDe(p);
+  // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
+  const pp90 = ((p.total_points + (prior.pp90 * MIN_PRIOR) / 90) / (p.minutes + MIN_PRIOR)) * 90;
+
+  let xmin = p.minutes > 0 ? Math.min(90, p.minutes / JOGOS_EPOCA) : prior.minJogo;
+  const tr = (D.transferencias || {})[p.id];
+  let bump = null;
+  if (tr && tr.confirmada && !STATUS_FORA.has(p.status)) {
+    const piso = pisoTransferencia(tr.valor);
+    if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
+  }
+  if (STATUS_FORA.has(p.status)) {
+    xmin = 0;
+  } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
+    xmin *= p.chance_of_playing_next_round / 100;
+  }
+  xmin = Math.max(0, Math.min(90, xmin));
+
+  const ppj = (pp90 * xmin) / 90;
+  const jogos = ((D.fixtures || {})[String(p.team)] || []).slice(0, 3);
+  const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
+  return { pp90, xmin, ppj, prox3, jogos, tr, bump };
+}
+
+function linhaProjecao(p, pr) {
+  const est = estadoDe(p);
+  const badges =
+    (pr.tr ? '<span class="estado ' + (pr.tr.confirmada ? "ok" : "warn") + '">' +
+      esc(pr.tr.moeda) + pr.tr.valor + "M" + (pr.tr.confirmada ? "" : "?") +
+      (pr.bump ? " +" + pr.bump + "min" : "") + "</span>" : "") +
+    (est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "");
+  const jogos = pr.jogos.map((j) =>
+    '<span class="fx d' + j.difficulty + '">' +
+      (D.teams[String(j.opponent)] || {}).short_name +
+      (j.is_home ? "" : " (F)") + "</span>").join(" ");
+  return "<tr>" +
+    "<td>" + esc(p.web_name) + badges +
+      '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
+      (jogos ? " · " + jogos : "") + "</span></td>" +
+    '<td class="num">' + pr.pp90.toFixed(1) + "</td>" +
+    '<td class="num">' + Math.round(pr.xmin) + "</td>" +
+    '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +
+    '<td class="num">' + pr.prox3.toFixed(1) + "</td>" +
+  "</tr>";
+}
+
+function tabelaProjecao(linhas) {
+  return '<table class="tabela tabela-proj">' +
+    "<thead><tr><th>Jogador</th><th class=\"num\">Pts/90</th><th class=\"num\">Min</th>" +
+    "<th class=\"num\">Pts/J</th><th class=\"num\">Próx. 3</th></tr></thead>" +
+    "<tbody>" + linhas + "</tbody></table>";
+}
+
+function desenharLivres() {
+  const pos = $("proj-pos").value;
+  const livres = D.players
+    .filter((p) => p.owner == null && !STATUS_FORA.has(p.status))
+    .filter((p) => !pos || String(p.element_type) === pos)
+    .map((p) => ({ p, pr: projecao(p) }))
+    .sort((a, b) => b.pr.ppj - a.pr.ppj)
+    .slice(0, 20);
+  $("proj-livres").innerHTML = tabelaProjecao(
+    livres.map(({ p, pr }) => linhaProjecao(p, pr)).join(""));
+}
+
+function initProjecoes() {
+  construirPriors();
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const meus = (eu ? D.players.filter((p) => p.owner === eu.entry_id) : [])
+    .map((p) => ({ p, pr: projecao(p) }))
+    .sort((a, b) => b.pr.ppj - a.pr.ppj);
+
+  const total = meus.reduce((s, x) => s + x.pr.ppj, 0);
+  $("proj-total").textContent = meus.length
+    ? "≈ " + total.toFixed(0) + " pts/jornada (plantel todo)" : "";
+  $("proj-plantel").innerHTML = tabelaProjecao(
+    meus.map(({ p, pr }) => linhaProjecao(p, pr)).join(""));
+
+  $("proj-pos").addEventListener("change", desenharLivres);
+  $("filtros-proj").addEventListener("submit", (ev) => ev.preventDefault());
+  desenharLivres();
 }
 
 /* ---------- Conferências e risco de não jogar ---------- */
@@ -502,6 +653,7 @@ async function main() {
   initMinhaEquipa();
   initEquipas();
   initConferencias();
+  initProjecoes();
   initMercado();
   initJogadores();
   initTabs();
