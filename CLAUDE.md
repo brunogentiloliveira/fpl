@@ -173,3 +173,24 @@ que já tem fallback.
     jogos estando disponível.
   - `riscoRotacao` passou a usar os minutos reais quando há ≥2 jornadas; só recorre às
     titularidades da época passada antes disso.
+- **Pré-época (feito 2026-08-21, pedido do utilizador)**: onzes do último ensaio de cada clube,
+  para a GW1 não depender só da época passada.
+  - **Fontes avaliadas**: a API do FPL não tem pré-época. O TheSportsDB (chave gratuita "3")
+    tem os jogos e resultados, mas **não tem constituição das equipas nos amigáveis** — só em
+    jogos oficiais (confirmado em 8 clubes); além disso limita a 30 pedidos/min e não conhece
+    o Nott'm Forest. Scraping do Google está fora (os termos proíbem pedidos automáticos e o
+    robots.txt bloqueia /search), tal como SofaScore (403) e FlashScore (termos).
+  - **Solução**: como a pré-época **já terminou, os dados são estáticos**. Ficam em
+    `scripts/preepoca.json`, recolhidos à mão de relatos públicos, com a fonte de cada jogo.
+    16 dos 20 clubes têm onze fiável; Bournemouth, Hull, Ipswich e Sunderland ficam de fora
+    de propósito (relatos contraditórios ou inexistentes) — melhor sem sinal do que com um errado.
+    `fetch_preepoca()` casa os nomes com o plantel do clube (`casar_nome`, por interseção de
+    tokens; empates ficam por resolver) e escreve ids em `data.json → preepoca`.
+  - **Modelo**: só conta enquanto `jogosObs === 0`. Titular puxa os minutos esperados para 72;
+    suplente/não convocado puxa para 30; "não foi titular" (sem lista de suplentes publicada)
+    é só −15%, e não se aplica a quem tem transferência confirmada (mudou de clube, o onze do
+    clube antigo não diz nada). Confiança "media" vale metade.
+  - **Efeito real**: Ødegaard 1.9 → 3.9 pts/jornada (titular na Supertaça, depois de uma época
+    passada com poucas titularidades) e Araujo 3.0 → 2.2 (ficou no banco no Liverpool).
+  - `sem_acentos` passou a traduzir letras que o NFD não decompõe (ø, đ, ł, ß, æ…), senão
+    "Ødegaard" nunca casaria com "Odegaard".

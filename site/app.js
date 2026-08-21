@@ -375,6 +375,17 @@ function priorDe(p) {
   return { pp90: mediana(viz.map((v) => v.pp90)), minJogo: mediana(viz.map((v) => v.minJogo)) };
 }
 
+/** Como o jogador apareceu no último ensaio de pré-época do clube. */
+function preEpocaDe(p) {
+  const e = (D.preepoca || {})[String(p.team)];
+  if (!e) return null;
+  const estado = e.titulares.includes(p.id) ? "titular"
+    : e.suplentes.includes(p.id) ? "suplente"
+    // Sem lista de suplentes publicada só se pode dizer que não foi titular.
+    : (e.suplentes.length ? "fora" : "nao_titular");
+  return { estado, jogo: e.jogo, data: e.data, fonte: e.fonte, confianca: e.confianca };
+}
+
 /** Uma transferência cara confirmada é sinal de titularidade. */
 function pisoTransferencia(valor) {
   if (valor >= 50) return 75;
@@ -418,6 +429,23 @@ function projecao(p) {
     const piso = pisoTransferencia(tr.valor);
     if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
   }
+
+  // Antes da primeira jornada, o último ensaio de pré-época é o melhor indício
+  // de quem o treinador vai lançar. Deixa de contar assim que houver jogos a sério.
+  const pe = jogosObs === 0 ? preEpocaDe(p) : null;
+  if (pe && !STATUS_FORA.has(p.status)) {
+    const forca = pe.confianca === "alta" ? 1 : 0.5;
+    if (pe.estado === "titular") {
+      const alvo = 72;
+      if (alvo > xmin) xmin += (alvo - xmin) * forca;
+    } else if (pe.estado === "suplente" || pe.estado === "fora") {
+      xmin -= (xmin - 30) * 0.5 * forca;
+    } else if (!(tr && tr.confirmada)) {
+      // Não foi titular (pode ter entrado do banco): penalização suave.
+      // Quem mudou de clube não é julgado pelo onze do clube antigo.
+      xmin *= 1 - 0.15 * forca;
+    }
+  }
   if (STATUS_FORA.has(p.status)) {
     xmin = 0;
   } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
@@ -430,7 +458,7 @@ function projecao(p) {
   const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !STATUS_FORA.has(p.status);
-  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado };
+  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe };
 }
 
 function linhaProjecao(p, pr) {
@@ -445,8 +473,12 @@ function linhaProjecao(p, pr) {
       (D.teams[String(j.opponent)] || {}).short_name +
       (j.is_home ? "" : " (F)") + "</span>").join(" ");
   const recentes = minutosRecentes(pr);
+  const pe = pr.pe && pr.pe.estado === "titular"
+    ? ' <span class="estado ok">XI pré-época</span>'
+    : pr.pe && pr.pe.estado !== "nao_titular"
+      ? ' <span class="estado warn">banco pré-época</span>' : "";
   return "<tr>" +
-    "<td>" + esc(p.web_name) + badges +
+    "<td>" + esc(p.web_name) + badges + pe +
       (pr.naoUsado ? ' <span class="estado bad">sem jogar</span>' : "") +
       '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
       (recentes ? " · jogou " + recentes : "") +
@@ -680,17 +712,29 @@ function porqueSai(x) {
   if (recentes && x.pr.xmin < 60) {
     return "tem jogado pouco (" + recentes + " nos últimos jogos)";
   }
+  if (x.pr.pe && x.pr.pe.estado !== "titular") {
+    return PE_TEXTO[x.pr.pe.estado];
+  }
   if (x.pr.xmin < 55) {
     return "só deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jornada";
   }
   return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min, abaixo da alternativa";
 }
 
+const PE_TEXTO = {
+  titular: "foi titular no último ensaio de pré-época",
+  suplente: "começou no banco no último ensaio de pré-época",
+  fora: "nem foi convocado para o último ensaio de pré-época",
+  nao_titular: "não foi titular no último ensaio de pré-época",
+};
+
 function porqueEntra(x) {
   const partes = [];
   const recentes = minutosRecentes(x.pr);
   if (recentes) {
     partes.push("já jogou " + recentes + " nas últimas jornadas");
+  } else if (x.pr.pe && x.pr.pe.estado === "titular") {
+    partes.push(PE_TEXTO.titular);
   } else if (x.pr.tr && x.pr.tr.confirmada) {
     partes.push("custou " + x.pr.tr.moeda + x.pr.tr.valor + "M, por isso deve ser titular");
   } else if (x.pr.xmin >= 70) {
@@ -705,6 +749,37 @@ function porqueEntra(x) {
 }
 
 /* --- Utilização real nas jornadas já disputadas --- */
+
+function desenharPreEpoca(meusX) {
+  if (Object.keys(D.preepoca || {}).length === 0) { $("nota-pe").hidden = false; return; }
+  const ordem = { titular: 0, suplente: 1, fora: 2, nao_titular: 2 };
+  const linhas = meusX
+    .map((x) => ({ x, pe: preEpocaDe(x.p) }))
+    .sort((a, b) => (ordem[(a.pe || {}).estado] ?? 3) - (ordem[(b.pe || {}).estado] ?? 3));
+
+  const titulares = linhas.filter((l) => l.pe && l.pe.estado === "titular").length;
+  $("pe-resumo").textContent = titulares + " dos teus 15 foram titulares";
+
+  $("pe-plantel").innerHTML = '<table class="tabela tabela-proj"><thead><tr>' +
+    "<th>Jogador</th><th>No último ensaio</th><th>Jogo</th></tr></thead><tbody>" +
+    linhas.map(({ x, pe }) => {
+      if (!pe) {
+        return "<tr><td>" + esc(x.p.web_name) +
+          '<span class="sub">' + nomeClube(x.p.team) + "</span></td>" +
+          '<td colspan="2" class="sub">sem onze publicado para este clube</td></tr>';
+      }
+      const cor = pe.estado === "titular" ? "ok" : pe.estado === "suplente" ? "warn" : "bad";
+      const rotulo = { titular: "Titular", suplente: "Suplente",
+                       fora: "Não convocado", nao_titular: "Não foi titular" }[pe.estado];
+      return "<tr><td>" + esc(x.p.web_name) +
+        '<span class="sub">' + nomeClube(x.p.team) + " · " +
+          (POSICOES[x.p.element_type] || "?") + "</span></td>" +
+        '<td><span class="estado ' + cor + '">' + rotulo + "</span>" +
+          (pe.confianca !== "alta" ? ' <span class="sub">indício fraco</span>' : "") + "</td>" +
+        '<td><a href="' + esc(pe.fonte) + '" target="_blank" rel="noopener">' +
+          esc(pe.jogo) + "</a></td></tr>";
+    }).join("") + "</tbody></table>";
+}
 
 function desenharUtilizacao(meusX) {
   const jornadas = Object.keys(D.jornadas || {});
@@ -755,6 +830,7 @@ function initSugestoes() {
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
   desenharOnze(meusX);
+  desenharPreEpoca(meusX);
   desenharUtilizacao(meusX);
 
   // --- Contexto da liga ---

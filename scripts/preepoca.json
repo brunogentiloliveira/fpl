@@ -1,0 +1,136 @@
+{
+  "_nota": "Onzes da pré-época 2026/27, recolhidos à mão em 2026-08-21 a partir de relatos públicos dos jogos. A API do FPL não cobre a pré-época e o TheSportsDB não tem constituição das equipas nos amigáveis (só em jogos oficiais). Como a pré-época já terminou, estes dados são estáticos: não precisam de ser recolhidos outra vez. A partir da GW1 são os minutos reais de /event/{ev}/live que mandam. Clubes sem onze fiável (Bournemouth, Hull City, Ipswich Town, Sunderland) ficam de fora de propósito — é melhor não ter sinal do que ter um errado.",
+  "atualizado": "2026-08-21",
+  "clubes": {
+    "Arsenal": {
+      "data": "2026-08-16",
+      "jogo": "Arsenal 3-0 Man City (Supertaça)",
+      "confianca": "alta",
+      "fonte": "https://worldsoccertalk.com/news/arsenal-vs-manchester-city-probable-lineups-for-2026-fa-community-shield-final/",
+      "titulares": ["Raya", "White", "Mosquera", "Gabriel", "Calafiori", "Odegaard",
+                    "Lewis-Skelly", "Guimaraes", "Madueke", "Havertz", "Tzolis"]
+    },
+    "Man City": {
+      "data": "2026-08-16",
+      "jogo": "Man City 0-3 Arsenal (Supertaça)",
+      "confianca": "alta",
+      "fonte": "https://sports.yahoo.com/articles/man-city-xi-vs-arsenal-115105797.html",
+      "titulares": ["Donnarumma", "Khusanov", "Dias", "Gvardiol", "O'Reilly", "Kovacic",
+                    "Anderson", "Foden", "Semenyo", "Doku", "Haaland"]
+    },
+    "Liverpool": {
+      "data": "2026-08-16",
+      "jogo": "Liverpool 0-0 Como (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.liverpoolfc.com/news/confirmed-liverpool-line-anfield-friendly-como",
+      "titulares": ["Alisson", "Van Dijk", "Jacquet", "Kerkez", "Wirtz", "Szoboszlai",
+                    "Isak", "Gakpo", "Frimpong", "Gravenberch", "Ngumoha"],
+      "suplentes": ["Davies", "Munoz", "Araujo", "Nyoni", "Koumas", "Ndiaye", "Wright"]
+    },
+    "Man Utd": {
+      "data": "2026-08-15",
+      "jogo": "Man Utd 2-4 AC Milan (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.manutd.com/en/news/uniteds-team-to-play-ac-milan-15-aug-2026",
+      "titulares": ["Lammens", "Shaw", "Heaven", "Maguire", "Mazraoui", "Tielemans",
+                    "Santos", "Amad", "Bruno Fernandes", "Dorgu", "Cunha"]
+    },
+    "Spurs": {
+      "data": "2026-08-15",
+      "jogo": "Spurs 2-2 Hoffenheim (amigável)",
+      "confianca": "alta",
+      "fonte": "https://uk.sports.yahoo.com/news/tottenham-xi-vs-hoffenheim-confirmed-131335928.html",
+      "titulares": ["Kinsky", "Gray", "Senesi", "Van Hecke", "Robertson", "Tonali",
+                    "Gallagher", "Moore", "Bergvall", "Tel", "Richarlison"]
+    },
+    "Nott'm Forest": {
+      "data": "2026-08-12",
+      "jogo": "Nott'm Forest 2-1 Bayer Leverkusen (amigável)",
+      "confianca": "alta",
+      "fonte": "https://khelnow.com/football/nottingham-forest-vs-bayer-leverkusen-lineups-pre-season-friendly-202608",
+      "titulares": ["Sels", "Diomande", "Milenkovic", "Murillo", "Aina", "Sangare",
+                    "Schlager", "Williams", "Gibbs-White", "Ndoye", "Igor Jesus"]
+    },
+    "Chelsea": {
+      "data": "2026-08-15",
+      "jogo": "Chelsea 3-1 Real Sociedad (amigável)",
+      "confianca": "alta",
+      "fonte": "https://lastwordonsports.com/football/2026/08/15/chelsea-confirmed-lineup-real-sociedad/",
+      "titulares": ["Robert Sanchez", "Fofana", "Lacroix", "Colwill", "Neto", "James",
+                    "Caicedo", "Palestra", "Palmer", "Joao Pedro", "Rogers"]
+    },
+    "Aston Villa": {
+      "data": "2026-08-12",
+      "jogo": "Aston Villa na Supertaça Europeia",
+      "confianca": "alta",
+      "fonte": "https://sports.yahoo.com/articles/aston-villa-predicted-lineup-team-051500703.html",
+      "titulares": ["Bizot", "Cash", "Lindelof", "Torres", "Maatsen", "Kamara",
+                    "Gomes", "McGinn", "Buendia", "Hemmings", "Madjo"]
+    },
+    "Everton": {
+      "data": "2026-08-15",
+      "jogo": "Everton vs Lille (amigável)",
+      "confianca": "alta",
+      "fonte": "https://khelnow.com/football/everton-vs-lille-full-lineups-pre-season-202608",
+      "titulares": ["Pickford", "Rohl", "Tarkowski", "Branthwaite", "Mykolenko",
+                    "Armstrong", "Hackney", "Dewsbury-Hall", "Dibling", "Barry", "Ndiaye"]
+    },
+    "Brighton": {
+      "data": "2026-08-15",
+      "jogo": "Brighton 1-0 Bologna (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.skysports.com/football/brighton-and-hove-albion-vs-bologna/teams/577491",
+      "titulares": ["Verbruggen", "Wieffer", "Vuskovic", "Boscagli", "Kadioglu",
+                    "Gomez", "Gross", "Ayari", "De Cuyper", "Hinshelwood", "Rutter"]
+    },
+    "Fulham": {
+      "data": "2026-08-12",
+      "jogo": "Málaga vs Fulham (amigável)",
+      "confianca": "alta",
+      "fonte": "https://khelnow.com/football/malaga-vs-fulham-full-lineups-pre-season-202608",
+      "titulares": ["Leno", "Castagne", "Andersen", "Bassey", "Robinson", "Berge",
+                    "Iwobi", "Bobb", "Smith Rowe", "Kevin", "Gonzalo"]
+    },
+    "Leeds": {
+      "data": "2026-08-15",
+      "jogo": "Leeds vs Augsburg (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.leedsunited.com/en/news/team-news-starting-xi-announced-for-fc-augsburg-friendly",
+      "titulares": ["Trafford", "Bogle", "Rodon", "Bijol", "Muharemovic", "Justin",
+                    "Ampadu", "Stach", "Aaronson", "Wilson", "Calvert-Lewin"]
+    },
+    "Brentford": {
+      "data": "2026-08-15",
+      "jogo": "Brentford 7-0 Eintracht Frankfurt (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.fantasyfootballscout.co.uk/2026/08/16/fpl-pre-season-thiago-schade-braces-sangare-impact-bournemouth-injuries",
+      "titulares": ["Kelleher", "Kayode", "Ajer", "Collins", "Lewis-Potter", "Janelt",
+                    "Sangare", "Jensen", "Ouattara", "Schade", "Thiago"]
+    },
+    "Newcastle": {
+      "data": "2026-08-15",
+      "jogo": "Newcastle vs Bayer Leverkusen (amigável)",
+      "confianca": "alta",
+      "fonte": "https://khelnow.com/football/newcastle-united-vs-bayer-leverkusen-full-lineups-pre-season-202608",
+      "titulares": ["Hornicek", "Miley", "Thiaw", "Botman", "Hall", "Steur",
+                    "Elanga", "Woltemade", "Barnes", "Wissa"]
+    },
+    "Coventry City": {
+      "data": "2026-08-15",
+      "jogo": "Coventry 2-0 Monaco (amigável)",
+      "confianca": "alta",
+      "fonte": "https://www.fantasyfootballscout.co.uk/2026/08/15/fpl-pre-season-5-0m-forward-boost-4-0m-coventry-defender-clues",
+      "titulares": ["Rushworth", "van Ewijk", "Thomas", "Amenda", "Dasilva", "Onyeka",
+                    "Grimes", "Yirenkyi", "Tchaouna", "Simms", "Thomas-Asante"]
+    },
+    "Crystal Palace": {
+      "data": "2026-08-07",
+      "jogo": "Fulham 1-2 Crystal Palace (amigável)",
+      "confianca": "media",
+      "_porque_media": "Não foi o último amigável (o de 15/08 com o Freiburg não tem onze publicado) e o Muñoz falhou este jogo por motivo confirmado pelo treinador.",
+      "fonte": "https://www.cpfc.co.uk/news/first-team/team-news-palace-fulham-friendly/",
+      "titulares": ["Benitez", "Riad", "Richards", "Canvot", "Cardines", "Kamada",
+                    "Wharton", "Mitchell", "Sarr", "Nketiah", "Strand Larsen"]
+    }
+  }
+}

@@ -84,8 +84,14 @@ def rss_data_para_iso(pubdate):
         return None
 
 
+# Letras que o NFD não decompõe (não são letra + acento).
+TRADUZ = str.maketrans({"ø": "o", "Ø": "O", "đ": "d", "Đ": "D", "ł": "l", "Ł": "L",
+                        "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ß": "ss",
+                        "þ": "th", "ð": "d"})
+
+
 def sem_acentos(txt):
-    return "".join(c for c in unicodedata.normalize("NFD", txt)
+    return "".join(c for c in unicodedata.normalize("NFD", txt.translate(TRADUZ))
                    if unicodedata.category(c) != "Mn")
 
 
@@ -338,6 +344,79 @@ def fetch_jornadas(game, anterior):
     return saida
 
 
+def _tokens(txt):
+    limpo = re.sub(r"[.'’]", " ", sem_acentos(txt or "").lower())
+    return {t for t in limpo.split() if len(t) >= 3}
+
+
+def casar_nome(nome, candidatos):
+    """Nome escrito num relato -> jogador do FPL, dentro do mesmo clube.
+
+    Pontua pelos tokens em comum (nome próprio, apelidos e web_name), o que
+    apanha tanto "Bruno Fernandes" como "Alisson" ou "Van Dijk". Empates entre
+    jogadores diferentes ficam por resolver — melhor nenhum do que o errado."""
+    alvo = _tokens(nome)
+    if not alvo:
+        return None
+    melhor, pontos, empate = None, 0, False
+    for p in candidatos:
+        seus = _tokens(f'{p["first_name"]} {p["second_name"]} {p["web_name"]}')
+        comuns = len(alvo & seus)
+        if comuns > pontos:
+            melhor, pontos, empate = p["id"], comuns, False
+        elif comuns == pontos and comuns > 0 and melhor != p["id"]:
+            empate = True
+    return None if (empate or pontos == 0) else melhor
+
+
+def fetch_preepoca(nomes_clubes, players):
+    """Onzes da pré-época, a partir do ficheiro curado scripts/preepoca.json.
+
+    A API do FPL não tem pré-época e o TheSportsDB (a única API gratuita
+    aceitável que encontrei) não traz constituição das equipas nos amigáveis,
+    só em jogos oficiais — confirmado em 8 clubes a 2026-08-21. Como a
+    pré-época já acabou, os dados são estáticos e ficam num ficheiro editável
+    à mão, com a fonte de cada jogo."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "preepoca.json")
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            bruto = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(f"Aviso: preepoca.json não lido ({exc}).", file=sys.stderr)
+        return {}
+
+    por_clube = {}
+    for p in players:
+        por_clube.setdefault(p["team"], []).append(p)
+    id_por_nome = {nome: tid for tid, nome in nomes_clubes.items()}
+
+    saida = {}
+    for nome, dados in (bruto.get("clubes") or {}).items():
+        tid = id_por_nome.get(nome)
+        if tid is None:
+            print(f"Aviso: clube '{nome}' do preepoca.json não existe na liga.", file=sys.stderr)
+            continue
+        candidatos = por_clube.get(tid, [])
+        def ids(lista):
+            saiu = []
+            for n in lista or []:
+                pid = casar_nome(n, candidatos)
+                if pid is None:
+                    print(f"Aviso: pré-época {nome}: '{n}' sem correspondência.", file=sys.stderr)
+                else:
+                    saiu.append(pid)
+            return sorted(set(saiu))
+        saida[str(tid)] = {
+            "data": dados.get("data"),
+            "jogo": dados.get("jogo"),
+            "fonte": dados.get("fonte"),
+            "confianca": dados.get("confianca", "media"),
+            "titulares": ids(dados.get("titulares")),
+            "suplentes": ids(dados.get("suplentes")),
+        }
+    return saida
+
+
 def snapshot_historico(players, anterior):
     """Agregados da época anterior, congelados antes de a nova época os substituir.
 
@@ -439,6 +518,7 @@ def main():
         "players": players,
         "fixtures": fixtures,
         "jornadas": fetch_jornadas(game, anterior),
+        "preepoca": fetch_preepoca(nomes_clubes, players),
         "historico": snapshot_historico(players, anterior),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
