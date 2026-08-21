@@ -180,6 +180,37 @@ function initMinhaEquipa() {
   ).join("");
 }
 
+/* ---------- Equipas (cartão por gestor) ---------- */
+
+function initEquipas() {
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const rankPor = Object.fromEntries(D.standings.map((s) => [s.league_entry, s.rank]));
+  const ordenadas = D.entries.slice().sort((a, b) =>
+    (rankPor[a.id] ?? a.waiver_pick ?? 99) - (rankPor[b.id] ?? b.waiver_pick ?? 99));
+
+  $("cartoes-equipas").innerHTML = ordenadas.map((e) => {
+    const plantel = D.players.filter((p) => p.owner === e.entry_id);
+    const fora = plantel.filter((p) => STATUS_FORA.has(p.status)).length;
+    const duvidas = plantel.filter((p) => p.status === "d").length;
+    const sou = eu && e.id === eu.id;
+    const badges =
+      (fora ? '<span class="estado bad">' + fora + " fora</span>" : "") +
+      (duvidas ? '<span class="estado warn">' + duvidas + (duvidas === 1 ? " dúvida" : " dúvidas") + "</span>" : "") +
+      (!fora && !duvidas ? '<span class="estado ok">plantel completo</span>' : "");
+    const corpo = [1, 2, 3, 4].map((pos) =>
+      grupoPosHTML(pos, plantel.filter((p) => p.element_type === pos).sort(porDraftRank), true)
+    ).join("");
+    return '<details class="cartao"' + (sou ? " open" : "") + ">" +
+      "<summary>" +
+        '<span class="nome">' + esc(e.entry_name) + (sou ? " ★" : "") + "</span>" +
+        '<span class="clube">' + esc(e.manager) + " · waiver #" + (e.waiver_pick ?? "?") + "</span>" +
+        '<span class="badges">' + badges + "</span>" +
+      "</summary>" +
+      '<div class="corpo">' + (corpo || '<p class="nota">Sem plantel.</p>') + "</div>" +
+    "</details>";
+  }).join("");
+}
+
 /* ---------- Liga ---------- */
 
 function initLiga() {
@@ -309,6 +340,7 @@ async function main() {
   initBoletim(noticias);
   initLiga();
   initMinhaEquipa();
+  initEquipas();
   initJogadores();
   initTabs();
 }

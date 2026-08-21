@@ -102,6 +102,7 @@ def main():
                 "entry_name": e["entry_name"],
                 "manager": f'{e["player_first_name"]} {e["player_last_name"]}',
                 "short_name": e["short_name"],
+                "waiver_pick": e.get("waiver_pick"),
             }
             for e in details["league_entries"]
         ],

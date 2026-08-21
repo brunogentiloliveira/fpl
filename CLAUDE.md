@@ -34,6 +34,13 @@ Base: `https://draft.premierleague.com/api`
   `standings[]` (league_entry, rank, last_rank, total, event_total) — rank/total são null antes da GW1.
 - `GET /league/{id}/element-status`: `element_status[]` (element, owner [**entry_id** de league_entries
   ou null se livre], status, in_accepted_trade).
+- Explorados em 2026-08-21 (pré-época): `GET /entry/{entry_id}/public` (entry com event_points/
+  overall_points, null antes da GW1); `GET /entry/{entry_id}/history` (**resultados por jornada**,
+  `history: []` antes da época); `GET /entry/{entry_id}/event/{ev}` (404 "No pick history" antes
+  da GW1 — escolhas por jornada); `GET /event/{ev}/live` (stats ao vivo por jogador + fixtures);
+  `GET /draft/league/{id}/transactions` (waivers/free agency da liga: element_in/out, entry,
+  event, kind, result). **Não existem** `/league/{id}/` (raiz), `/league/{id}/standings`
+  nem `/league/{id}/trades`.
 
 ## Arquitetura
 
@@ -65,9 +72,12 @@ que já tem fallback.
   A deteção de novidades compara com o data.json anterior no fetch_data.py (`news_new`;
   primeira execução nunca marca nada). A equipa é detetada pelo apelido do gestor
   (regex /gentil/i em app.js), com fallback para o nome "Buendia Porro".
-- **Fase 3 (por fazer)**: separador "Equipas" — cartão por gestor (15 por posição, contagem de
-  lesionados). A liga é classic, não h2h, portanto sem confrontos; explorar `/api/league/{ID}/`
-  para resultados por jornada antes de implementar.
+- **Fase 3 (feita)**: separador "Equipas" — cartão `<details>` por gestor, ordenado por rank
+  (fallback waiver_pick antes da época): plantel de 15 por posição, contagem "N fora" /
+  "N dúvidas" / "plantel completo", equipa do utilizador com ★ e aberta por omissão.
+  Sem confrontos (liga classic). `waiver_pick` acrescentado às entries do data.json.
+  Quando a época arrancar, `/entry/{id}/history` dá resultados por jornada (ver secção API)
+  se se quiser enriquecer os cartões.
 - **Fase 4 (opcional, por fazer)**: transferências confirmadas e rumores via RSS — avaliar
   primeiro 2-3 fontes públicas com prós/contras e propor ao utilizador antes de implementar.
   Sem scraping de sites que o proíbam.

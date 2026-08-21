@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=2">
+<link rel="stylesheet" href="styles.css?v=3">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -25,6 +25,7 @@
   <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
   <button role="tab" id="tab-equipa" aria-controls="painel-equipa" aria-selected="false" tabindex="-1" aria-label="A minha equipa">Equipa</button>
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
+  <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
 </nav>
 
@@ -49,6 +50,11 @@
   <section id="painel-boletim" role="tabpanel" aria-labelledby="tab-boletim" hidden>
     <ul class="boletim" id="lista-boletim"></ul>
     <p class="nota" id="nota-boletim" hidden>Sem notícias de momento.</p>
+  </section>
+
+  <section id="painel-equipas" role="tabpanel" aria-labelledby="tab-equipas" hidden>
+    <p class="nota">Liga classic (sem confrontos): a pontuação por jornada aparece no separador Liga.</p>
+    <div id="cartoes-equipas"></div>
   </section>
 
   <section id="painel-jogadores" role="tabpanel" aria-labelledby="tab-jogadores" hidden>
@@ -80,6 +86,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
