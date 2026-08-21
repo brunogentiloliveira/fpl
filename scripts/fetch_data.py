@@ -6,7 +6,9 @@ Só usa a stdlib. A API é pública e não requer autenticação.
 """
 import json
 import os
+import re
 import sys
+import unicodedata
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -14,12 +16,38 @@ from email.utils import parsedate_to_datetime
 
 BASE = "https://draft.premierleague.com/api"
 SKY_RSS = "https://www.skysports.com/rss/12691"  # Sky Sports Transfer Centre
+
+# Feeds por clube do Sky Sports (ids confirmados por sondagem em 2026-08-21).
+# Chave = "name" do clube no bootstrap-static.
+SKY_CLUBES = {
+    "Arsenal": 11670, "Aston Villa": 11677, "Bournemouth": 11743,
+    "Brentford": 11748, "Brighton": 11741, "Chelsea": 11668,
+    "Coventry City": 11710, "Crystal Palace": 11706, "Everton": 11671,
+    "Fulham": 11681, "Hull City": 11714, "Ipswich Town": 11707,
+    "Leeds": 11715, "Liverpool": 11669, "Man City": 11679,
+    "Man Utd": 11667, "Newcastle": 11678, "Nott'm Forest": 11727,
+    "Spurs": 11675, "Sunderland": 11695,
+}
+
+# Um item é tratado como conferência/antevisão (e não notícia solta) se bater aqui.
+CONF_PADROES = (
+    "says", "said", "confirms", "confident", "expects", "insists", "admits",
+    "reveals", "latest:", "team news", "press conference", "injury", "injured",
+    "ruled out", "doubt", "fitness", "return", "available", "boss", "line-up",
+    "lineup", "starting", "suspended", "ban", "back in", "sidelined", "fit",
+)
+# Ruído promocional/editorial que não interessa para escalar a equipa.
+CONF_RUIDO = (
+    "super 6", "sky bet", "free bet", "odds", "win £", "quiz", "papers:",
+    "predictions", "transfer centre live", "watch:", "highlights", "podcast",
+)
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "site", "data")
 
 PLAYER_FIELDS = (
     "id", "web_name", "first_name", "second_name", "team", "element_type",
     "draft_rank", "total_points", "status", "news", "news_added",
     "chance_of_playing_next_round", "form", "points_per_game",
+    "minutes", "starts",
 )
 
 
@@ -40,29 +68,86 @@ def rss_data_para_iso(pubdate):
         return None
 
 
+def sem_acentos(txt):
+    return "".join(c for c in unicodedata.normalize("NFD", txt)
+                   if unicodedata.category(c) != "Mn")
+
+
+def ler_rss(url, limite=20):
+    req = urllib.request.Request(url, headers={"User-Agent": "fpl-draft-dashboard"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        root = ET.fromstring(resp.read())
+    itens = []
+    for item in root.iter("item"):
+        titulo = (item.findtext("title") or "").strip()
+        if not titulo:
+            continue
+        itens.append({
+            "titulo": titulo,
+            "link": (item.findtext("link") or "").strip(),
+            "data": rss_data_para_iso(item.findtext("pubDate")),
+            "resumo": " ".join((item.findtext("description") or "").split())[:220],
+        })
+        if len(itens) >= limite:
+            break
+    return itens
+
+
 def fetch_noticias_mercado():
     """Feed de transferências da Sky. Nunca deve partir a recolha principal."""
     try:
-        req = urllib.request.Request(SKY_RSS, headers={"User-Agent": "fpl-draft-dashboard"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            root = ET.fromstring(resp.read())
-        itens = []
-        for item in root.iter("item"):
-            titulo = (item.findtext("title") or "").strip()
-            if not titulo:
-                continue
-            baixa = titulo.lower()
-            itens.append({
-                "titulo": titulo,
-                "link": (item.findtext("link") or "").strip(),
-                "data": rss_data_para_iso(item.findtext("pubDate")),
-                "rumor": baixa.startswith("papers") or "rumour" in baixa,
-            })
-        return itens[:20]
+        itens = ler_rss(SKY_RSS)
     except Exception as exc:
         print(f"Aviso: RSS da Sky falhou ({exc}); a seguir sem notícias externas.",
               file=sys.stderr)
         return []
+    for it in itens:
+        baixa = it["titulo"].lower()
+        it["rumor"] = baixa.startswith("papers") or "rumour" in baixa
+    return itens
+
+
+def fetch_conferencias(clubes, meus):
+    """Antevisões/conferências dos clubes onde tenho jogadores.
+
+    `clubes`: [(team_id, nome)]. Cruza cada item com os nomes do meu plantel
+    para assinalar quem é mencionado. Falhas de feed são toleradas."""
+    def padrao(p):
+        nomes = {p["web_name"]}
+        if p.get("second_name"):
+            nomes.add(p["second_name"].split()[-1])
+        partes = [re.escape(sem_acentos(n).lower()) for n in nomes if len(n) >= 4]
+        return re.compile(r"\b(" + "|".join(partes) + r")\b") if partes else None
+
+    saida = []
+    for team_id, nome in clubes:
+        # Só cruzar com os meus jogadores deste clube: evita falsos positivos
+        # (apelidos comuns) em notícias que mencionam outras equipas.
+        alvos = [(p["id"], padrao(p)) for p in meus if p["team"] == team_id]
+        alvos = [(pid, rx) for pid, rx in alvos if rx]
+        rid = SKY_CLUBES.get(nome)
+        if not rid:
+            print(f"Aviso: sem feed conhecido para {nome}.", file=sys.stderr)
+            continue
+        try:
+            itens = ler_rss(f"https://www.skysports.com/rss/{rid}", limite=25)
+        except Exception as exc:
+            print(f"Aviso: feed de {nome} falhou ({exc}).", file=sys.stderr)
+            continue
+
+        filtrados = []
+        for it in itens:
+            texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
+            if any(r in texto for r in CONF_RUIDO):
+                continue
+            it["conferencia"] = any(k in texto for k in CONF_PADROES)
+            it["mencoes"] = [pid for pid, rx in alvos if rx.search(texto)]
+            filtrados.append(it)
+        # Data mais recente primeiro; depois menções e conferências ao topo.
+        filtrados.sort(key=lambda i: i["data"] or "", reverse=True)
+        filtrados.sort(key=lambda i: (not i["mencoes"], not i["conferencia"]))
+        saida.append({"team_id": team_id, "nome": nome, "itens": filtrados[:8]})
+    return saida
 
 
 def load_previous_news(out_path):
@@ -119,6 +204,16 @@ def main():
     events = bootstrap["events"]["data"]
     next_ev = pick_next_event(events, game)
 
+    # Conferências: só os clubes onde tenho jogadores (equipa detetada pelo apelido).
+    apelido = os.environ.get("MEU_GESTOR", "Gentil").strip().lower()
+    eu = next((e for e in details["league_entries"]
+               if apelido in f'{e["player_first_name"]} {e["player_last_name"]}'.lower()), None)
+    nomes_clubes = {t["id"]: t["name"] for t in bootstrap["teams"]}
+    meus = [p for p in players if eu and p["owner"] == eu["entry_id"]]
+    clubes = sorted({(p["team"], nomes_clubes[p["team"]]) for p in meus}, key=lambda c: c[1])
+    if not eu:
+        print(f"Aviso: gestor '{apelido}' não encontrado; sem conferências.", file=sys.stderr)
+
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "league_id": int(league_id),
@@ -150,6 +245,10 @@ def main():
         "teams": {str(t["id"]): {"name": t["name"], "short_name": t["short_name"]}
                   for t in bootstrap["teams"]},
         "players": players,
+        "conferencias": {
+            "equipa": eu["entry_name"] if eu else None,
+            "clubes": fetch_conferencias(clubes, meus),
+        },
         "mercado": {
             "noticias": fetch_noticias_mercado(),
             "transacoes": [

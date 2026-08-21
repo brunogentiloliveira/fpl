@@ -42,6 +42,17 @@ Base: `https://draft.premierleague.com/api`
   event, kind, result). **Não existem** `/league/{id}/` (raiz), `/league/{id}/standings`
   nem `/league/{id}/trades`.
 
+## Feeds RSS do Sky Sports (ids confirmados por sondagem em 2026-08-21)
+
+`https://www.skysports.com/rss/{id}` — 12691 Transfer Centre; por clube: Man Utd 11667,
+Chelsea 11668, Liverpool 11669, Arsenal 11670, Everton 11671, Spurs 11675, Aston Villa 11677,
+Newcastle 11678, Man City 11679, Fulham 11681, Sunderland 11695, Crystal Palace 11706,
+Ipswich 11707, Coventry 11710, Hull 11714, Leeds 11715, Nott'm Forest 11727, Brighton 11741,
+Bournemouth 11743, Brentford 11748 (mapa completo em `SKY_CLUBES`, chaveado pelo `name` do
+bootstrap). Itens: title, description, link, pubDate (BST/GMT), category. Alternativa avaliada:
+feeds por clube da BBC (`feeds.bbci.co.uk/sport/football/teams/{slug}/rss.xml`) — funcionam mas
+com slugs irregulares (`afc-bournemouth`, `manchester-united`) e menos citações de treinador.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
@@ -84,3 +95,15 @@ que já tem fallback.
   Transfer Centre (`skysports.com/rss/12691`), escolhido pelo utilizador em 2026-08-21 entre
   Sky/Guardian/BBC; lido no fetch_data.py (stdlib ET, falha tolerada sem partir a recolha),
   itens "Papers"/"rumour" etiquetados como rumor. Tudo em `data.json → mercado`.
+- **Separador "Conferências" (feito 2026-08-21, pedido do utilizador)**: antevisões de imprensa
+  dos clubes onde tenho jogadores + lista de jogadores meus em risco de não jogar/não ser titular.
+  - Recolha: `fetch_conferencias()` lê o feed Sky de cada clube do meu plantel (equipa detetada
+    pelo apelido, env `MEU_GESTOR`, default "Gentil"), filtra ruído promocional (`CONF_RUIDO`),
+    marca `conferencia` por palavras-chave (`CONF_PADROES`) e cruza os nomes dos **meus jogadores
+    desse clube** (sem acentos, `\b`) → `mencoes`. Cruzar só com o clube evita falsos positivos
+    de apelidos comuns. Falhas de feed são toleradas. Sai em `data.json → conferencias`.
+  - Risco (calculado no app.js, `riscoJogador`): nível 3 fora (status i/s/u/n), 2 dúvida ou
+    rotação forte, 1 a vigiar. Rotação usa `minutes`/`starts` (novos em PLAYER_FIELDS):
+    antes da época compara com 38 jornadas (≤12 titularidades = risco alto, ≤21 = vigiar);
+    com época a decorrer usa `starts/current_event` (<0.4 alto, <0.7 vigiar) e só a partir da
+    GW3. Se o jogador já não joga, a linha de rotação é omitida.

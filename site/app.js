@@ -295,6 +295,118 @@ function initJogadores() {
   aplicarFiltros();
 }
 
+/* ---------- Conferências e risco de não jogar ---------- */
+
+const NIVEIS = { 3: "bad", 2: "bad", 1: "warn" };
+
+function riscoRotacao(p) {
+  const gw = D.game.current_event; // null antes do arranque da época
+  if (p.minutes === 0) {
+    return { nivel: 2, texto: "Sem minutos na Premier League" };
+  }
+  if (gw == null) {
+    // starts/minutes ainda são da época passada (38 jornadas)
+    if (p.starts <= 12) {
+      return { nivel: 2, texto: "Só " + p.starts + " titularidades em 38 na época passada" };
+    }
+    if (p.starts <= 21) {
+      return { nivel: 1, texto: p.starts + " titularidades em 38 na época passada" };
+    }
+    return null;
+  }
+  if (gw < 3) return null; // amostra demasiado pequena
+  const razao = p.starts / gw;
+  if (razao < 0.4) return { nivel: 2, texto: "Titular em " + p.starts + " de " + gw + " jornadas" };
+  if (razao < 0.7) return { nivel: 1, texto: "Titular em " + p.starts + " de " + gw + " jornadas" };
+  return null;
+}
+
+function riscoJogador(p, mencionados) {
+  const motivos = [];
+  let nivel = 0;
+  const est = estadoDe(p);
+  if (STATUS_FORA.has(p.status)) {
+    nivel = 3;
+    motivos.push(est.rotulo + (p.news ? " — " + p.news : ""));
+  } else if (p.status === "d") {
+    nivel = 2;
+    motivos.push(est.rotulo + (p.news ? " — " + p.news : ""));
+  }
+  const rot = nivel < 3 ? riscoRotacao(p) : null; // se já não joga, rotação é ruído
+  if (rot) {
+    nivel = Math.max(nivel, rot.nivel);
+    motivos.push(rot.texto);
+  }
+  if (mencionados.has(p.id)) {
+    nivel = Math.max(nivel, 1);
+    motivos.push("Referido na antevisão do clube");
+  }
+  return nivel > 0 ? { nivel, motivos } : null;
+}
+
+function initConferencias() {
+  const c = D.conferencias || { clubes: [] };
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const meus = eu ? D.players.filter((p) => p.owner === eu.entry_id) : [];
+
+  const mencionados = new Set();
+  c.clubes.forEach((cl) => cl.itens.forEach((i) => i.mencoes.forEach((id) => mencionados.add(id))));
+
+  // --- Lista de risco ---
+  $("risco-legenda").textContent = D.game.current_event == null
+    ? "Estado clínico da API e titularidades da época passada (a época ainda não começou)."
+    : "Estado clínico da API e titularidades desta época.";
+
+  const emRisco = meus
+    .map((p) => ({ p, r: riscoJogador(p, mencionados) }))
+    .filter((x) => x.r)
+    .sort((a, b) => b.r.nivel - a.r.nivel || a.p.element_type - b.p.element_type);
+
+  if (emRisco.length === 0) {
+    $("nota-risco").hidden = false;
+  } else {
+    $("lista-risco").innerHTML = emRisco.map(({ p, r }) => {
+      const rotulo = r.nivel === 3 ? "Não joga" : r.nivel === 2 ? "Risco alto" : "A vigiar";
+      return '<li class="risco ' + NIVEIS[r.nivel] + '">' +
+        '<div class="linha">' +
+          '<span class="nome">' + esc(p.web_name) + "</span>" +
+          '<span class="clube">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") + "</span>" +
+          '<span class="estado ' + NIVEIS[r.nivel] + '">' + rotulo + "</span>" +
+        "</div>" +
+        "<ul class=\"motivos\">" +
+          r.motivos.map((m) => "<li>" + esc(m) + "</li>").join("") +
+        "</ul>" +
+      "</li>";
+    }).join("");
+  }
+
+  // --- Antevisões por clube ---
+  if (c.clubes.length === 0) { $("nota-conf").hidden = false; return; }
+  $("conf-clubes").innerHTML = c.clubes.map((cl) => {
+    const doClube = meus.filter((p) => p.team === cl.team_id).map((p) => p.web_name);
+    const comMencao = cl.itens.filter((i) => i.mencoes.length > 0).length;
+    const itens = cl.itens.map((i) => {
+      const data = i.data ? fmtDataHora.format(new Date(i.data)) : "";
+      const nomes = i.mencoes.map((id) => (jogadoresPorId[id] || {}).web_name).filter(Boolean);
+      return '<li class="' + (nomes.length ? "mencao" : "") + '">' +
+        '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.titulo) + "</a>" +
+        (i.conferencia ? ' <span class="estado warn">antevisão</span>' : "") +
+        (nomes.length ? ' <span class="estado bad">⚑ ' + esc(nomes.join(", ")) + "</span>" : "") +
+        ' <span class="data">' + data + "</span>" +
+        (i.resumo ? '<p class="resumo">' + esc(i.resumo) + "</p>" : "") +
+      "</li>";
+    }).join("");
+    return "<details class=\"cartao\"" + (comMencao ? " open" : "") + ">" +
+      "<summary>" +
+        '<span class="nome">' + esc(cl.nome) + "</span>" +
+        '<span class="clube">' + esc(doClube.join(", ")) + "</span>" +
+        (comMencao ? '<span class="badges"><span class="estado bad">⚑ ' + comMencao + "</span></span>" : "") +
+      "</summary>" +
+      '<div class="corpo"><ul class="wire">' + itens + "</ul></div>" +
+    "</details>";
+  }).join("");
+}
+
 /* ---------- Mercado ---------- */
 
 function nomeJogador(id) {
@@ -389,6 +501,7 @@ async function main() {
   initLiga();
   initMinhaEquipa();
   initEquipas();
+  initConferencias();
   initMercado();
   initJogadores();
   initTabs();
