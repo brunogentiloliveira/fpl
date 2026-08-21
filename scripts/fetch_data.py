@@ -8,9 +8,12 @@ import json
 import os
 import sys
 import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 BASE = "https://draft.premierleague.com/api"
+SKY_RSS = "https://www.skysports.com/rss/12691"  # Sky Sports Transfer Centre
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "site", "data")
 
 PLAYER_FIELDS = (
@@ -24,6 +27,42 @@ def get(path):
     req = urllib.request.Request(BASE + path, headers={"User-Agent": "fpl-draft-dashboard"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
+
+
+def rss_data_para_iso(pubdate):
+    """'Fri, 21 Aug 2026 07:56:00 BST' -> ISO UTC (parsedate não conhece BST)."""
+    if not pubdate:
+        return None
+    txt = pubdate.replace(" BST", " +0100").replace(" GMT", " +0000")
+    try:
+        return parsedate_to_datetime(txt).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_noticias_mercado():
+    """Feed de transferências da Sky. Nunca deve partir a recolha principal."""
+    try:
+        req = urllib.request.Request(SKY_RSS, headers={"User-Agent": "fpl-draft-dashboard"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            root = ET.fromstring(resp.read())
+        itens = []
+        for item in root.iter("item"):
+            titulo = (item.findtext("title") or "").strip()
+            if not titulo:
+                continue
+            baixa = titulo.lower()
+            itens.append({
+                "titulo": titulo,
+                "link": (item.findtext("link") or "").strip(),
+                "data": rss_data_para_iso(item.findtext("pubDate")),
+                "rumor": baixa.startswith("papers") or "rumour" in baixa,
+            })
+        return itens[:20]
+    except Exception as exc:
+        print(f"Aviso: RSS da Sky falhou ({exc}); a seguir sem notícias externas.",
+              file=sys.stderr)
+        return []
 
 
 def load_previous_news(out_path):
@@ -61,6 +100,7 @@ def main():
     game = get("/game")
     details = get(f"/league/{league_id}/details")
     status = get(f"/league/{league_id}/element-status")
+    transacoes = get(f"/draft/league/{league_id}/transactions")["transactions"]
 
     owners = {es["element"]: es["owner"] for es in status["element_status"]}
     out_path = os.path.join(OUT_DIR, "data.json")
@@ -110,6 +150,15 @@ def main():
         "teams": {str(t["id"]): {"name": t["name"], "short_name": t["short_name"]}
                   for t in bootstrap["teams"]},
         "players": players,
+        "mercado": {
+            "noticias": fetch_noticias_mercado(),
+            "transacoes": [
+                {k: t.get(k) for k in ("added", "element_in", "element_out",
+                                       "entry", "event", "kind", "result")}
+                for t in sorted(transacoes, key=lambda t: t.get("added") or "",
+                                reverse=True)[:40]
+            ],
+        },
     }
 
     os.makedirs(OUT_DIR, exist_ok=True)

@@ -78,6 +78,9 @@ que já tem fallback.
   Sem confrontos (liga classic). `waiver_pick` acrescentado às entries do data.json.
   Quando a época arrancar, `/entry/{id}/history` dá resultados por jornada (ver secção API)
   se se quiser enriquecer os cartões.
-- **Fase 4 (opcional, por fazer)**: transferências confirmadas e rumores via RSS — avaliar
-  primeiro 2-3 fontes públicas com prós/contras e propor ao utilizador antes de implementar.
-  Sem scraping de sites que o proíbam.
+- **Fase 4 (feita)**: separador "Mercado" com duas secções. (1) "Movimentos da liga":
+  waivers/free agency dos 7 gestores via `/draft/league/{id}/transactions` (40 mais recentes,
+  aceites vs recusados, nomes resolvidos). (2) "Notícias de transferências": RSS do Sky Sports
+  Transfer Centre (`skysports.com/rss/12691`), escolhido pelo utilizador em 2026-08-21 entre
+  Sky/Guardian/BBC; lido no fetch_data.py (stdlib ET, falha tolerada sem partir a recolha),
+  itens "Papers"/"rumour" etiquetados como rumor. Tudo em `data.json → mercado`.

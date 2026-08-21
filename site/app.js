@@ -21,6 +21,7 @@ const fmtDataHora = new Intl.DateTimeFormat("pt-PT", {
 let D = null; // dados carregados
 let entradasPorId = {}; // league_entry id -> entry (standings)
 let entradasPorEntryId = {}; // entry_id -> entry (owner no element-status)
+let jogadoresPorId = {}; // element id -> jogador
 
 function $(id) { return document.getElementById(id); }
 
@@ -294,6 +295,52 @@ function initJogadores() {
   aplicarFiltros();
 }
 
+/* ---------- Mercado ---------- */
+
+function nomeJogador(id) {
+  const p = jogadoresPorId[id];
+  return p ? esc(p.web_name) + ' <span class="clube">(' + nomeClube(p.team) + ")</span>" : "?";
+}
+
+function initMercado() {
+  const m = D.mercado || { noticias: [], transacoes: [] };
+
+  if (m.transacoes.length === 0) {
+    $("nota-movimentos").hidden = false;
+  } else {
+    const KINDS = { w: "waiver", f: "free agency" };
+    $("lista-movimentos").innerHTML = m.transacoes.map((t) => {
+      const eq = entradasPorEntryId[t.entry];
+      const aceite = t.result === "a";
+      const data = t.added ? fmtDataHora.format(new Date(t.added)) : "";
+      return '<li class="' + (aceite ? "" : "recusado") + '">' +
+        '<div class="linha">' +
+          '<span class="nome">' + esc(eq ? eq.entry_name : "?") + "</span>" +
+          '<span class="clube">GW' + t.event + " · " + (KINDS[t.kind] || t.kind) + "</span>" +
+          '<span class="estado ' + (aceite ? "ok" : "bad") + '">' +
+            (aceite ? "aceite" : "recusado") + "</span>" +
+          '<span class="data">' + data + "</span>" +
+        "</div>" +
+        '<p class="troca">Entra ' + nomeJogador(t.element_in) +
+          " · sai " + nomeJogador(t.element_out) + "</p>" +
+      "</li>";
+    }).join("");
+  }
+
+  if (m.noticias.length === 0) {
+    $("nota-wire").hidden = false;
+  } else {
+    $("lista-wire").innerHTML = m.noticias.map((n) => {
+      const data = n.data ? fmtDataHora.format(new Date(n.data)) : "";
+      return "<li>" +
+        '<a href="' + esc(n.link) + '" target="_blank" rel="noopener">' + esc(n.titulo) + "</a>" +
+        (n.rumor ? ' <span class="estado warn">rumor</span>' : "") +
+        ' <span class="data">' + data + "</span>" +
+      "</li>";
+    }).join("");
+  }
+}
+
 /* ---------- Separadores ---------- */
 
 function initTabs() {
@@ -334,6 +381,7 @@ async function main() {
   }
   entradasPorId = Object.fromEntries(D.entries.map((e) => [e.id, e]));
   entradasPorEntryId = Object.fromEntries(D.entries.map((e) => [e.entry_id, e]));
+  jogadoresPorId = Object.fromEntries(D.players.map((p) => [p.id, p]));
   const noticias = comNoticias();
   initCabecalho();
   initTicker(noticias);
@@ -341,6 +389,7 @@ async function main() {
   initLiga();
   initMinhaEquipa();
   initEquipas();
+  initMercado();
   initJogadores();
   initTabs();
 }

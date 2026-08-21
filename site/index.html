@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -27,6 +27,7 @@
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
   <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
+  <button role="tab" id="tab-mercado" aria-controls="painel-mercado" aria-selected="false" tabindex="-1">Mercado</button>
 </nav>
 
 <main>
@@ -80,12 +81,21 @@
     </table>
     <button type="button" class="mostrar-mais" id="mostrar-mais" hidden>Mostrar mais</button>
   </section>
+  <section id="painel-mercado" role="tabpanel" aria-labelledby="tab-mercado" hidden>
+    <h2 class="sec-titulo">Movimentos da liga</h2>
+    <ul class="movimentos" id="lista-movimentos"></ul>
+    <p class="nota" id="nota-movimentos" hidden>Ainda sem movimentos na liga.</p>
+    <h2 class="sec-titulo">Notícias de transferências</h2>
+    <p class="nota">Fonte: Sky Sports Transfer Centre (em inglês). Itens "Papers" são rumores da imprensa.</p>
+    <ul class="wire" id="lista-wire"></ul>
+    <p class="nota" id="nota-wire" hidden>Sem notícias externas nesta atualização.</p>
+  </section>
 </main>
 
 <footer class="rodape">
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
