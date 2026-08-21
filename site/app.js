@@ -387,7 +387,95 @@ function utilizacao(p) {
     });
 }
 
+/* --- Pontos esperados a partir das estatísticas subjacentes --- */
+
+// Tabela de pontos do FPL, por posição (1 GR, 2 DEF, 3 MED, 4 AV).
+const PONTOS_GOLO = { 1: 6, 2: 6, 3: 5, 4: 4 };
+const PONTOS_CS = { 1: 4, 2: 4, 3: 1, 4: 0 };
+const PONTOS_PRESENCA = 2; // por 90 minutos jogados
+// Peso do modelo de xG/xA contra a taxa de pontos que o jogador fez mesmo.
+// As estatísticas subjacentes preveem melhor o futuro; os pontos reais apanham
+// o que o modelo não tem (bónus por BPS, contribuições defensivas).
+const PESO_ESPERADO = 0.5;
+
+function num(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Pontos por 90 minutos estimados a partir do que o jogador gera, não do que
+ * marcou: golos esperados, assistências esperadas, probabilidade de baliza a
+ * zero, defesas, bónus e cartões.
+ *
+ * Nota sobre penáltis e bolas paradas: os campos de cargo (`penalties_order`,
+ * `direct_freekicks_order`, cantos) vêm vazios nesta API para todos os
+ * jogadores, por isso não há como dar um bónus explícito a quem os marca. Mas o
+ * valor que geram já está aqui: um penálti vale ~0.79 de xG e os cantos e
+ * livres alimentam o xA de quem os bate.
+ */
+// Fator que alinha a média do modelo esperado com a dos pontos realmente feitos.
+// O modelo não tem tudo (as contribuições defensivas vêm a zero nesta API), por
+// isso ficaria sistematicamente abaixo; isto corrige o nível sem mexer na ordem.
+let calibEsperado = 1;
+
+function calibrarEsperado() {
+  let real = 0;
+  let esperado = 0;
+  D.players.forEach((p) => {
+    const h = historicoDe(p);
+    if (!h || !h.minutes || h.minutes < MIN_PRIOR) return;
+    const c = componentesPP90(p, h, true);
+    if (!c) return;
+    real += (h.total_points / h.minutes) * 90;
+    esperado += c.total;
+  });
+  calibEsperado = esperado > 0 ? real / esperado : 1;
+}
+
+function componentesPP90(p, hist, semCalibrar) {
+  const min = hist.minutes || 0;
+  if (min < 90) return null; // amostra curta demais para uma taxa por 90
+  const por90 = (v) => (num(v) / min) * 90;
+  const pos = p.element_type;
+
+  const golos = por90(hist.expected_goals) * (PONTOS_GOLO[pos] || 4);
+  const assist = por90(hist.expected_assists) * 3;
+  // Poisson: probabilidade de a equipa não sofrer, dado o xG concedido por 90.
+  const xgc90 = por90(hist.expected_goals_conceded);
+  const baliza = Math.exp(-xgc90) * (PONTOS_CS[pos] || 0);
+  const defesas = pos === 1 ? por90(hist.saves) / 3 : 0;
+  const bonus = por90(hist.bonus);
+  const cartoes = -por90(hist.yellow_cards) - 3 * por90(hist.red_cards);
+  const autoGolos = -2 * por90(hist.own_goals);
+
+  const total = PONTOS_PRESENCA + golos + assist + baliza + defesas + bonus +
+    cartoes + autoGolos;
+  const k = semCalibrar ? 1 : calibEsperado;
+  return {
+    total: Math.max(0, total) * k,
+    presenca: PONTOS_PRESENCA * k,
+    golos: golos * k,
+    assist: assist * k,
+    baliza: baliza * k,
+    defesas: defesas * k,
+    bonus: bonus * k,
+    penalizacoes: (cartoes + autoGolos) * k,
+  };
+}
+
+/** Taxa de pontos por 90 usada como base: mistura o esperado com o realizado. */
+function taxaBase(p, hist) {
+  const min = hist.minutes || 0;
+  const realizada = min > 0 ? (hist.total_points / min) * 90 : null;
+  const comp = componentesPP90(p, hist);
+  if (comp === null) return realizada;
+  if (realizada === null) return comp.total;
+  return PESO_ESPERADO * comp.total + (1 - PESO_ESPERADO) * realizada;
+}
+
 function construirPriors() {
+  calibrarEsperado();
   priorsPos = {};
   [1, 2, 3, 4].forEach((pos) => {
     priorsPos[pos] = D.players
@@ -396,7 +484,7 @@ function construirPriors() {
         const h = historicoDe(p);
         return {
           rank: p.draft_rank ?? 1e9,
-          pp90: (h.total_points / h.minutes) * 90,
+          pp90: taxaBase(p, h),
           minJogo: Math.min(90, h.minutes / JOGOS_EPOCA),
         };
       })
@@ -448,8 +536,10 @@ function projecao(p, ignorarAusencia) {
   const prior = priorDe(p);
   const hist = historicoDe(p);
   // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
-  const pp90Hist =
-    ((hist.total_points + (prior.pp90 * MIN_PRIOR) / 90) / (hist.minutes + MIN_PRIOR)) * 90;
+  // Taxa combinada (esperado + realizado), encolhida para o prior da posição.
+  const taxa = taxaBase(p, hist);
+  const pp90Hist = taxa === null ? prior.pp90
+    : (taxa * hist.minutes + prior.pp90 * MIN_PRIOR) / (hist.minutes + MIN_PRIOR);
   let xminHist = hist.minutes > 0 ? Math.min(90, hist.minutes / JOGOS_EPOCA) : prior.minJogo;
 
   // Jogos já disputados nesta época: a realidade manda mais do que o histórico.
@@ -508,7 +598,22 @@ function projecao(p, ignorarAusencia) {
   const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !STATUS_FORA.has(p.status);
-  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs };
+  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
+    componentes: componentesPP90(p, hist) };
+}
+
+/** Texto da decomposição dos pontos por 90, para tooltip. */
+function decomporPP90(c) {
+  const partes = [
+    "presença " + c.presenca.toFixed(1),
+    "golos esperados " + c.golos.toFixed(1),
+    "assistências esperadas " + c.assist.toFixed(1),
+  ];
+  if (c.baliza >= 0.05) partes.push("baliza a zero " + c.baliza.toFixed(1));
+  if (c.defesas >= 0.05) partes.push("defesas " + c.defesas.toFixed(1));
+  if (c.bonus >= 0.05) partes.push("bónus " + c.bonus.toFixed(1));
+  if (c.penalizacoes <= -0.05) partes.push("cartões " + c.penalizacoes.toFixed(1));
+  return partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
 }
 
 function linhaProjecao(p, pr) {
@@ -533,7 +638,9 @@ function linhaProjecao(p, pr) {
       '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
       (recentes ? " · jogou " + recentes : "") +
       (jogos ? " · " + jogos : "") + "</span></td>" +
-    '<td class="num">' + pr.pp90.toFixed(1) + "</td>" +
+    '<td class="num"' + (pr.componentes
+      ? ' title="' + esc(decomporPP90(pr.componentes)) + '"' : "") + ">" +
+      pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
     '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +
     '<td class="num">' + pr.prox3.toFixed(1) + "</td>" +

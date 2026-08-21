@@ -76,7 +76,15 @@ PLAYER_FIELDS = (
     # estatísticas da época anterior, para as projeções
     "goals_scored", "assists", "clean_sheets", "saves", "bonus",
     "expected_goals", "expected_assists", "expected_goal_involvements",
+    "expected_goals_conceded", "yellow_cards", "red_cards", "own_goals",
     "defensive_contribution",
+)
+
+# Estatísticas congeladas da época anterior: base do modelo de pontos esperados.
+HIST_FIELDS = (
+    "minutes", "starts", "total_points", "goals_scored", "assists", "clean_sheets",
+    "saves", "bonus", "yellow_cards", "red_cards", "own_goals",
+    "expected_goals", "expected_assists", "expected_goals_conceded",
 )
 
 # Valores de transferência nos títulos/resumos das notícias (ex.: "£85m deal").
@@ -531,17 +539,18 @@ def fetch_preepoca(nomes_clubes, players):
     return saida
 
 
-def snapshot_historico(players, anterior):
+def snapshot_historico(players, anterior, game):
     """Agregados da época anterior, congelados antes de a nova época os substituir.
 
     O bootstrap-static traz os totais da época passada até a nova começar; a
     partir daí passam a ser desta época. Guardar o retrato mantém a base das
     projeções quando ainda há poucos jogos disputados."""
     anteriores = (anterior or {}).get("historico")
-    if anteriores:
+    # Enquanto a época não arranca, o bootstrap ainda traz os totais da época
+    # passada, por isso vale a pena refazer o retrato (apanha campos novos).
+    if anteriores and game.get("current_event"):
         return anteriores
-    return {str(p["id"]): {"minutes": p["minutes"], "starts": p["starts"],
-                           "total_points": p["total_points"]} for p in players}
+    return {str(p["id"]): {c: p.get(c) for c in HIST_FIELDS} for p in players}
 
 
 def pick_next_event(events, game):
@@ -634,7 +643,7 @@ def main():
         "jornadas": fetch_jornadas(game, anterior),
         "preepoca": fetch_preepoca(nomes_clubes, players),
         "ffs": fetch_ffs(players, nomes_clubes),
-        "historico": snapshot_historico(players, anterior),
+        "historico": snapshot_historico(players, anterior, game),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
         "conferencias": {

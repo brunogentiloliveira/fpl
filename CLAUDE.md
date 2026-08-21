@@ -101,6 +101,29 @@ por `includes`, que também lê melhor.
 (`soNoScout`); esses aparecem com distintivo "Fora (Scout)", a data do artigo e a frase
 original. Quem tem as duas coisas mostra ambas.
 
+## Pontos esperados a partir das estatísticas subjacentes (2026-08-21)
+
+A pedido do utilizador, o modelo deixou de olhar só para os minutos e para a taxa de pontos
+realizada: passa a estimar o que o jogador **gera**.
+
+- `componentesPP90()` calcula, por 90 minutos: presença (2), **xG × 6/6/5/4** conforme a
+  posição, **xA × 3**, baliza a zero por Poisson (`exp(-xGC90)` × 4/4/1/0), defesas dos GR
+  (÷3), bónus e cartões. `taxaBase()` mistura isto meio a meio com os pontos realmente feitos
+  (`PESO_ESPERADO = 0.5`): o xG/xA prevê melhor, os pontos reais apanham o que falta ao modelo.
+- **Penáltis, livres e cantos**: os campos de cargo (`penalties_order`, `direct_freekicks_order`,
+  `corners_and_indirect_freekicks_order`) vêm **vazios para os 600 jogadores** nesta API — tal
+  como `defensive_contribution`, `tackles`, `recoveries` e `clearances_blocks_interceptions`.
+  Não há como dar bónus explícito a quem tem o cargo. Mas o valor que geram **já está no xG e
+  no xA** (um penálti vale ~0.79 de xG; cantos e livres alimentam o xA de quem os bate).
+- `calibrarEsperado()`: como o modelo não tem tudo (defensivas a zero), ficava ~14% abaixo da
+  média realizada. O fator `calibEsperado` (≈1.15) alinha os níveis sem mexer na ordenação —
+  o desvio médio contra o modelo anterior passou de −0.18 para +0.01 pts/90.
+- O `historico` no data.json passou a guardar `HIST_FIELDS` (xG, xA, xGC, defesas, bónus,
+  cartões, autogolos…) e é **refeito enquanto `current_event` for null**, para apanhar campos
+  novos enquanto o bootstrap ainda traz a época passada.
+- A coluna Pts/90 tem `title` com a decomposição (presença · golos · assistências · baliza a
+  zero · defesas · bónus · cartões), para o número não ser uma caixa preta.
+
 ## Analisador de trocas (separador "Analisar troca", 2026-08-21)
 
 Avalia uma troca concreta — recebida ou a propor — com **N jogadores de cada lado**, não só

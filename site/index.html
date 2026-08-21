@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=15">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -138,10 +138,17 @@
     <details class="cartao explicacao">
       <summary><span class="nome">Como é calculada a projeção</span></summary>
       <div class="corpo">
-        <p><strong>Pts/90</strong>: pontos por 90 minutos, puxados para a média de jogadores com
-          draft rank parecido na mesma posição — assim quem jogou pouco não fica com um valor
-          inflacionado por uma amostra pequena. Começa na época passada e vai passando para
-          <strong>o que ele faz nesta</strong> à medida que os jogos acontecem.</p>
+        <p><strong>Pts/90</strong>: metade vem dos pontos que o jogador fez mesmo e metade de um
+          modelo do que ele <strong>gera</strong> — golos esperados (xG) e assistências esperadas
+          (xA) valorizados pela tabela do FPL (golo 6/5/4 pontos conforme a posição, assistência 3),
+          probabilidade de baliza a zero a partir do xG concedido pela equipa, defesas dos
+          guarda-redes, bónus e cartões. Toca no número na tabela para veres a decomposição.
+          <strong>Penáltis, livres e cantos contam por aqui</strong>: um penálti vale cerca de 0.79
+          de xG e os cantos e livres alimentam o xA de quem os bate — a API não expõe quem tem o
+          cargo, mas o que eles geram já está nas estatísticas.</p>
+        <p>O resultado é puxado para a média de jogadores com draft rank parecido na mesma posição,
+          para quem jogou pouco não ficar com um valor inflacionado, e vai passando para
+          <strong>o que ele faz nesta época</strong> à medida que os jogos acontecem.</p>
         <p><strong>Min</strong>: minutos esperados por jornada. Sem jogos disputados, parte dos
           minutos da época passada, corrigidos pelo <strong>último ensaio de pré-época</strong>
           (titular puxa para 72 min; suplente ou ausente puxa para baixo); uma
@@ -215,6 +222,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=14"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>
