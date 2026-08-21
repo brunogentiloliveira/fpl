@@ -1402,6 +1402,113 @@ function initSeletorModo() {
   $("modo-classica").addEventListener("click", () => trocar("classica"));
 }
 
+/* --- Mini-liga da FPL clássica --- */
+
+function ligaClassica() {
+  return ((D.classica || {}).liga) || null;
+}
+
+function initLigaClassica() {
+  const liga = ligaClassica();
+  if (!liga) return;
+  const eu = (minhaEquipaClassica() || {}).id;
+  $("titulo-liga").textContent = liga.nome;
+
+  $("tabela-liga").querySelector("tbody").innerHTML = liga.participantes.map((p) =>
+    '<tr class="' + (p.entry === eu ? "eu" : "") + '">' +
+      '<td class="num">' + (p.rank ?? "–") + "</td>" +
+      "<td>" + esc(p.nome) + (p.entry === eu ? " ★" : "") +
+        '<span class="sub">' + esc(p.gestor) +
+        (p.capitao && jogadoresPorId[p.capitao]
+          ? " · capitão: " + esc(jogadoresPorId[p.capitao].web_name) : "") + "</span></td>" +
+      '<td class="num">' + (p.jornada ?? "–") + "</td>" +
+      '<td class="num forte">' + (p.total ?? 0) + "</td>" +
+    "</tr>").join("");
+  $("nota-liga").hidden = true;
+}
+
+/** Quantas equipas da liga têm cada jogador. */
+function posseNaLiga() {
+  const liga = ligaClassica();
+  const conta = {};
+  if (!liga) return conta;
+  liga.participantes.forEach((p) => {
+    (p.picks || []).forEach((id) => { conta[id] = (conta[id] || 0) + 1; });
+  });
+  return conta;
+}
+
+/**
+ * Numa mini-liga o que conta é a diferença para os outros, não os pontos
+ * absolutos: um jogador que todos têm nunca te faz ganhar terreno, e um que
+ * só tu tens é onde a liga se decide — para os dois lados.
+ */
+function initEquipasClassica() {
+  const liga = ligaClassica();
+  if (!liga) return;
+  const eu = (minhaEquipaClassica() || {}).id;
+  const posse = posseNaLiga();
+  const total = liga.participantes.length;
+  const meu = liga.participantes.find((p) => p.entry === eu);
+
+  let destaque = "";
+  if (meu) {
+    const comProj = (ids) => ids.map((id) => jogadoresPorId[id]).filter(Boolean)
+      .map((p) => ({ p, pr: projecao(p) }))
+      .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal);
+    const soMeus = comProj(meu.picks.filter((id) => posse[id] === 1));
+    const emFalta = comProj(Object.keys(posse).map(Number)
+      .filter((id) => posse[id] === total - 1 && !meu.picks.includes(id)));
+
+    const lista = (arr) => arr.slice(0, 8).map((x) =>
+      esc(x.p.web_name) + " (" + nomeClube(x.p.team) + " · " +
+      x.pr.ppjCal.toFixed(1) + ")").join(" · ") || "nenhum";
+
+    destaque =
+      '<div class="veredicto ' + (emFalta.length ? "warn" : "ok") + '">' +
+        "<p><strong>Só tu tens (" + soMeus.length + "):</strong> " + lista(soMeus) +
+        ". É aqui que ganhas ou perdes a liga.</p>" +
+        (emFalta.length
+          ? "<p><strong>Todos os outros têm e tu não (" + emFalta.length + "):</strong> " +
+            lista(emFalta) + ". Cada ponto que fizerem é terreno perdido para todos ao mesmo " +
+            "tempo — é o risco mais caro numa liga pequena.</p>"
+          : "") +
+      "</div>";
+  }
+
+  $("cartoes-equipas").innerHTML = destaque + liga.participantes.map((p) => {
+    const plantel = (p.picks || []).map((id) => jogadoresPorId[id]).filter(Boolean);
+    const titulares = new Set(p.titulares || []);
+    const porPos = { 1: [], 2: [], 3: [], 4: [] };
+    plantel.forEach((j) => porPos[j.element_type].push(j));
+    const corpo = [1, 2, 3, 4].map((pos) => {
+      if (porPos[pos].length === 0) return "";
+      const linhas = porPos[pos]
+        .sort((a, b) => projecao(b).ppjCal - projecao(a).ppjCal)
+        .map((j) => {
+          const n = posse[j.id] || 0;
+          const partilha = n === total ? "toda a liga" : n === 1 ? "só ele" : n + " equipas";
+          return '<li><div class="linha">' +
+            '<span class="nome">' + esc(j.web_name) + (j.id === p.capitao ? " (C)" : "") + "</span>" +
+            '<span class="clube">' + nomeClube(j.team) +
+              (titulares.size && !titulares.has(j.id) ? " · banco" : "") + "</span>" +
+            '<span class="pts">' + partilha + "</span></div></li>";
+        }).join("");
+      return '<section class="grupo-pos"><h3>' + POS_NOMES[pos] + " (" + porPos[pos].length +
+        ')</h3><ul class="lista-jog">' + linhas + "</ul></section>";
+    }).join("");
+
+    return "<details class=\"cartao\"" + (p.entry === eu ? " open" : "") + ">" +
+      "<summary>" +
+        '<span class="nome">' + esc(p.nome) + (p.entry === eu ? " ★" : "") + "</span>" +
+        '<span class="clube">' + esc(p.gestor) + " · " + (p.total ?? 0) + " pts</span>" +
+        '<span class="badges"><span class="estado ok">' + (p.rank ?? "–") + "º</span></span>" +
+      "</summary>" +
+      '<div class="corpo">' + (corpo || '<p class="nota">Sem escolhas nesta jornada.</p>') +
+      "</div></details>";
+  }).join("");
+}
+
 /* ---------- Sugestões da FPL clássica ---------- */
 
 function ehClassica() {
@@ -2301,7 +2408,10 @@ async function main() {
   initTicker(noticias);
   initBoletim(ordenarBoletim(noticiasBoletim()));
   initSeletorModo();
-  if (!ehClassica()) {
+  if (ehClassica()) {
+    initLigaClassica();
+    initEquipasClassica();
+  } else {
     initLiga();
     initEquipas();
   }

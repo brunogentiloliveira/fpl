@@ -419,3 +419,4 @@ main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
   border-color: var(--acento);
   color: var(--acento);
 }
+.tabela tr.eu td { background: color-mix(in srgb, var(--acento) 10%, transparent); }

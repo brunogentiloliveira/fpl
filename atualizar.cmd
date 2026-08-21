@@ -3,6 +3,7 @@ setlocal
 cd /d "%~dp0"
 set LEAGUE_ID=12258
 set FPL_ENTRY_ID=2420779
+set FPL_LEAGUE_ID=779399
 
 set "PY="
 where py >nul 2>nul && set "PY=py"

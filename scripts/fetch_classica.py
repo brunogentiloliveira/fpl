@@ -196,8 +196,52 @@ def fetch_minha_equipa(entry_id, evento):
     return dados
 
 
+def fetch_liga(league_id, evento):
+    """Mini-liga clássica: classificação e o plantel de cada participante.
+
+    Numa liga pequena vale a pena ir buscar as escolhas de todos: é o que
+    permite ver quem tem quem e quais são os diferenciais. As escolhas de uma
+    jornada só existem depois do deadline dessa jornada."""
+    if not league_id:
+        return None
+    try:
+        dados = get(f"/leagues-classic/{league_id}/standings/")
+    except Exception as exc:
+        fd.registar("Mini-liga clássica", False, exc)
+        return None
+
+    participantes = []
+    for r in (dados.get("standings") or {}).get("results", []):
+        p = {
+            "entry": r.get("entry"),
+            "nome": r.get("entry_name"),
+            "gestor": r.get("player_name"),
+            "rank": r.get("rank"),
+            "total": r.get("total"),
+            "jornada": r.get("event_total"),
+            "picks": [], "capitao": None, "chip": None,
+        }
+        for ev in range(int(evento or 1), 0, -1):
+            try:
+                picks = get(f'/entry/{p["entry"]}/event/{ev}/picks/')
+            except Exception:
+                continue
+            escolhas = picks.get("picks", [])
+            p["picks"] = [x["element"] for x in escolhas]
+            p["titulares"] = [x["element"] for x in escolhas if x.get("position", 99) <= 11]
+            p["capitao"] = next((x["element"] for x in escolhas if x.get("is_captain")), None)
+            p["chip"] = picks.get("active_chip")
+            break
+        participantes.append(p)
+
+    fd.registar("Mini-liga clássica", True,
+                f'{dados["league"]["name"]}: {len(participantes)} equipas')
+    return {"id": league_id, "nome": dados["league"]["name"], "participantes": participantes}
+
+
 def main():
     entry_id = os.environ.get("FPL_ENTRY_ID", "").strip() or None
+    league_id = os.environ.get("FPL_LEAGUE_ID", "").strip() or None
     anterior = fd.load_anterior(OUT)
 
     bootstrap = get("/bootstrap-static/")
@@ -264,6 +308,7 @@ def main():
         },
         "classica": {
             "equipa": minha,
+            "liga": fetch_liga(league_id, atual or (proximo and proximo["id"])),
             "chips": [{"nome": c.get("name"), "inicio": c.get("start_event"),
                        "fim": c.get("stop_event")} for c in bootstrap.get("chips", [])],
             "custo_transferencia": 4,

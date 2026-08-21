@@ -294,6 +294,25 @@ e a projeção do Isak caiu de 4.3 para 0.9. Três correções:
 - A cache de jornadas ganhou um guarda: uma entrada dada como finalizada mas **sem equipas**
   vem da versão com o erro e é repedida (senão o valor errado ficava lá preso).
 
+## Mini-liga da clássica (2026-08-22)
+
+`FPL_LEAGUE_ID=779399` ("Catan at home", 5 equipas) fixado no `atualizar.cmd`.
+`fetch_liga()` lê `/leagues-classic/{id}/standings/` e, por ser uma liga pequena, vai buscar
+também as **escolhas de cada participante** (`/entry/{id}/event/{ev}/picks/`, público depois do
+deadline). Fica em `classica.json → classica.liga`.
+
+Isso destranca dois separadores no modo clássico, que antes eram só do Draft:
+
+- **Liga**: classificação da mini-liga, com o capitão de cada gestor e a minha linha destacada.
+- **Equipas**: cartão por adversário com o plantel e quem está no banco, e **quantas equipas da
+  liga partilham cada jogador** ("toda a liga", "3 equipas", "só ele").
+
+No topo das Equipas há o que importa mesmo numa liga pequena: **quem só eu tenho** (é onde a
+liga se ganha ou perde) e **quem todos os outros têm e eu não** — este é o risco mais caro,
+porque cada ponto que esse jogador faz é terreno perdido para todos ao mesmo tempo. Em
+2026-08-22: 13 dos meus 15 eram só meus, e faltavam-me B.Fernandes (capitão de três deles),
+João Pedro e Calafiori.
+
 ## Equipa do utilizador na clássica
 
 `FPL_ENTRY_ID=2420779` ("Bazukas Team") está fixado no `atualizar.cmd`. O id encontra-se

@@ -33,6 +33,14 @@ o *teu* plantel, define o id da tua equipa:
 FPL_ENTRY_ID=1234567 python scripts/fetch_classica.py
 ```
 
+Para a mini-liga (classificação e planteis dos adversários), junta o id da liga:
+
+```bash
+FPL_ENTRY_ID=1234567 FPL_LEAGUE_ID=779399 python scripts/fetch_classica.py
+```
+
+O id da liga está no URL quando a abres em *Leagues & Cups*.
+
 **Como descobrir o id**: entra em fantasy.premierleague.com, abre uma mini-liga em
 *Leagues & Cups* e clica no nome da tua equipa na tabela — o URL passa a
 `.../entry/1234567/event/1`. Esse número é o id. (Na página "My Team" o URL não o mostra.)

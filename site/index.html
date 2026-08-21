@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=27">
+<link rel="stylesheet" href="styles.css?v=28">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,10 +34,10 @@
 </div>
 
 <nav class="tabs" role="tablist" aria-label="Secções">
-  <button role="tab" data-modo="draft" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
+  <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
   <button role="tab" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
-  <button role="tab" data-modo="draft" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
+  <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
   <button role="tab" id="tab-sug" aria-controls="painel-sug" aria-selected="false" tabindex="-1" aria-label="Sugestões e projeções">Sugestões</button>
   <button role="tab" data-modo="draft" id="tab-troca" aria-controls="painel-troca" aria-selected="false" tabindex="-1" aria-label="Analisar uma troca">Analisar troca</button>
@@ -80,7 +80,9 @@
   </section>
 
   <section id="painel-equipas" role="tabpanel" aria-labelledby="tab-equipas" hidden>
-    <p class="nota">Liga classic (sem confrontos): a pontuação por jornada aparece no separador Liga.</p>
+    <p class="nota" data-modo="draft">Liga classic (sem confrontos): a pontuação por jornada aparece no separador Liga.</p>
+    <p class="nota" data-modo="classica" hidden>Planteis dos teus adversários e quem partilha
+      cada jogador. Numa liga pequena o que conta é a diferença para os outros.</p>
     <div id="cartoes-equipas"></div>
   </section>
 
@@ -273,7 +275,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=27"></script>
+<script src="app.js?v=28"></script>
 
 </body>
 </html>
