@@ -454,7 +454,9 @@ def fetch_jornadas(game, anterior):
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        if guardada and guardada.get("finalizada"):
+        # Uma jornada dada como terminada mas sem equipas registadas vem de uma
+        # versão anterior com um erro: vale a pena voltar a pedi-la.
+        if guardada and guardada.get("finalizada") and guardada.get("equipas"):
             saida[chave] = guardada
             continue
         try:
@@ -473,7 +475,12 @@ def fetch_jornadas(game, anterior):
             if minutos or pontos:  # ausentes = 0 minutos, não vale a pena guardar
                 stats[str(eid)] = [minutos, pontos]
         jogos = live.get("fixtures") or []
-        equipas = sorted({t for j in jogos
+        # Duas noções diferentes de "acabou":
+        #  - jogado: os 90 minutos já foram, os minutos dos jogadores contam;
+        #  - finalizada: a API confirmou os bónus, só aí a jornada vai a cache.
+        # Sem isto, quem joga na segunda apareceria com 0 minutos no sábado.
+        jogado = lambda j: j.get("finished") or j.get("finished_provisional")
+        equipas = sorted({t for j in jogos if jogado(j)
                           for t in (j.get("team_h"), j.get("team_a")) if t})
         saida[chave] = {
             "finalizada": bool(jogos) and all(j.get("finished") for j in jogos),

@@ -277,6 +277,29 @@ Segundo modo, a pedido do utilizador, para a FPL clássica
   pontos por milhão. Com o id, mostra plantel, banco, chips usados e sugestões para a tua equipa.
   As escolhas de uma jornada só existem depois do deadline (a API dá 404 antes disso).
 
+## Jornada a decorrer: "jogado" vs "finalizada" (2026-08-22)
+
+Bug apanhado com a GW1 a meio (Arsenal-Coventry jogado na sexta, o resto no fim de semana):
+os jogadores cujas equipas ainda **não tinham jogado** eram contados como tendo feito 0 minutos,
+e a projeção do Isak caiu de 4.3 para 0.9. Três correções:
+
+- `jornadas[ev].equipas` passa a listar **só as equipas cujo jogo já se realizou**
+  (`finished` **ou** `finished_provisional`: a API só marca `finished` depois de confirmar os
+  bónus, horas depois do apito final).
+- `finalizada` continua a exigir o `finished` estrito — é o que decide se a jornada vai para
+  cache e se entra na avaliação de precisão, onde os pontos ainda podem mexer com os bónus.
+- `utilizacao()` no app.js deixou de usar o `finalizada` da jornada para decidir se conta: usa
+  `equipas.includes(p.team)`, ou seja, **o jogo daquele jogador**. Os minutos de quem jogou na
+  sexta contam logo; quem joga na segunda não é penalizado entretanto.
+- A cache de jornadas ganhou um guarda: uma entrada dada como finalizada mas **sem equipas**
+  vem da versão com o erro e é repedida (senão o valor errado ficava lá preso).
+
+## Equipa do utilizador na clássica
+
+`FPL_ENTRY_ID=2420779` ("Bazukas Team") está fixado no `atualizar.cmd`. O id encontra-se
+clicando no nome da própria equipa na tabela de uma liga (o URL passa a `/entry/ID/event/N`),
+ou em `/api/me/` com sessão iniciada — a página "My Team" não o mostra.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;

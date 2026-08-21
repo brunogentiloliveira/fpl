@@ -405,8 +405,13 @@ function utilizacao(p) {
       return eq.length === 0 || eq.includes(p.team);
     })
     .map((ev) => {
-      const s = js[ev].stats[String(p.id)] || [0, 0];
-      return { event: ev, minutos: s[0], pontos: s[1], finalizada: !!js[ev].finalizada };
+      const j = js[ev];
+      const eq = j.equipas || [];
+      // Conta quando o jogo DESTE jogador já se realizou. A jornada inteira só
+      // fica "finalizada" depois dos bónus, mas os minutos já são definitivos.
+      const jogado = eq.length ? eq.includes(p.team) : !!j.finalizada;
+      const s = j.stats[String(p.id)] || [0, 0];
+      return { event: ev, minutos: s[0], pontos: s[1], finalizada: jogado };
     });
 }
 
@@ -1095,7 +1100,8 @@ const PE_TEXTO = {
 function porqueEntra(x) {
   const partes = [];
   const recentes = minutosRecentes(x.pr);
-  if (recentes) {
+  const jogouMesmo = x.pr.ultimos && x.pr.ultimos.some((u) => u.minutos > 0);
+  if (recentes && jogouMesmo) {
     partes.push("já jogou " + recentes + " nas últimas jornadas");
   } else if (x.pr.pe && x.pr.pe.estado === "titular") {
     partes.push(PE_TEXTO.titular);

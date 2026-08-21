@@ -92,16 +92,27 @@ def bola_parada_da_api(players):
     return saida
 
 
-def fetch_jornadas(atual, anterior):
-    """Minutos e pontos por jornada, como no Draft (o formato é o mesmo)."""
+def fetch_jornadas(atual, anterior, fixtures):
+    """Minutos e pontos por jornada, como no Draft (o formato é o mesmo).
+
+    `equipas` guarda só quem já **terminou** o jogo dessa jornada: sem isso,
+    um jogador cuja equipa joga na segunda-feira apareceria com 0 minutos no
+    sábado e a projeção dele afundava sem razão."""
     if not atual:
         return {}
+    por_evento = {}
+    for j in fixtures:
+        ev = j.get("event")
+        if ev:
+            por_evento.setdefault(ev, []).append(j)
     cache = (anterior or {}).get("jornadas") or {}
     saida = {}
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        if guardada and guardada.get("finalizada"):
+        # Uma jornada dada como terminada mas sem equipas registadas vem de uma
+        # versão anterior com um erro: vale a pena voltar a pedi-la.
+        if guardada and guardada.get("finalizada") and guardada.get("equipas"):
             saida[chave] = guardada
             continue
         try:
@@ -117,7 +128,17 @@ def fetch_jornadas(atual, anterior):
             minutos, pontos = s.get("minutes") or 0, s.get("total_points") or 0
             if minutos or pontos:
                 stats[str(eid)] = [minutos, pontos]
-        saida[chave] = {"finalizada": True, "equipas": [], "stats": stats}
+        jogos = por_evento.get(ev, [])
+        # "Jogado" (90 minutos feitos) conta os minutos logo; "finalizada"
+        # espera pela confirmação dos bónus antes de ir para cache.
+        jogado = lambda j: j.get("finished") or j.get("finished_provisional")
+        equipas = sorted({t for j in jogos if jogado(j)
+                          for t in (j.get("team_h"), j.get("team_a")) if t})
+        saida[chave] = {
+            "finalizada": bool(jogos) and all(j.get("finished") for j in jogos),
+            "equipas": equipas,
+            "stats": stats,
+        }
     if saida:
         fd.registar("Jornadas disputadas", True, f"{len(saida)} jornadas")
     return saida
@@ -251,7 +272,7 @@ def main():
                   for t in bootstrap["teams"]},
         "players": players,
         "fixtures": calendario_por_clube(fixtures, (proximo and proximo["id"]) or 1),
-        "jornadas": fetch_jornadas(atual, anterior),
+        "jornadas": fetch_jornadas(atual, anterior, fixtures),
         "historico": fd.snapshot_historico(players, anterior, game),
         "preepoca": fd.fetch_preepoca(nomes_clubes, players),
         "bolaparada": bola_parada_da_api(bootstrap["elements"]),
