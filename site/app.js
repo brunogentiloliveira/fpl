@@ -105,14 +105,62 @@ function initTicker(noticias) {
   $("ticker").hidden = false;
 }
 
+// Saída do clube: a API usa u/n tanto para quem saiu como para outros
+// indisponíveis, por isso é o texto da notícia que distingue.
+const FRASES_SAIDA = ["has joined", "has returned", "on loan"];
+
+function saiuDoClube(p) {
+  const news = (p.news || "").toLowerCase();
+  return FRASES_SAIDA.some((f) => news.includes(f));
+}
+
+const GRUPOS_BOLETIM = ["Do teu plantel", "De outros gestores", "Livres"];
+
+/** Primeiro os meus, depois os de outros gestores, por fim os livres. */
+function pesoDono(p, eu) {
+  if (eu && p.owner === eu.entry_id) return 0;
+  return p.owner != null ? 1 : 2;
+}
+
+/** Fora > dúvida > saída do clube > resto. */
+function pesoGravidade(p) {
+  if (saiuDoClube(p)) return 2;
+  if (STATUS_FORA.has(p.status)) return 0;
+  if (p.status === "d") return 1;
+  return 3;
+}
+
+/** Ordem do boletim: quem exige ação primeiro (o ticker fica cronológico). */
+function ordenarBoletim(noticias) {
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  return noticias.slice().sort((a, b) =>
+    pesoDono(a, eu) - pesoDono(b, eu) ||
+    pesoGravidade(a) - pesoGravidade(b) ||
+    (b.news_added || "").localeCompare(a.news_added || ""));
+}
+
 function initBoletim(noticias) {
   if (noticias.length === 0) { $("nota-boletim").hidden = false; return; }
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const contagens = noticias.reduce((c, p) => {
+    c[pesoDono(p, eu)] = (c[pesoDono(p, eu)] || 0) + 1;
+    return c;
+  }, {});
+  let grupoAtual = null;
+
   const ul = $("lista-boletim");
   ul.innerHTML = noticias.map((p) => {
+    let cabecalho = "";
+    const grupo = pesoDono(p, eu);
+    if (grupo !== grupoAtual) {
+      grupoAtual = grupo;
+      cabecalho = '<li class="grupo">' + GRUPOS_BOLETIM[grupo] +
+        " (" + contagens[grupo] + ")</li>";
+    }
     const est = estadoDe(p);
     const dono = nomeDono(p.owner);
     const data = p.news_added ? fmtDataHora.format(new Date(p.news_added)) : "";
-    return '<li class="' + est.sev + '">' +
+    return cabecalho + '<li class="' + est.sev + '">' +
       '<div class="linha1">' +
         '<span class="nome">' + esc(p.web_name) + "</span>" +
         '<span class="clube">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") + "</span>" +
@@ -1156,7 +1204,7 @@ async function main() {
   const noticias = comNoticias();
   initCabecalho();
   initTicker(noticias);
-  initBoletim(noticias);
+  initBoletim(ordenarBoletim(noticias));
   initLiga();
   initMinhaEquipa();
   initEquipas();
