@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haaland of Fame · FPL Draft</title>
+<meta name="description" content="Dashboard da liga de FPL Draft">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
+</head>
+<body>
+<header class="topo">
+  <h1 id="titulo-liga">FPL Draft</h1>
+  <p class="meta">
+    <span id="atualizado">A carregar…</span>
+    <span id="countdown" class="countdown" hidden></span>
+  </p>
+</header>
+
+<div class="ticker" id="ticker" hidden aria-label="Últimas notícias dos jogadores">
+  <div class="ticker-track" id="ticker-track"></div>
+</div>
+
+<nav class="tabs" role="tablist" aria-label="Secções">
+  <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
+  <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
+  <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
+</nav>
+
+<main>
+  <section id="painel-liga" role="tabpanel" aria-labelledby="tab-liga">
+    <table class="tabela" id="tabela-liga">
+      <thead><tr><th>#</th><th>Equipa</th><th class="num">Jornada</th><th class="num">Total</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="nota" id="nota-liga" hidden>A classificação aparece depois da primeira jornada.</p>
+  </section>
+
+  <section id="painel-boletim" role="tabpanel" aria-labelledby="tab-boletim" hidden>
+    <ul class="boletim" id="lista-boletim"></ul>
+    <p class="nota" id="nota-boletim" hidden>Sem notícias de momento.</p>
+  </section>
+
+  <section id="painel-jogadores" role="tabpanel" aria-labelledby="tab-jogadores" hidden>
+    <form class="filtros" id="filtros" autocomplete="off">
+      <label class="visually-hidden" for="pesquisa">Pesquisar por nome ou clube</label>
+      <input type="search" id="pesquisa" placeholder="Pesquisar nome ou clube…">
+      <div class="filtros-linha">
+        <label class="visually-hidden" for="filtro-pos">Posição</label>
+        <select id="filtro-pos">
+          <option value="">Todas as posições</option>
+          <option value="1">Guarda-redes</option>
+          <option value="2">Defesas</option>
+          <option value="3">Médios</option>
+          <option value="4">Avançados</option>
+        </select>
+        <label class="check"><input type="checkbox" id="so-livres"> Só livres</label>
+      </div>
+    </form>
+    <p class="nota" id="contagem-jogadores" role="status"></p>
+    <table class="tabela" id="tabela-jogadores">
+      <thead><tr><th class="num">Rank</th><th>Jogador</th><th>Pos</th><th class="num">Pts</th><th>Dono</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button type="button" class="mostrar-mais" id="mostrar-mais" hidden>Mostrar mais</button>
+  </section>
+</main>
+
+<footer class="rodape">
+  <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
