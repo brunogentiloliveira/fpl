@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -28,6 +28,7 @@
   <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
   <button role="tab" id="tab-sug" aria-controls="painel-sug" aria-selected="false" tabindex="-1" aria-label="Sugestões e projeções">Sugestões</button>
+  <button role="tab" id="tab-troca" aria-controls="painel-troca" aria-selected="false" tabindex="-1" aria-label="Analisar uma troca">Analisar troca</button>
   <button role="tab" id="tab-mercado" aria-controls="painel-mercado" aria-selected="false" tabindex="-1">Mercado</button>
 </nav>
 
@@ -173,6 +174,32 @@
     <div id="proj-livres"></div>
   </section>
 
+  <section id="painel-troca" role="tabpanel" aria-labelledby="tab-troca" hidden>
+    <h2 class="sec-titulo">Analisar uma troca</h2>
+    <p class="nota">Serve para avaliar uma proposta que recebeste ou uma que queiras fazer.
+      Escolhe o gestor e marca os jogadores de cada lado — podes marcar vários. A análise usa
+      o mesmo modelo das projeções (minutos esperados, team news, pré-época, calendário) e
+      mede o efeito no <strong>onze inicial</strong> das duas equipas.</p>
+
+    <form class="filtros" id="form-troca" autocomplete="off">
+      <label class="visually-hidden" for="troca-gestor">Gestor</label>
+      <select id="troca-gestor"></select>
+    </form>
+
+    <div class="troca-cols">
+      <div>
+        <h3 class="sub-titulo">Dás <span id="conta-dou" class="sub-total"></span></h3>
+        <div class="lista-check" id="troca-meus"></div>
+      </div>
+      <div>
+        <h3 class="sub-titulo">Recebes <span id="conta-recebo" class="sub-total"></span></h3>
+        <div class="lista-check" id="troca-deles"></div>
+      </div>
+    </div>
+
+    <div id="troca-resultado" role="status"></div>
+  </section>
+
   <section id="painel-mercado" role="tabpanel" aria-labelledby="tab-mercado" hidden>
     <h2 class="sec-titulo">Movimentos da liga</h2>
     <ul class="movimentos" id="lista-movimentos"></ul>
@@ -188,6 +215,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

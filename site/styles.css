@@ -341,3 +341,46 @@ main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
 }
 .boletim li.grupo:first-child { margin-top: 0; padding-top: 0; }
 .boletim .fonte-scout { color: var(--aviso); font-size: 0.83rem; }
+
+/* Analisador de trocas */
+.troca-cols { display: grid; gap: 0.8rem; margin-bottom: 1rem; }
+.lista-check {
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: var(--painel);
+  max-height: 17rem;
+  overflow-y: auto;
+}
+.escolha {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--borda);
+  cursor: pointer;
+}
+.escolha:last-child { border-bottom: none; }
+.escolha:hover { background: var(--painel-2); }
+.escolha input { width: 1.05rem; height: 1.05rem; accent-color: var(--acento); flex: none; }
+.escolha-nome { font-weight: 600; font-size: 0.88rem; }
+.escolha-info { color: var(--texto-2); font-size: 0.75rem; margin-left: auto; text-align: right; }
+.escolha .estado { flex: none; }
+.veredicto {
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--texto-2);
+  border-radius: 8px;
+  background: var(--painel);
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.8rem;
+}
+.veredicto p { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+.veredicto.ok { border-left-color: var(--acento); }
+.veredicto.warn { border-left-color: var(--aviso); }
+.veredicto.bad { border-left-color: var(--perigo); }
+.detalhe-troca, .avisos-troca { margin: 0.3rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.detalhe-troca li, .avisos-troca li { margin-top: 0.35rem; line-height: 1.45; }
+.avisos-troca { margin-top: 0.9rem; color: var(--aviso); }
+
+@media (min-width: 40rem) {
+  .troca-cols { grid-template-columns: 1fr 1fr; }
+}

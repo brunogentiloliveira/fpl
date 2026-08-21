@@ -101,6 +101,26 @@ por `includes`, que também lê melhor.
 (`soNoScout`); esses aparecem com distintivo "Fora (Scout)", a data do artigo e a frase
 original. Quem tem as duas coisas mostra ambas.
 
+## Analisador de trocas (separador "Analisar troca", 2026-08-21)
+
+Avalia uma troca concreta — recebida ou a propor — com **N jogadores de cada lado**, não só
+1-por-1. Escolhe-se o gestor, marcam-se os jogadores nas duas colunas e a análise é imediata.
+
+- **Validade**: uma troca só é possível se as posições baterem certo dos dois lados (o plantel
+  tem de manter 2 GR, 5 DEF, 5 MED, 3 AV). Se não baterem, diz porquê e mostra na mesma os
+  números como referência.
+- **Métrica**: `valorXI` antes/depois **nas duas equipas** — o que conta é o onze inicial, não
+  a soma dos jogadores (um reforço que fica no banco não vale nada à margem).
+- Mostra ainda: pts/jornada que entram de cada lado, diferença nas próximas 3 jornadas
+  (com dificuldade do calendário) e **pontos da época passada** ("cartaz"), que é o número
+  que o outro gestor costuma olhar.
+- **Veredicto** em linguagem corrente, com o motivo por jogador (`porqueSai`/`porqueEntra`) e
+  avisos que os números não contam: dar alguém que está apenas temporariamente em baixo,
+  receber alguém que recupera valor, ou receber quem não sai do banco.
+- `ppjSaudavel` passou a ser `projecao(p, ignorarAusencia=true)`: antes só ignorava o estado
+  da API, por isso não disparava avisos para quem está fora apenas por indicação do Scout
+  (o caso do Pedro Porro). Isto corrigiu também o mesmo ponto cego no aviso dos waivers.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;

@@ -444,7 +444,7 @@ function fatorDificuldade(d) {
   return 1 + (3 - d) * 0.06; // adversário fácil (1) 1.12 … difícil (5) 0.88
 }
 
-function projecao(p) {
+function projecao(p, ignorarAusencia) {
   const prior = priorDe(p);
   const hist = historicoDe(p);
   // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
@@ -494,7 +494,9 @@ function projecao(p) {
   }
   // O Scout costuma saber da conferência de imprensa antes de a API atualizar.
   const ffs = ffsDe(p);
-  if (STATUS_FORA.has(p.status) || (ffs && ffs.estado === "fora")) {
+  if (ignorarAusencia) {
+    // Projeção "se estivesse apto", para comparar com o valor de agora.
+  } else if (STATUS_FORA.has(p.status) || (ffs && ffs.estado === "fora")) {
     xmin = 0;
   } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
     xmin *= p.chance_of_playing_next_round / 100;
@@ -617,9 +619,7 @@ function comProjecao(jogadores) {
 
 /** Projeção ignorando o estado clínico — para não trocar um titular por 2 semanas de lesão. */
 function ppjSaudavel(p) {
-  if (!STATUS_FORA.has(p.status) && p.status !== "d") return projecao(p).ppj;
-  const copia = Object.assign({}, p, { status: "a", chance_of_playing_next_round: null });
-  return projecao(copia).ppj;
+  return projecao(p, true).ppj;
 }
 
 function sugestoesLivres(meusX) {
@@ -954,6 +954,194 @@ function initSugestoes() {
   }
 }
 
+/* ---------- Analisador de trocas ---------- */
+
+function contaPorPosicao(lista) {
+  return lista.reduce((c, x) => {
+    c[x.p.element_type] = (c[x.p.element_type] || 0) + 1;
+    return c;
+  }, {});
+}
+
+function resumoPosicoes(lista) {
+  const c = contaPorPosicao(lista);
+  return [1, 2, 3, 4].filter((pos) => c[pos])
+    .map((pos) => c[pos] + " " + POSICOES[pos]).join(" + ");
+}
+
+/** Jogadores marcados numa das colunas. */
+function selecionados(idContentor, universo) {
+  const ids = [...document.querySelectorAll("#" + idContentor + " input:checked")]
+    .map((i) => Number(i.value));
+  return universo.filter((x) => ids.includes(x.p.id));
+}
+
+function linhaEscolha(x) {
+  const est = estadoDe(x.p);
+  const ffs = ffsDe(x.p);
+  const alerta = (ffs && ffs.estado === "fora") ? "Fora (Scout)" : (est.sev ? est.rotulo : "");
+  return '<label class="escolha"><input type="checkbox" value="' + x.p.id + '">' +
+    '<span class="escolha-nome">' + esc(x.p.web_name) + "</span>" +
+    '<span class="escolha-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
+      nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + " pts/J</span>" +
+    (alerta ? '<span class="estado bad">' + esc(alerta) + "</span>" : "") +
+  "</label>";
+}
+
+/** Uma linha por jogador, com o motivo que o modelo usa. */
+function detalheTroca(x, sentido) {
+  const motivo = sentido === "dou" ? porqueSai(x) : porqueEntra(x);
+  return "<li><strong>" + esc(x.p.web_name) + "</strong> (" +
+    (POSICOES[x.p.element_type] || "?") + " · " + nomeClube(x.p.team) + ") — " + esc(motivo) +
+    ". Projeta <strong>" + x.pr.ppj.toFixed(1) + " pts/jornada</strong>, " +
+    x.pr.prox3.toFixed(1) + " nas próximas três." +
+    (x.p.total_points ? " Fez " + x.p.total_points + " pontos na época passada." : "") +
+    "</li>";
+}
+
+/** Casos que os números sozinhos não contam. */
+function avisosTroca(dou, recebo) {
+  const avisos = [];
+  dou.forEach((x) => {
+    const saudavel = ppjSaudavel(x.p);
+    if (saudavel - x.pr.ppj >= 1) {
+      avisos.push("Estás a dar <strong>" + esc(x.p.web_name) + "</strong> enquanto está em baixo: " +
+        "recuperado projeta " + saudavel.toFixed(1) + " pts/jornada, contra os " +
+        x.pr.ppj.toFixed(1) + " de agora. Só compensa se a ausência for longa.");
+    }
+  });
+  recebo.forEach((x) => {
+    const saudavel = ppjSaudavel(x.p);
+    if (saudavel - x.pr.ppj >= 1) {
+      avisos.push("<strong>" + esc(x.p.web_name) + "</strong> vale " + x.pr.ppj.toFixed(1) +
+        " agora por estar em baixo, mas " + saudavel.toFixed(1) + " quando recuperar — pode " +
+        "valer a pena se aguentares a espera.");
+    }
+    if (x.pr.naoUsado) {
+      avisos.push("<strong>" + esc(x.p.web_name) + "</strong> não tem saído do banco nas " +
+        "últimas jornadas.");
+    }
+  });
+  return avisos;
+}
+
+function linhaTabela(rotulo, meu, dele, forte) {
+  return "<tr><td>" + rotulo + "</td>" +
+    '<td class="num' + (forte ? " forte" : "") + '">' + meu + "</td>" +
+    '<td class="num">' + dele + "</td></tr>";
+}
+
+function sinal(v) {
+  return (v >= 0 ? "+" : "") + v.toFixed(1);
+}
+
+function analisarTroca(eu) {
+  const alvoId = Number($("troca-gestor").value);
+  const outro = D.entries.find((e) => e.entry_id === alvoId);
+  const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
+  const delesX = comProjecao(D.players.filter((p) => p.owner === alvoId));
+
+  const dou = selecionados("troca-meus", meusX);
+  const recebo = selecionados("troca-deles", delesX);
+  $("conta-dou").textContent = dou.length ? resumoPosicoes(dou) : "";
+  $("conta-recebo").textContent = recebo.length ? resumoPosicoes(recebo) : "";
+
+  if (dou.length === 0 && recebo.length === 0) {
+    $("troca-resultado").innerHTML = '<p class="nota">Marca pelo menos um jogador de cada lado ' +
+      "para veres a análise.</p>";
+    return;
+  }
+
+  // O plantel tem de manter 2 GR, 5 DEF, 5 MED e 3 AV: as posições têm de bater certo.
+  const cDou = contaPorPosicao(dou);
+  const cRecebo = contaPorPosicao(recebo);
+  const equilibrada = [1, 2, 3, 4].every((pos) => (cDou[pos] || 0) === (cRecebo[pos] || 0));
+
+  const meuAntes = valorXI(meusX);
+  const deleAntes = valorXI(delesX);
+  const meuDepois = valorXI(meusX.filter((x) => !dou.includes(x)).concat(recebo));
+  const deleDepois = valorXI(delesX.filter((x) => !recebo.includes(x)).concat(dou));
+  const ganhoMeu = meuDepois - meuAntes;
+  const ganhoDele = deleDepois - deleAntes;
+
+  const somaPpj = (l) => l.reduce((t, x) => t + x.pr.ppj, 0);
+  const soma3 = (l) => l.reduce((t, x) => t + x.pr.prox3, 0);
+  const cartaz = (l) => l.reduce((t, x) => t + (x.p.total_points || 0), 0);
+
+  let veredicto;
+  let cor;
+  if (!equilibrada) {
+    veredicto = "Esta troca não é possível como está: cada lado tem de dar e receber o mesmo " +
+      "número de jogadores por posição, senão o plantel deixa de ter 2 GR, 5 DEF, 5 MED e 3 AV. " +
+      "Dás " + (resumoPosicoes(dou) || "nada") + " e recebes " + (resumoPosicoes(recebo) || "nada") +
+      ". Os números abaixo servem na mesma de referência.";
+    cor = "bad";
+  } else if (ganhoMeu >= 0.5) {
+    const porqueAceita = ganhoDele >= 0.25
+      ? "Ele também melhora (" + sinal(ganhoDele) + "), por isso é das raras em que os dois ganham."
+      : cartaz(dou) > cartaz(recebo)
+        ? "Ele perde em projeção, mas recebe os nomes com mais pontos na época passada (" +
+          cartaz(dou) + " contra " + cartaz(recebo) + ") — é o número que costuma pesar na decisão."
+        : "Ele perde dos dois lados, por isso é provável que recuse.";
+    veredicto = "Vale a pena para ti: ganhas " + ganhoMeu.toFixed(1) +
+      " pts por jornada no teu onze. " + porqueAceita;
+    cor = "ok";
+  } else if (ganhoMeu <= -0.5) {
+    veredicto = "Recusa: perdes " + Math.abs(ganhoMeu).toFixed(1) + " pts por jornada no teu onze." +
+      (ganhoDele > 0 ? " Quem ganha com isto é ele (" + sinal(ganhoDele) + ")." : "");
+    cor = "bad";
+  } else {
+    veredicto = "Praticamente neutra para ti (" + sinal(ganhoMeu) + " pts por jornada). " +
+      "Decide pelo calendário ou por quem preferes ter no plantel a médio prazo.";
+    cor = "warn";
+  }
+
+  const avisos = avisosTroca(dou, recebo);
+  $("troca-resultado").innerHTML =
+    '<div class="veredicto ' + cor + '"><p>' + veredicto + "</p></div>" +
+    '<table class="tabela tabela-proj"><thead><tr><th>Efeito</th><th class="num">Tu</th>' +
+      '<th class="num">' + esc(outro.entry_name) + "</th></tr></thead><tbody>" +
+      linhaTabela("Onze antes", meuAntes.toFixed(1), deleAntes.toFixed(1)) +
+      linhaTabela("Onze depois", meuDepois.toFixed(1), deleDepois.toFixed(1)) +
+      linhaTabela("Diferença no onze", sinal(ganhoMeu), sinal(ganhoDele), true) +
+      linhaTabela("Pts/jornada que entram", somaPpj(recebo).toFixed(1), somaPpj(dou).toFixed(1)) +
+      linhaTabela("Próximas 3 jornadas", sinal(soma3(recebo) - soma3(dou)),
+        sinal(soma3(dou) - soma3(recebo))) +
+      linhaTabela("Pontos da época passada que entram", cartaz(recebo), cartaz(dou)) +
+    "</tbody></table>" +
+    (dou.length ? '<h3 class="sub-titulo">Sais com</h3><ul class="detalhe-troca">' +
+      dou.map((x) => detalheTroca(x, "dou")).join("") + "</ul>" : "") +
+    (recebo.length ? '<h3 class="sub-titulo">Recebes</h3><ul class="detalhe-troca">' +
+      recebo.map((x) => detalheTroca(x, "recebo")).join("") + "</ul>" : "") +
+    (avisos.length ? '<ul class="avisos-troca">' + avisos.map((a) => "<li>" + a + "</li>").join("") +
+      "</ul>" : "");
+}
+
+function initAnaliseTroca() {
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  if (!eu) return;
+  const sel = $("troca-gestor");
+  sel.innerHTML = D.entries.filter((e) => e.id !== eu.id)
+    .map((e) => '<option value="' + e.entry_id + '">' + esc(e.entry_name) + " · " +
+      esc(e.manager) + "</option>").join("");
+
+  const porPpj = (a, b) => b.pr.ppj - a.pr.ppj;
+  function desenharListas() {
+    const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id)).sort(porPpj);
+    const delesX = comProjecao(D.players.filter((p) => p.owner === Number(sel.value))).sort(porPpj);
+    $("troca-meus").innerHTML = meusX.map(linhaEscolha).join("");
+    $("troca-deles").innerHTML = delesX.map(linhaEscolha).join("");
+  }
+
+  sel.addEventListener("change", () => { desenharListas(); analisarTroca(eu); });
+  $("form-troca").addEventListener("submit", (ev) => ev.preventDefault());
+  ["troca-meus", "troca-deles"].forEach((id) =>
+    $(id).addEventListener("change", () => analisarTroca(eu)));
+
+  desenharListas();
+  analisarTroca(eu);
+}
+
 /* ---------- Conferências e risco de não jogar ---------- */
 
 const NIVEIS = { 3: "bad", 2: "bad", 1: "warn" };
@@ -1203,6 +1391,7 @@ async function main() {
   initConferencias();
   initProjecoes();
   initSugestoes();
+  initAnaliseTroca();
   initMercado();
   initJogadores();
   initTabs();
