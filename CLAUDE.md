@@ -1,7 +1,8 @@
 # FPL Draft Dashboard — "Haaland of Fame"
 
 Dashboard estático para acompanhar uma liga privada de FPL Draft (draft.premierleague.com),
-inspirado no "Draft Room". Corre em GitHub Pages, atualizado por GitHub Actions (cron).
+inspirado no "Draft Room". **Corre 100% localmente** (decisão de 2026-08-21: o utilizador quer
+o projeto só para si — sem GitHub Pages nem Actions; o repo no GitHub é só backup).
 Sem backend nem base de dados: JSONs estáticos gerados por um script Python.
 
 ## Factos da liga (confirmados na API em 2026-08-21)
@@ -38,22 +39,23 @@ Base: `https://draft.premierleague.com/api`
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
   junta tudo num único `site/data/data.json` (jogadores já com `owner` embutido).
-- `.github/workflows/update.yml` — cron diário de manhã + quinta/sexta ao fim da tarde
-  (waivers/deadline às 18:30 Europe/Lisbon; cron é UTC, por isso há entradas duplicadas para
-  cobrir verão/inverno), `workflow_dispatch`, commit dos JSONs pelo bot, deploy para Pages
-  (origem "GitHub Actions").
+- `atualizar.cmd` — atalho Windows: corre a recolha (LEAGUE_ID=12258), arranca
+  `python -m http.server 8000 --directory site` e abre o browser. É assim que o site se usa.
 - `site/` — HTML/CSS/JS puro, sem frameworks nem build step. Tema escuro, focus visível,
   `prefers-reduced-motion` respeitado (ticker sem animação).
+- Já **não há** workflow do GitHub Actions (removido quando o projeto passou a só-local);
+  se voltar a ser preciso, está no histórico do git (commit da Fase 1).
 
-## Teste local
+## Ambiente da máquina
 
-Nesta máquina (Windows) **não há Python nativo, Docker parado, sem WSL** — a Fase 1 foi testada
-com o Python embeddable (zip portátil de python.org) descarregado para uma pasta temporária.
-`LEAGUE_ID=12258 python scripts/fetch_data.py` e servir `site/` com um servidor estático (README).
+Windows 11, sem Docker ativo nem WSL. Python 3.12 instalado via winget em 2026-08-21
+(`%LocalAppData%\Programs\Python\Python312\`, com `py` launcher) — atenção: shells abertas
+antes da instalação não o têm no PATH; usar o caminho absoluto ou o `atualizar.cmd`,
+que já tem fallback.
 
 ## Estado das fases
 
-- **Fase 1 (feita)**: recolha + workflow + página única com cabeçalho (última atualização +
+- **Fase 1 (feita)**: recolha + página única com cabeçalho (última atualização +
   contagem para o deadline), ticker de notícias, separadores Liga / Boletim / Jogadores
   (pesquisa, filtro por posição, "só livres", ordenado por draft_rank).
 - **Fase 2 (por fazer)**: separador "A minha equipa" — detetar a equipa do Bruno Gentil
