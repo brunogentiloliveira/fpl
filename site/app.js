@@ -610,7 +610,13 @@ function ffsDe(p) {
   return ((D.ffs || {}).jogadores || {})[p.id] || null;
 }
 
-/** Como o jogador apareceu no último ensaio de pré-época do clube. */
+/**
+ * Como o jogador apareceu no último ensaio de pré-época do clube.
+ *
+ * Já não tem secção própria no site (a pedido do utilizador): serve só de
+ * entrada para o modelo e para justificar sugestões, e deixa de contar
+ * sozinha assim que houver jornadas disputadas.
+ */
 function preEpocaDe(p) {
   const e = (D.preepoca || {})[String(p.team)];
   if (!e) return null;
@@ -801,16 +807,12 @@ function linhaProjecao(p, pr) {
     (pr.jogos.length > visiveis.length
       ? ' <span class="fx d3">+' + (pr.jogos.length - visiveis.length) + "</span>" : "");
   const recentes = minutosRecentes(pr);
-  const pe = pr.pe && pr.pe.estado === "titular"
-    ? ' <span class="estado ok">XI pré-época</span>'
-    : pr.pe && pr.pe.estado !== "nao_titular"
-      ? ' <span class="estado warn">banco pré-época</span>' : "";
   const cargos = etiquetaBolaParada(p);
   const badgeBP = cargos
     ? ' <span class="estado ok" title="Bola parada: P penáltis, LL livres, C cantos (número = ordem)">' +
       cargos + "</span>" : "";
   return "<tr>" +
-    "<td>" + esc(p.web_name) + badges + pe + badgeBP +
+    "<td>" + esc(p.web_name) + badges + badgeBP +
       (pr.naoUsado ? ' <span class="estado bad">sem jogar</span>' : "") +
       '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
       (recentes ? " · jogou " + recentes : "") +
@@ -1092,37 +1094,6 @@ function porqueEntra(x) {
 
 /* --- Utilização real nas jornadas já disputadas --- */
 
-function desenharPreEpoca(meusX) {
-  if (Object.keys(D.preepoca || {}).length === 0) { $("nota-pe").hidden = false; return; }
-  const ordem = { titular: 0, suplente: 1, fora: 2, nao_titular: 2 };
-  const linhas = meusX
-    .map((x) => ({ x, pe: preEpocaDe(x.p) }))
-    .sort((a, b) => (ordem[(a.pe || {}).estado] ?? 3) - (ordem[(b.pe || {}).estado] ?? 3));
-
-  const titulares = linhas.filter((l) => l.pe && l.pe.estado === "titular").length;
-  $("pe-resumo").textContent = titulares + " dos teus 15 foram titulares";
-
-  $("pe-plantel").innerHTML = '<table class="tabela tabela-proj"><thead><tr>' +
-    "<th>Jogador</th><th>No último ensaio</th><th>Jogo</th></tr></thead><tbody>" +
-    linhas.map(({ x, pe }) => {
-      if (!pe) {
-        return "<tr><td>" + esc(x.p.web_name) +
-          '<span class="sub">' + nomeClube(x.p.team) + "</span></td>" +
-          '<td colspan="2" class="sub">sem onze publicado para este clube</td></tr>';
-      }
-      const cor = pe.estado === "titular" ? "ok" : pe.estado === "suplente" ? "warn" : "bad";
-      const rotulo = { titular: "Titular", suplente: "Suplente",
-                       fora: "Não convocado", nao_titular: "Não foi titular" }[pe.estado];
-      return "<tr><td>" + esc(x.p.web_name) +
-        '<span class="sub">' + nomeClube(x.p.team) + " · " +
-          (POSICOES[x.p.element_type] || "?") + "</span></td>" +
-        '<td><span class="estado ' + cor + '">' + rotulo + "</span>" +
-          (pe.confianca !== "alta" ? ' <span class="sub">indício fraco</span>' : "") + "</td>" +
-        '<td><a href="' + esc(pe.fonte) + '" target="_blank" rel="noopener">' +
-          esc(pe.jogo) + "</a></td></tr>";
-    }).join("") + "</tbody></table>";
-}
-
 function desenharUtilizacao(meusX) {
   const jornadas = Object.keys(D.jornadas || {});
   if (jornadas.length === 0) { $("nota-uso").hidden = false; return; }
@@ -1172,7 +1143,6 @@ function initSugestoes() {
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
   desenharOnze(meusX);
-  desenharPreEpoca(meusX);
   desenharUtilizacao(meusX);
 
   // --- Contexto da liga ---

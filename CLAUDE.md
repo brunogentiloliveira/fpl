@@ -383,5 +383,10 @@ que já tem fallback.
     clube antigo não diz nada). Confiança "media" vale metade.
   - **Efeito real**: Ødegaard 1.9 → 3.9 pts/jornada (titular na Supertaça, depois de uma época
     passada com poucas titularidades) e Araujo 3.0 → 2.2 (ficou no banco no Liverpool).
+  - **Sem secção própria no site** (removida a pedido do utilizador em 2026-08-21), tal como os
+    distintivos "XI pré-época"/"banco pré-época" nas tabelas: fica só como entrada do modelo.
+    As justificações das sugestões continuam a citá-la ("foi titular no último ensaio"), porque
+    aí é a razão da recomendação e não um mostruário. De qualquer forma deixa de contar sozinha
+    assim que houver jornadas disputadas (`jogosObs === 0`), altura em que as menções somem.
   - `sem_acentos` passou a traduzir letras que o NFD não decompõe (ø, đ, ł, ß, æ…), senão
     "Ødegaard" nunca casaria com "Odegaard".
