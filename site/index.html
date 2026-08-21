@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=20">
+<link rel="stylesheet" href="styles.css?v=21">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -113,6 +113,15 @@
     <h2 class="sec-titulo" id="sug-titulo">Sugestões</h2>
     <p class="nota" id="sug-contexto"></p>
 
+    <form class="filtros" id="form-janela" autocomplete="off">
+      <label class="visually-hidden" for="janela">Janela do calendário</label>
+      <select id="janela">
+        <option value="3">Calendário: próximas 3 jornadas</option>
+        <option value="5">Calendário: próximas 5 jornadas</option>
+        <option value="8">Calendário: próximas 8 jornadas</option>
+      </select>
+    </form>
+
     <h3 class="sub-titulo">Onze inicial sugerido <span id="xi-resumo" class="sub-total"></span></h3>
     <div class="campo" id="xi-campo"></div>
     <p class="nota" id="xi-banco"></p>
@@ -171,8 +180,15 @@
           partir do 3.º jogo vale o que se viu em campo: a média dos <strong>minutos reais</strong>
           das últimas três jornadas substitui a estimativa. Lesionados e suspensos ficam a 0 e as
           dúvidas são multiplicadas pela probabilidade de jogar.</p>
-        <p><strong>Pts/J</strong> = Pts/90 × Min ÷ 90. <strong>Próx. 3</strong> soma as próximas
-          três jornadas ajustando à dificuldade do adversário (1 fácil a 5 difícil).</p>
+        <p><strong>Pts/J</strong> = Pts/90 × Min ÷ 90. A coluna <strong>Calend.</strong> é o mesmo
+          valor ajustado à dificuldade das próximas jornadas (1 fácil a 5 difícil), com as mais
+          próximas a pesarem mais. É uma taxa, não um total: não cresce com a janela, para
+          continuar comparável aos Pts/J.</p>
+        <p>A janela por omissão são <strong>5 jornadas</strong>. Com 3, a diferença entre o melhor
+          e o pior calendário chega a 10% e chega para inverter diferenças de qualidade entre
+          jogadores — demasiado para escolhas que, num plantel de 15, duram meses. Com 10 cai para
+          2.4% e deixa de distinguir seja o que for. O seletor no topo deixa-te comparar: quando a
+          sugestão não muda entre 3 e 8, é porque é sólida.</p>
         <p class="nota">Base: estatísticas e pontos da época anterior da API do FPL Draft —
           é uma estimativa, não uma garantia.</p>
       </div>
@@ -237,7 +253,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 
 </body>
 </html>

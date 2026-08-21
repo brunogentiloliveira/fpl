@@ -169,6 +169,48 @@ verificar("sugestões de troca são todas da mesma posição",
   sugestoes.every(function (t) { return t.meu.p.element_type === t.deles.p.element_type; }),
   sugestoes.length + " sugestões");
 
+/* --- Janela do calendário --- */
+D.fixtures["1"] = [];   // Clube 1: calendário fácil
+D.fixtures["2"] = [];   // Clube 2: calendário difícil
+for (let ev = 1; ev <= 10; ev += 1) {
+  D.fixtures["1"].push({ event: ev, opponent: 3, is_home: true, difficulty: ev <= 3 ? 1 : 3 });
+  D.fixtures["2"].push({ event: ev, opponent: 3, is_home: false, difficulty: ev <= 3 ? 5 : 3 });
+}
+const facil = D.players.find(function (p) { return p.web_name === "MED4"; });
+const dificil = D.players.find(function (p) { return p.web_name === "MED5"; });
+facil.team = 1; dificil.team = 2;
+
+function amplitude(n) {
+  definirJanela(n);
+  return projecao(facil).calFator - projecao(dificil).calFator;
+}
+const amp3 = amplitude(3);
+const amp8 = amplitude(8);
+verificar("janela maior dilui a diferença entre calendários", amp8 < amp3,
+  "3 jornadas: " + amp3.toFixed(3) + " · 8 jornadas: " + amp8.toFixed(3));
+
+definirJanela(5);
+const prFacil = projecao(facil);
+verificar("fator do calendário fica perto de 1",
+  prFacil.calFator > 0.85 && prFacil.calFator < 1.15, prFacil.calFator.toFixed(3));
+verificar("a janela lê o valor guardado", janelaAtual() === 5);
+verificar("calendário fácil vale mais do que a taxa base", prFacil.ppjCal > prFacil.ppj);
+verificar("calendário difícil vale menos", projecao(dificil).ppjCal < projecao(dificil).ppj);
+
+const ppjAntes = projecao(facil).ppj;
+definirJanela(8);
+verificar("mudar a janela não mexe nos pts/jornada, só no ajuste",
+  Math.abs(projecao(facil).ppj - ppjAntes) < 1e-9);
+definirJanela(5);
+
+const semJogos = D.players.find(function (p) { return p.web_name === "AV1"; });
+semJogos.team = 99;
+const prSem = projecao(semJogos);
+verificar("sem calendário, o ajuste é neutro", Math.abs(prSem.ppjCal - prSem.ppj) < 1e-9);
+verificar("decaimento faz a próxima jornada pesar mais",
+  fatorCalendario([{ difficulty: 1 }, { difficulty: 5 }]) >
+  fatorCalendario([{ difficulty: 5 }, { difficulty: 1 }]));
+
 /* --- Projeção nunca negativa --- */
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));

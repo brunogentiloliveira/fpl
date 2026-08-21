@@ -124,6 +124,27 @@ realizada: passa a estimar o que o jogador **gera**.
 - A coluna Pts/90 tem `title` com a decomposição (presença · golos · assistências · baliza a
   zero · defesas · bónus · cartões), para o número não ser uma caixa preta.
 
+## Janela do calendário (2026-08-21)
+
+Antes eram fixas 3 jornadas (`prox3`, um **total**). Medi a amplitude do fator de dificuldade
+no calendário real: **10.0%** a 3 jornadas, 6.0% a 5, 5.0% a 6, **2.4%** a 10 — e entre 3 e 6
+uma equipa muda em média 6 lugares em 20. O problema dos 3: com 10% de amplitude o sorteio
+inverte diferenças de qualidade entre jogadores (os melhores livres separam-se por 3-5%), e as
+decisões de waiver são na prática permanentes. Os 10 matam o sinal.
+
+- **Janela por omissão: 5, com decaimento** `0.85^i` (a próxima jornada pesa mais).
+- `prox3` deu lugar a `calFator` (média ponderada, ~1.0) e **`ppjCal = ppj × calFator`** — uma
+  **taxa**, não um total: não cresce com a janela e fica comparável aos pts/jornada. Coluna
+  "Calend." nas tabelas.
+- **Seletor 3/5/8** no topo das Sugestões, guardado em `localStorage` (`janela`). Redesenha
+  onze, projeções, sugestões, tabela de jogadores e análise de trocas. Serve para ver se uma
+  decisão depende do horizonte: quando não muda entre 3 e 8, é sólida.
+- Nos waivers, a **qualidade filtra** (`ganho >= 0.4`) e o **calendário ordena** (`ganhoCal`).
+  Os "melhores livres" são ordenados por `ppjCal`, senão o seletor não teria efeito visível.
+- O **onze inicial não usa a janela** (horizonte 1, `ppj`) — verificado nos testes.
+- A janela para trás (minutos dos últimos 3 jogos) fica em 3: aí a reatividade a mudanças de
+  estatuto vale mais do que a estabilidade.
+
 ## Pontuação vinda da liga (2026-08-21)
 
 `bootstrap-static → settings` traz a **tabela de pontuação e as regras de plantel da liga**, que

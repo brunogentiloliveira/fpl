@@ -629,8 +629,50 @@ function pisoTransferencia(valor) {
   return 50;
 }
 
+/* --- Janela do calendário --- */
+
+// Com 3 jornadas, a diferença entre o melhor e o pior calendário chega a 10%,
+// o suficiente para o sorteio inverter diferenças de qualidade entre jogadores
+// — e as decisões de waiver são, na prática, permanentes. Com 10 jornadas cai
+// para 2.4% e deixa de dizer nada. 5 é o equilíbrio.
+const JANELA_OMISSAO = 5;
+const JANELAS = [3, 5, 8];
+const DECAIMENTO = 0.85; // a próxima jornada pesa mais do que a última da janela
+
+function janelaAtual() {
+  const guardada = Number(lerGuardado("janela") || 0);
+  return JANELAS.includes(guardada) ? guardada : JANELA_OMISSAO;
+}
+
+function definirJanela(n) {
+  try {
+    localStorage.setItem("janela", JSON.stringify(n));
+  } catch (err) {
+    /* sem localStorage: fica só nesta sessão */
+  }
+}
+
 function fatorDificuldade(d) {
   return 1 + (3 - d) * 0.06; // adversário fácil (1) 1.12 … difícil (5) 0.88
+}
+
+/**
+ * Média ponderada da dificuldade dos próximos jogos, ~1.0.
+ *
+ * É uma taxa e não um total: assim o número não cresce com a janela e continua
+ * comparável aos pts/jornada. Jornadas duplas contam duas vezes (o jogador
+ * joga duas vezes) e as jornadas em branco puxam para baixo, como devem.
+ */
+function fatorCalendario(jogos) {
+  if (jogos.length === 0) return 1;
+  let soma = 0;
+  let pesos = 0;
+  jogos.forEach((j, i) => {
+    const peso = Math.pow(DECAIMENTO, i);
+    soma += fatorDificuldade(j.difficulty) * peso;
+    pesos += peso;
+  });
+  return pesos > 0 ? soma / pesos : 1;
 }
 
 function projecao(p, ignorarAusencia) {
@@ -697,11 +739,12 @@ function projecao(p, ignorarAusencia) {
   xmin = Math.max(0, Math.min(90, xmin));
 
   const ppj = (pp90 * xmin) / 90;
-  const jogos = ((D.fixtures || {})[String(p.team)] || []).slice(0, 3);
-  const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
+  const jogos = ((D.fixtures || {})[String(p.team)] || []).slice(0, janelaAtual());
+  const calFator = fatorCalendario(jogos);
+  const ppjCal = ppj * calFator;
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !STATUS_FORA.has(p.status);
-  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
+  return { pp90, xmin, ppj, ppjCal, calFator, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
     componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p) };
 }
 
@@ -752,14 +795,14 @@ function linhaProjecao(p, pr) {
       pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
     '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +
-    '<td class="num">' + pr.prox3.toFixed(1) + "</td>" +
+    '<td class="num">' + pr.ppjCal.toFixed(1) + "</td>" +
   "</tr>";
 }
 
 function tabelaProjecao(linhas) {
   return '<table class="tabela tabela-proj">' +
     "<thead><tr><th>Jogador</th><th class=\"num\">Pts/90</th><th class=\"num\">Min</th>" +
-    "<th class=\"num\">Pts/J</th><th class=\"num\">Próx. 3</th></tr></thead>" +
+    "<th class=\"num\">Pts/J</th><th class=\"num\" title=\"Pts por jornada ajustados à dificuldade das próximas ' + janelaAtual() + ' jornadas\">Calend.</th></tr></thead>" +
     "<tbody>" + linhas + "</tbody></table>";
 }
 
@@ -769,7 +812,8 @@ function desenharLivres() {
     .filter((p) => p.owner == null && !STATUS_FORA.has(p.status))
     .filter((p) => !pos || String(p.element_type) === pos)
     .map((p) => ({ p, pr: projecao(p) }))
-    .sort((a, b) => b.pr.ppj - a.pr.ppj)
+    // Ordenados pela taxa já ajustada ao calendário: é o que muda com a janela.
+    .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)
     .slice(0, 20);
   $("proj-livres").innerHTML = tabelaProjecao(
     livres.map(({ p, pr }) => linhaProjecao(p, pr)).join(""));
@@ -847,11 +891,12 @@ function sugestoesLivres(meusX) {
       .forEach((livre) => {
         const ganho = livre.pr.ppj - meu.pr.ppj;
         if (ganho >= GANHO_MIN_LIVRE) {
-          pares.push({ meu, livre, ganho, ganho3: livre.pr.prox3 - meu.pr.prox3 });
+          pares.push({ meu, livre, ganho, ganhoCal: livre.pr.ppjCal - meu.pr.ppjCal });
         }
       });
   });
-  pares.sort((a, b) => b.ganho - a.ganho);
+  // O ganho puro (qualidade) já filtrou acima; a ordem segue o calendário escolhido.
+  pares.sort((a, b) => b.ganhoCal - a.ganhoCal);
 
   // Guloso: cada jogador meu sai uma vez, cada livre entra uma vez.
   const saiu = new Set();
@@ -949,7 +994,8 @@ function desenharOnze(meusX) {
 function calendario(pr) {
   if (pr.jogos.length === 0) return null;
   const media = pr.jogos.reduce((s, j) => s + j.difficulty, 0) / pr.jogos.length;
-  const adv = pr.jogos.map((j) => (D.teams[String(j.opponent)] || {}).short_name).join(", ");
+  const adv = pr.jogos.slice(0, 5)
+    .map((j) => (D.teams[String(j.opponent)] || {}).short_name).join(", ");
   if (media <= 2.4) return "calendário fácil (" + adv + ")";
   if (media >= 3.6) return "calendário difícil (" + adv + ")";
   return "calendário equilibrado (" + adv + ")";
@@ -1136,7 +1182,8 @@ function initSugestoes() {
       const explicacao = "<strong>" + esc(s.meu.p.web_name) + "</strong> " + porqueSai(s.meu) +
         ". <strong>" + esc(s.livre.p.web_name) + "</strong> " + porqueEntra(s.livre) +
         ". A troca vale mais <strong>" + s.ganho.toFixed(1) +
-        " pontos por jornada</strong> (" + s.ganho3.toFixed(1) + " nas próximas três).";
+        " pontos por jornada</strong> (" + s.ganhoCal.toFixed(1) +
+        " com o calendário das próximas " + janelaAtual() + ").";
       return "<li>" +
         '<div class="troca-linha"><span class="sai">Sai</span> ' + etiquetaJogador(s.meu) + "</div>" +
         '<div class="troca-linha"><span class="entra">Entra</span> ' + etiquetaJogador(s.livre) + "</div>" +
@@ -1348,7 +1395,7 @@ function detalheTroca(x, sentido) {
     (POSICOES[x.p.element_type] || "?") + " · " + nomeClube(x.p.team) + ") — " + esc(motivo) +
     (cargo ? "." + cargo : "") +
     ". Projeta <strong>" + x.pr.ppj.toFixed(1) + " pts/jornada</strong>, " +
-    x.pr.prox3.toFixed(1) + " nas próximas três." +
+    x.pr.ppjCal.toFixed(1) + " com o calendário das próximas " + janelaAtual() + "." +
     (x.p.total_points ? " Fez " + x.p.total_points + " pontos na época passada." : "") +
     "</li>";
 }
@@ -1506,7 +1553,7 @@ function analisarTroca(eu) {
   const ganhoDele = deleDepois - deleAntes;
 
   const somaPpj = (l) => l.reduce((t, x) => t + x.pr.ppj, 0);
-  const soma3 = (l) => l.reduce((t, x) => t + x.pr.prox3, 0);
+  const somaCal = (l) => l.reduce((t, x) => t + x.pr.ppjCal, 0);
   const cartaz = (l) => l.reduce((t, x) => t + (x.p.total_points || 0), 0);
 
   let veredicto;
@@ -1546,8 +1593,8 @@ function analisarTroca(eu) {
       linhaTabela("Onze depois", meuDepois.toFixed(1), deleDepois.toFixed(1)) +
       linhaTabela("Diferença no onze", sinal(ganhoMeu), sinal(ganhoDele), true) +
       linhaTabela("Pts/jornada que entram", somaPpj(recebo).toFixed(1), somaPpj(dou).toFixed(1)) +
-      linhaTabela("Próximas 3 jornadas", sinal(soma3(recebo) - soma3(dou)),
-        sinal(soma3(dou) - soma3(recebo))) +
+      linhaTabela("Ajustado ao calendário (" + janelaAtual() + " jornadas)",
+        sinal(somaCal(recebo) - somaCal(dou)), sinal(somaCal(dou) - somaCal(recebo))) +
       linhaTabela("Pontos da época passada que entram", cartaz(recebo), cartaz(dou)) +
     "</tbody></table>" +
     (dou.length ? '<h3 class="sub-titulo">Sais com</h3><ul class="detalhe-troca">' +
@@ -1582,6 +1629,23 @@ function initAnaliseTroca() {
 
   desenharListas();
   analisarTroca(eu);
+}
+
+/** Seletor da janela: redesenha tudo o que depende do calendário. */
+function initSeletorJanela() {
+  const sel = $("janela");
+  if (!sel) return;
+  sel.value = String(janelaAtual());
+  $("form-janela").addEventListener("submit", (ev) => ev.preventDefault());
+  sel.addEventListener("change", () => {
+    definirJanela(Number(sel.value));
+    const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+    if (eu) desenharOnze(comProjecao(D.players.filter((p) => p.owner === eu.entry_id)));
+    initProjecoes();
+    initSugestoes();
+    aplicarFiltros();
+    analisarTroca(eu);
+  });
 }
 
 /* ---------- Conferências e risco de não jogar ---------- */
@@ -1837,6 +1901,7 @@ async function main() {
   desenharPrecisao();
   initSugestoes();
   initAnaliseTroca();
+  initSeletorJanela();
   initMercado();
   initJogadores();
   initTabs();
