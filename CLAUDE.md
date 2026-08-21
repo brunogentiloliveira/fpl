@@ -135,6 +135,10 @@ que já tem fallback.
   - **Onze inicial** (`melhorXI`): 1 GR, 3-5 DEF, 2-5 MED, 1-3 AV. Guloso — mínimos por posição
     primeiro, depois as 4 vagas restantes pelos melhores que ainda cabem. `valorXI` = soma
     dos pts/jornada do onze; é a métrica que avalia cada movimento (o banco vale 0 à margem).
+    Mostrado como "campo" (`desenharOnze`, secção `#xi-campo`) com formação, total e suplentes.
+  - **Justificações** (`porqueSai`/`porqueEntra`/`calendario`): cada sugestão traz uma frase
+    em português corrente com o motivo real (lesão, minutos esperados, pts/90, valor da
+    transferência, dificuldade dos próximos adversários) em vez de só o número do ganho.
   - **Waivers**: para cada posição, compara os meus com os livres não-lesionados; sugere se
     ganhar ≥0.4 pts/jornada, emparelhamento guloso (cada jogador entra/sai uma vez). Se o meu
     jogador recuperado projetar mais do que o livre, mostra aviso para não trocar um titular

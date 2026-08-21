@@ -569,6 +569,77 @@ function sugestoesTrocas(meusX, euEntry) {
   return escolhidas;
 }
 
+/* --- Onze inicial --- */
+
+function chipJogador(x) {
+  const est = estadoDe(x.p);
+  return '<span class="chip">' +
+    '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
+    '<span class="chip-info">' + nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + "</span>" +
+    (est.sev ? '<span class="estado ' + est.sev + '">!</span>' : "") +
+  "</span>";
+}
+
+function desenharOnze(meusX) {
+  const xi = melhorXI(meusX);
+  const porPos = { 1: [], 2: [], 3: [], 4: [] };
+  xi.forEach((x) => porPos[x.p.element_type].push(x));
+  [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppj - a.pr.ppj));
+
+  const total = xi.reduce((s, x) => s + x.pr.ppj, 0);
+  $("xi-resumo").textContent = porPos[2].length + "-" + porPos[3].length + "-" +
+    porPos[4].length + " · ≈ " + total.toFixed(1) + " pts nesta jornada";
+  $("xi-campo").innerHTML = [1, 2, 3, 4]
+    .map((pos) => '<div class="linha-campo">' + porPos[pos].map(chipJogador).join("") + "</div>")
+    .join("");
+
+  const banco = meusX.filter((x) => !xi.includes(x)).sort((a, b) => b.pr.ppj - a.pr.ppj);
+  $("xi-banco").innerHTML = "<strong>Suplentes:</strong> " + banco.map((x) =>
+    esc(x.p.web_name) + " (" + (POSICOES[x.p.element_type] || "?") + " · " +
+    x.pr.ppj.toFixed(1) + ")").join(" · ");
+}
+
+/* --- Justificações em linguagem corrente --- */
+
+function calendario(pr) {
+  if (pr.jogos.length === 0) return null;
+  const media = pr.jogos.reduce((s, j) => s + j.difficulty, 0) / pr.jogos.length;
+  const adv = pr.jogos.map((j) => (D.teams[String(j.opponent)] || {}).short_name).join(", ");
+  if (media <= 2.4) return "calendário fácil (" + adv + ")";
+  if (media >= 3.6) return "calendário difícil (" + adv + ")";
+  return "calendário equilibrado (" + adv + ")";
+}
+
+function porqueSai(x) {
+  const est = estadoDe(x.p);
+  if (STATUS_FORA.has(x.p.status)) {
+    return "está " + est.rotulo.toLowerCase() + " e não pontua";
+  }
+  if (x.p.status === "d") {
+    return est.rotulo.toLowerCase() + ", o que corta os minutos esperados para " +
+      Math.round(x.pr.xmin);
+  }
+  if (x.pr.xmin < 55) {
+    return "só deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jornada";
+  }
+  return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min, abaixo da alternativa";
+}
+
+function porqueEntra(x) {
+  const partes = [];
+  if (x.pr.tr && x.pr.tr.confirmada) {
+    partes.push("custou " + x.pr.tr.moeda + x.pr.tr.valor + "M, por isso deve ser titular");
+  } else if (x.pr.xmin >= 70) {
+    partes.push("é titular certo (~" + Math.round(x.pr.xmin) + " min por jogo)");
+  } else {
+    partes.push("deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jogo");
+  }
+  partes.push("vale " + x.pr.pp90.toFixed(1) + " pts por 90 min");
+  const cal = calendario(x.pr);
+  if (cal) partes.push(cal);
+  return partes.join(", ");
+}
+
 function etiquetaJogador(x) {
   const est = estadoDe(x.p);
   return esc(x.p.web_name) +
@@ -581,6 +652,7 @@ function initSugestoes() {
   const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
+  desenharOnze(meusX);
 
   // --- Contexto da liga ---
   const ev = D.next_event ? D.next_event.name : "próxima jornada";
@@ -612,11 +684,14 @@ function initSugestoes() {
         ? '<p class="aviso-sug">⚠ Recuperado, ' + esc(s.meu.p.web_name) + " projeta " +
           saudavel.toFixed(1) + " pts/J — só compensa se a ausência for longa.</p>"
         : "";
+      const explicacao = "<strong>" + esc(s.meu.p.web_name) + "</strong> " + porqueSai(s.meu) +
+        ". <strong>" + esc(s.livre.p.web_name) + "</strong> " + porqueEntra(s.livre) +
+        ". A troca vale mais <strong>" + s.ganho.toFixed(1) +
+        " pontos por jornada</strong> (" + s.ganho3.toFixed(1) + " nas próximas três).";
       return "<li>" +
         '<div class="troca-linha"><span class="sai">Sai</span> ' + etiquetaJogador(s.meu) + "</div>" +
         '<div class="troca-linha"><span class="entra">Entra</span> ' + etiquetaJogador(s.livre) + "</div>" +
-        '<p class="ganho">+' + s.ganho.toFixed(1) + " pts/jornada · +" + s.ganho3.toFixed(1) +
-          " nas próximas 3</p>" + aviso +
+        '<p class="porque">' + explicacao + "</p>" + aviso +
       "</li>";
     }).join("");
   }
@@ -627,16 +702,23 @@ function initSugestoes() {
     $("nota-sug-trocas").hidden = false;
   } else {
     $("sug-trocas").innerHTML = trocas.map((t) => {
-      const porque = t.tipo === "ambos"
-        ? "ele também ganha +" + t.ganhoDeles.toFixed(1) + " no onze dele"
-        : "ele fica com o jogador de mais cartaz (" + t.meu.p.total_points + " vs " +
-          t.deles.p.total_points + " pts na época passada)";
+      const ganhas = "Ganhas porque <strong>" + esc(t.deles.p.web_name) + "</strong> " +
+        porqueEntra(t.deles) + ", enquanto <strong>" + esc(t.meu.p.web_name) + "</strong> " +
+        porqueSai(t.meu) + " — o teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) +
+        " pontos por jornada</strong>.";
+      const aceita = t.tipo === "ambos"
+        ? " Ele também tem interesse: o onze dele sobe " + t.ganhoDeles.toFixed(1) +
+          " pontos, porque " + esc(t.meu.p.web_name) + " encaixa melhor no plantel dele."
+        : " Ele pode aceitar porque recebe o nome maior: " + esc(t.meu.p.web_name) + " fez " +
+          t.meu.p.total_points + " pontos na época passada e " + esc(t.deles.p.web_name) +
+          " fez " + t.deles.p.total_points + " — é o número que salta à vista, mesmo que a " +
+          "projeção para esta época diga o contrário.";
       return "<li class=\"" + t.tipo + "\">" +
         '<p class="alvo">Propor a <strong>' + esc(t.outro.entry_name) + "</strong> (" +
           esc(t.outro.manager) + ")</p>" +
         '<div class="troca-linha"><span class="sai">Dás</span> ' + etiquetaJogador(t.meu) + "</div>" +
         '<div class="troca-linha"><span class="entra">Recebes</span> ' + etiquetaJogador(t.deles) + "</div>" +
-        '<p class="ganho">Ganhas +' + t.ganhoMeu.toFixed(1) + " pts/jornada no onze · " + porque + "</p>" +
+        '<p class="porque">' + ganhas + aceita + "</p>" +
       "</li>";
     }).join("");
   }
