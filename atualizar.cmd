@@ -13,11 +13,18 @@ if not defined PY (
   exit /b 1
 )
 
-echo A atualizar os dados da liga...
+echo A atualizar os dados da liga Draft...
 "%PY%" scripts\fetch_data.py
 if errorlevel 1 (
-  echo Aviso: nao foi possivel atualizar. O site abre com os ultimos dados guardados.
+  echo Aviso: nao foi possivel atualizar o Draft. O site abre com os ultimos dados.
   pause
+)
+
+echo.
+echo A atualizar a FPL classica...
+"%PY%" scripts\fetch_classica.py
+if errorlevel 1 (
+  echo Aviso: nao foi possivel atualizar a classica.
 )
 
 echo.
