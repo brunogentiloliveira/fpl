@@ -23,6 +23,7 @@
 
 <nav class="tabs" role="tablist" aria-label="Secções">
   <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
+  <button role="tab" id="tab-equipa" aria-controls="painel-equipa" aria-selected="false" tabindex="-1" aria-label="A minha equipa">Equipa</button>
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
 </nav>
@@ -34,6 +35,15 @@
       <tbody></tbody>
     </table>
     <p class="nota" id="nota-liga" hidden>A classificação aparece depois da primeira jornada.</p>
+  </section>
+
+  <section id="painel-equipa" role="tabpanel" aria-labelledby="tab-equipa" hidden>
+    <h2 class="sec-titulo" id="equipa-nome"></h2>
+    <p class="nota" id="equipa-alerta" hidden></p>
+    <div id="plantel"></div>
+    <h2 class="sec-titulo">Alvos de waiver</h2>
+    <p class="nota">Melhores livres por draft rank; lesionados, suspensos e indisponíveis escondidos.</p>
+    <div id="alvos"></div>
   </section>
 
   <section id="painel-boletim" role="tabpanel" aria-labelledby="tab-boletim" hidden>

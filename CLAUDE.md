@@ -58,10 +58,12 @@ que já tem fallback.
 - **Fase 1 (feita)**: recolha + página única com cabeçalho (última atualização +
   contagem para o deadline), ticker de notícias, separadores Liga / Boletim / Jogadores
   (pesquisa, filtro por posição, "só livres", ordenado por draft_rank).
-- **Fase 2 (por fazer)**: separador "A minha equipa" — detetar a equipa do Bruno Gentil
-  ("Buendia Porro"), plantel de 15 por posição com estado clínico; bloco "Alvos de waiver"
-  (10 livres com melhor draft_rank por posição, escondendo status fora); realçar a vermelho
-  jogadores meus que entraram no boletim desde a última atualização.
+- **Fase 2 (feita)**: separador "Equipa" (aria-label "A minha equipa") — plantel de 15 por
+  posição com estado clínico e alerta; "Alvos de waiver" (10 livres com melhor draft_rank
+  por posição, sem status fora); realce a vermelho de jogadores meus novos no boletim.
+  A deteção de novidades compara com o data.json anterior no fetch_data.py (`news_new`;
+  primeira execução nunca marca nada). A equipa é detetada pelo apelido do gestor
+  (regex /gentil/i em app.js), com fallback para o nome "Buendia Porro".
 - **Fase 3 (por fazer)**: separador "Equipas" — cartão por gestor (15 por posição, contagem de
   lesionados). A liga é classic, não h2h, portanto sem confrontos; explorar `/api/league/{ID}/`
   para resultados por jornada antes de implementar.

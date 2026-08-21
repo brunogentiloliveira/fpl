@@ -1,6 +1,9 @@
 "use strict";
 
 const POSICOES = { 1: "GR", 2: "DEF", 3: "MED", 4: "AV" };
+const POS_NOMES = { 1: "Guarda-redes", 2: "Defesas", 3: "Médios", 4: "Avançados" };
+const STATUS_FORA = new Set(["i", "s", "u", "n"]);
+const MEU_GESTOR = /gentil/i; // apelido do gestor (equipa "Buendia Porro")
 const ESTADOS = {
   a: { rotulo: "Disponível", sev: "" },
   d: { rotulo: "Dúvida", sev: "warn" },
@@ -119,6 +122,62 @@ function initBoletim(noticias) {
       '<p class="dono">' + (dono ? "Dono: <strong>" + esc(dono) + "</strong>" : "Livre") + "</p>" +
     "</li>";
   }).join("");
+}
+
+/* ---------- A minha equipa ---------- */
+
+function porDraftRank(a, b) {
+  return (a.draft_rank ?? 1e9) - (b.draft_rank ?? 1e9);
+}
+
+function grupoPosHTML(pos, jogadores, realcarNovos) {
+  if (jogadores.length === 0) return "";
+  const linhas = jogadores.map((p) => {
+    const est = estadoDe(p);
+    const novo = realcarNovos && p.news_new && p.news;
+    const marca = est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "";
+    const news = realcarNovos && p.news ? '<span class="news-mini">' + esc(p.news) + "</span>" : "";
+    return '<li class="' + (novo ? "novo-boletim" : "") + '">' +
+      '<div class="linha">' +
+        '<span class="nome">' + esc(p.web_name) + "</span>" +
+        '<span class="clube">' + nomeClube(p.team) + "</span>" + marca +
+        (novo ? ' <span class="estado bad">Novo no boletim</span>' : "") +
+        '<span class="pts">' + p.total_points + "</span>" +
+      "</div>" + news +
+    "</li>";
+  }).join("");
+  return '<section class="grupo-pos"><h3>' + POS_NOMES[pos] + " (" + jogadores.length + ")</h3>" +
+    '<ul class="lista-jog">' + linhas + "</ul></section>";
+}
+
+function initMinhaEquipa() {
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager)) ||
+    D.entries.find((e) => e.entry_name === "Buendia Porro");
+  if (!eu) {
+    $("equipa-nome").textContent = "A minha equipa";
+    $("equipa-alerta").textContent = "Não encontrei a equipa nos dados da liga.";
+    $("equipa-alerta").hidden = false;
+    return;
+  }
+  $("equipa-nome").textContent = eu.entry_name + " · " + eu.manager;
+
+  const meus = D.players.filter((p) => p.owner === eu.entry_id);
+  const novos = meus.filter((p) => p.news_new && p.news);
+  if (novos.length > 0) {
+    $("equipa-alerta").textContent = "⚠ " + novos.length +
+      (novos.length === 1 ? " jogador teu entrou" : " jogadores teus entraram") +
+      " no boletim desde a última atualização.";
+    $("equipa-alerta").hidden = false;
+    $("equipa-alerta").classList.add("alerta");
+  }
+  $("plantel").innerHTML = [1, 2, 3, 4].map((pos) =>
+    grupoPosHTML(pos, meus.filter((p) => p.element_type === pos).sort(porDraftRank), true)
+  ).join("");
+
+  const livres = D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status));
+  $("alvos").innerHTML = [1, 2, 3, 4].map((pos) =>
+    grupoPosHTML(pos, livres.filter((p) => p.element_type === pos).sort(porDraftRank).slice(0, 10), false)
+  ).join("");
 }
 
 /* ---------- Liga ---------- */
@@ -249,6 +308,7 @@ async function main() {
   initTicker(noticias);
   initBoletim(noticias);
   initLiga();
+  initMinhaEquipa();
   initJogadores();
   initTabs();
 }

@@ -26,6 +26,20 @@ def get(path):
         return json.load(resp)
 
 
+def load_previous_news(out_path):
+    """ids -> news_added da recolha anterior, para detetar entradas novas no boletim.
+
+    Devolve None se não houver recolha anterior (primeira execução): nesse caso
+    nada é marcado como novo, para não pintar o boletim inteiro de vermelho."""
+    try:
+        with open(out_path, encoding="utf-8") as f:
+            prev = json.load(f)
+        return {p["id"]: p.get("news_added")
+                for p in prev.get("players", []) if p.get("news")}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def pick_next_event(events, game):
     """Evento cujo deadline conta para a contagem decrescente."""
     by_id = {ev["id"]: ev for ev in events}
@@ -49,11 +63,17 @@ def main():
     status = get(f"/league/{league_id}/element-status")
 
     owners = {es["element"]: es["owner"] for es in status["element_status"]}
+    out_path = os.path.join(OUT_DIR, "data.json")
+    prev_news = load_previous_news(out_path)
 
     players = []
     for el in bootstrap["elements"]:
         p = {k: el.get(k) for k in PLAYER_FIELDS}
         p["owner"] = owners.get(el["id"])
+        p["news_new"] = bool(
+            prev_news is not None and p["news"]
+            and (el["id"] not in prev_news or prev_news[el["id"]] != p["news_added"])
+        )
         players.append(p)
 
     events = bootstrap["events"]["data"]
@@ -92,7 +112,6 @@ def main():
     }
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    out_path = os.path.join(OUT_DIR, "data.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
     print(f"OK: {out_path} ({os.path.getsize(out_path)} bytes, "
