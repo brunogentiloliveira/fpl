@@ -446,6 +446,202 @@ function initProjecoes() {
   desenharLivres();
 }
 
+/* ---------- Sugestões da jornada ---------- */
+
+// Formações válidas no FPL: 1 GR, 3-5 DEF, 2-5 MED, 1-3 AV (11 titulares).
+const LIMITES_XI = { 1: [1, 1], 2: [3, 5], 3: [2, 5], 4: [1, 3] };
+const GANHO_MIN_LIVRE = 0.4;  // pts/jornada abaixo disto não vale o waiver
+const GANHO_MIN_TROCA = 0.25; // ambos os lados têm de ganhar pelo menos isto
+
+/** Melhor onze possível de um plantel, por projeção. */
+function melhorXI(plantel) {
+  const porPos = { 1: [], 2: [], 3: [], 4: [] };
+  plantel.forEach((x) => porPos[x.p.element_type].push(x));
+  [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppj - a.pr.ppj));
+
+  const xi = [];
+  const usados = {};
+  [1, 2, 3, 4].forEach((pos) => {
+    const min = LIMITES_XI[pos][0];
+    xi.push(...porPos[pos].slice(0, min));
+    usados[pos] = Math.min(min, porPos[pos].length);
+  });
+  // Preencher as vagas restantes com os melhores que ainda cabem por posição.
+  const resto = [];
+  [1, 2, 3, 4].forEach((pos) => resto.push(...porPos[pos].slice(usados[pos])));
+  resto.sort((a, b) => b.pr.ppj - a.pr.ppj);
+  for (const x of resto) {
+    if (xi.length >= 11) break;
+    const pos = x.p.element_type;
+    if (usados[pos] < LIMITES_XI[pos][1]) { xi.push(x); usados[pos] += 1; }
+  }
+  return xi;
+}
+
+function valorXI(plantel) {
+  return melhorXI(plantel).reduce((s, x) => s + x.pr.ppj, 0);
+}
+
+function comProjecao(jogadores) {
+  return jogadores.map((p) => ({ p, pr: projecao(p) }));
+}
+
+/** Projeção ignorando o estado clínico — para não trocar um titular por 2 semanas de lesão. */
+function ppjSaudavel(p) {
+  if (!STATUS_FORA.has(p.status) && p.status !== "d") return projecao(p).ppj;
+  const copia = Object.assign({}, p, { status: "a", chance_of_playing_next_round: null });
+  return projecao(copia).ppj;
+}
+
+function sugestoesLivres(meusX) {
+  const livresX = comProjecao(D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status)));
+  const pares = [];
+  meusX.forEach((meu) => {
+    livresX
+      .filter((l) => l.p.element_type === meu.p.element_type)
+      .forEach((livre) => {
+        const ganho = livre.pr.ppj - meu.pr.ppj;
+        if (ganho >= GANHO_MIN_LIVRE) {
+          pares.push({ meu, livre, ganho, ganho3: livre.pr.prox3 - meu.pr.prox3 });
+        }
+      });
+  });
+  pares.sort((a, b) => b.ganho - a.ganho);
+
+  // Guloso: cada jogador meu sai uma vez, cada livre entra uma vez.
+  const saiu = new Set();
+  const entrou = new Set();
+  const escolhidas = [];
+  for (const par of pares) {
+    if (saiu.has(par.meu.p.id) || entrou.has(par.livre.p.id)) continue;
+    saiu.add(par.meu.p.id);
+    entrou.add(par.livre.p.id);
+    escolhidas.push(par);
+    if (escolhidas.length >= 5) break;
+  }
+  return escolhidas;
+}
+
+function sugestoesTrocas(meusX, euEntry) {
+  const meuValor = valorXI(meusX);
+  const propostas = [];
+
+  D.entries.filter((e) => e.id !== euEntry.id).forEach((outro) => {
+    const delesX = comProjecao(D.players.filter((p) => p.owner === outro.entry_id));
+    if (delesX.length === 0) return;
+    const delesValor = valorXI(delesX);
+
+    meusX.forEach((meu) => {
+      delesX.forEach((deles) => {
+        // O plantel tem de continuar com 2 GR, 5 DEF, 5 MED e 3 AV: numa troca
+        // 1-por-1 os jogadores têm de ser da mesma posição.
+        if (deles.p.element_type !== meu.p.element_type) return;
+        const meuNovo = meusX.filter((x) => x.p.id !== meu.p.id).concat([deles]);
+        const delesNovo = delesX.filter((x) => x.p.id !== deles.p.id).concat([meu]);
+        const ganhoMeu = valorXI(meuNovo) - meuValor;
+        if (ganhoMeu < GANHO_MIN_TROCA) return;
+        const ganhoDeles = valorXI(delesNovo) - delesValor;
+        if (ganhoDeles >= GANHO_MIN_TROCA) {
+          // Ambos melhoram o onze: acontece quando as posições fortes diferem.
+          propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "ambos" });
+        } else if (meu.p.total_points > deles.p.total_points) {
+          // Soma zero na projeção, mas ele recebe o jogador com mais cartaz
+          // (pontos da época passada) — é assim que as trocas passam numa liga.
+          propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "cartaz" });
+        }
+      });
+    });
+  });
+
+  // Win-win primeiro; dentro de cada tipo, o que me dá mais.
+  propostas.sort((a, b) => b.ganhoMeu - a.ganhoMeu);
+  propostas.sort((a, b) => (a.tipo === "ambos" ? 0 : 1) - (b.tipo === "ambos" ? 0 : 1));
+  const usados = new Set();
+  const escolhidas = [];
+  for (const pr of propostas) {
+    const chave = pr.meu.p.id + "-" + pr.deles.p.id;
+    if (usados.has(pr.meu.p.id) || usados.has(pr.deles.p.id) || usados.has(chave)) continue;
+    usados.add(pr.meu.p.id);
+    usados.add(pr.deles.p.id);
+    escolhidas.push(pr);
+    if (escolhidas.length >= 5) break;
+  }
+  return escolhidas;
+}
+
+function etiquetaJogador(x) {
+  const est = estadoDe(x.p);
+  return esc(x.p.web_name) +
+    ' <span class="clube">' + nomeClube(x.p.team) + " · " + (POSICOES[x.p.element_type] || "?") +
+    " · " + x.pr.ppj.toFixed(1) + " pts/J</span>" +
+    (est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "");
+}
+
+function initSugestoes() {
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
+  const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
+
+  // --- Contexto da liga ---
+  const ev = D.next_event ? D.next_event.name : "próxima jornada";
+  $("sug-titulo").textContent = "Sugestões para a " + ev;
+  const minha = D.standings.find((s) => s.league_entry === eu.id);
+  const partes = [];
+  if (minha && minha.rank != null) {
+    const lider = D.standings.reduce((a, b) => ((a.total ?? 0) >= (b.total ?? 0) ? a : b));
+    const dif = (lider.total ?? 0) - (minha.total ?? 0);
+    partes.push(minha.rank + "º lugar com " + (minha.total ?? 0) + " pts" +
+      (dif > 0 ? " (a " + dif + " do líder)" : " — és o líder"));
+  } else {
+    partes.push("A liga ainda não tem classificação");
+  }
+  partes.push("és o #" + (eu.waiver_pick ?? "?") + " na fila de waivers");
+  const movs = (D.mercado && D.mercado.transacoes ? D.mercado.transacoes : [])
+    .filter((t) => t.result === "a").length;
+  if (movs) partes.push(movs + " movimentos recentes na liga");
+  $("sug-contexto").textContent = partes.join(" · ") + ".";
+
+  // --- Waivers / free agency ---
+  const livres = sugestoesLivres(meusX);
+  if (livres.length === 0) {
+    $("nota-sug-livres").hidden = false;
+  } else {
+    $("sug-livres").innerHTML = livres.map((s) => {
+      const saudavel = ppjSaudavel(s.meu.p);
+      const aviso = saudavel > s.livre.pr.ppj
+        ? '<p class="aviso-sug">⚠ Recuperado, ' + esc(s.meu.p.web_name) + " projeta " +
+          saudavel.toFixed(1) + " pts/J — só compensa se a ausência for longa.</p>"
+        : "";
+      return "<li>" +
+        '<div class="troca-linha"><span class="sai">Sai</span> ' + etiquetaJogador(s.meu) + "</div>" +
+        '<div class="troca-linha"><span class="entra">Entra</span> ' + etiquetaJogador(s.livre) + "</div>" +
+        '<p class="ganho">+' + s.ganho.toFixed(1) + " pts/jornada · +" + s.ganho3.toFixed(1) +
+          " nas próximas 3</p>" + aviso +
+      "</li>";
+    }).join("");
+  }
+
+  // --- Trocas ---
+  const trocas = sugestoesTrocas(meusX, eu);
+  if (trocas.length === 0) {
+    $("nota-sug-trocas").hidden = false;
+  } else {
+    $("sug-trocas").innerHTML = trocas.map((t) => {
+      const porque = t.tipo === "ambos"
+        ? "ele também ganha +" + t.ganhoDeles.toFixed(1) + " no onze dele"
+        : "ele fica com o jogador de mais cartaz (" + t.meu.p.total_points + " vs " +
+          t.deles.p.total_points + " pts na época passada)";
+      return "<li class=\"" + t.tipo + "\">" +
+        '<p class="alvo">Propor a <strong>' + esc(t.outro.entry_name) + "</strong> (" +
+          esc(t.outro.manager) + ")</p>" +
+        '<div class="troca-linha"><span class="sai">Dás</span> ' + etiquetaJogador(t.meu) + "</div>" +
+        '<div class="troca-linha"><span class="entra">Recebes</span> ' + etiquetaJogador(t.deles) + "</div>" +
+        '<p class="ganho">Ganhas +' + t.ganhoMeu.toFixed(1) + " pts/jornada no onze · " + porque + "</p>" +
+      "</li>";
+    }).join("");
+  }
+}
+
 /* ---------- Conferências e risco de não jogar ---------- */
 
 const NIVEIS = { 3: "bad", 2: "bad", 1: "warn" };
@@ -654,6 +850,7 @@ async function main() {
   initEquipas();
   initConferencias();
   initProjecoes();
+  initSugestoes();
   initMercado();
   initJogadores();
   initTabs();

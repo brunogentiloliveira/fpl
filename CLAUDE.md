@@ -129,3 +129,21 @@ que já tem fallback.
     `second_name` só se ninguém bater pelo principal — apelidos compostos ("Martínez Romero")
     davam falsos positivos. Saídas da PL ficam com status "u" e projeção 0, portanto não
     beneficiam do piso.
+- **Sugestões da jornada (feito 2026-08-21, pedido do utilizador)**: o separador passou a
+  chamar-se "Sugestões" (ids `tab-sug`/`painel-sug`) com as recomendações no topo e as
+  projeções por baixo como fundamentação. Tudo calculado no cliente, sem dados novos da API.
+  - **Onze inicial** (`melhorXI`): 1 GR, 3-5 DEF, 2-5 MED, 1-3 AV. Guloso — mínimos por posição
+    primeiro, depois as 4 vagas restantes pelos melhores que ainda cabem. `valorXI` = soma
+    dos pts/jornada do onze; é a métrica que avalia cada movimento (o banco vale 0 à margem).
+  - **Waivers**: para cada posição, compara os meus com os livres não-lesionados; sugere se
+    ganhar ≥0.4 pts/jornada, emparelhamento guloso (cada jogador entra/sai uma vez). Se o meu
+    jogador recuperado projetar mais do que o livre, mostra aviso para não trocar um titular
+    por causa de uma lesão curta (`ppjSaudavel`).
+  - **Trocas**: só 1-por-1 **da mesma posição** (o plantel tem de manter 2/5/5/3 — uma versão
+    anterior sugeriu GR por AV). Nota importante: com uma valorização comum aos dois lados,
+    uma troca destas é **soma zero**, por isso "ambos ganham no onze" quase nunca dispara.
+    O critério que faz trocas acontecer é o do "cartaz": eu ganho na projeção e o outro recebe
+    o jogador com mais pontos na época passada (o que um gestor olha primeiro). Os dois números
+    aparecem na sugestão para a decisão ser informada.
+  - **Contexto da liga**: lugar, pontos e diferença para o líder (quando houver classificação),
+    posição na fila de waivers (`waiver_pick`) e nº de movimentos recentes na liga.

@@ -265,3 +265,34 @@ main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
 .fx.d4, .fx.d5 { background: color-mix(in srgb, var(--perigo) 18%, transparent); color: var(--perigo); }
 .explicacao { margin-bottom: 1rem; }
 .explicacao .corpo p { font-size: 0.85rem; margin: 0.5rem 0; }
+
+/* Sugestões */
+.sub-titulo { font-size: 0.95rem; margin: 1.1rem 0 0.3rem; }
+.sugestoes { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.6rem; }
+.sugestoes li {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--acento);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+}
+.sugestoes .alvo { margin: 0 0 0.35rem; font-size: 0.85rem; color: var(--texto-2); }
+.sugestoes .alvo strong { color: var(--texto); }
+.troca-linha { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; font-size: 0.9rem; }
+.troca-linha + .troca-linha { margin-top: 0.2rem; }
+.troca-linha .clube { color: var(--texto-2); font-size: 0.8rem; }
+.sai, .entra {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  min-width: 3.6rem;
+  text-align: center;
+}
+.sai { background: color-mix(in srgb, var(--perigo) 18%, transparent); color: var(--perigo); }
+.entra { background: color-mix(in srgb, var(--acento) 18%, transparent); color: var(--acento); }
+.ganho { margin: 0.4rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--acento); }
+.aviso-sug { margin: 0.3rem 0 0; font-size: 0.8rem; color: var(--aviso); }
+.sugestoes li.cartaz { border-left-color: var(--aviso); }
