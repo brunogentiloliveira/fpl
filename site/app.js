@@ -748,6 +748,28 @@ function projecao(p, ignorarAusencia) {
     componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p) };
 }
 
+/** "+3%" / "-4%": quanto o calendário mexe na projeção deste jogador. */
+function sinalPct(fator) {
+  const pct = Math.round((fator - 1) * 100);
+  return pct === 0 ? "=" : (pct > 0 ? "+" : "") + pct + "%";
+}
+
+function explicarCalendario(pr) {
+  if (pr.jogos.length === 0) return "sem jogos conhecidos no horizonte";
+  const adv = pr.jogos.map((j) => (D.teams[String(j.opponent)] || {}).short_name +
+    " (" + j.difficulty + ")").join(", ");
+  return "Próximas " + pr.jogos.length + ": " + adv +
+    " — o calendário mexe " + sinalPct(pr.calFator) + " na projeção";
+}
+
+/** Amplitude real do calendário nesta janela, para calibrar expectativas. */
+function amplitudeCalendario() {
+  const fatores = Object.keys(D.fixtures || {}).map((tid) =>
+    fatorCalendario((D.fixtures[tid] || []).slice(0, janelaAtual())));
+  if (fatores.length === 0) return null;
+  return { min: Math.min(...fatores), max: Math.max(...fatores) };
+}
+
 /** Texto da decomposição dos pontos por 90, para tooltip. */
 function decomporPP90(c, extra) {
   const partes = [
@@ -771,10 +793,13 @@ function linhaProjecao(p, pr) {
       esc(pr.tr.moeda) + pr.tr.valor + "M" + (pr.tr.confirmada ? "" : "?") +
       (pr.bump ? " +" + pr.bump + "min" : "") + "</span>" : "") +
     (est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "");
-  const jogos = pr.jogos.map((j) =>
+  const visiveis = pr.jogos.slice(0, 4);
+  const jogos = visiveis.map((j) =>
     '<span class="fx d' + j.difficulty + '">' +
       (D.teams[String(j.opponent)] || {}).short_name +
-      (j.is_home ? "" : " (F)") + "</span>").join(" ");
+      (j.is_home ? "" : " (F)") + "</span>").join(" ") +
+    (pr.jogos.length > visiveis.length
+      ? ' <span class="fx d3">+' + (pr.jogos.length - visiveis.length) + "</span>" : "");
   const recentes = minutosRecentes(pr);
   const pe = pr.pe && pr.pe.estado === "titular"
     ? ' <span class="estado ok">XI pré-época</span>'
@@ -795,7 +820,8 @@ function linhaProjecao(p, pr) {
       pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
     '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +
-    '<td class="num">' + pr.ppjCal.toFixed(1) + "</td>" +
+    '<td class="num" title="' + esc(explicarCalendario(pr)) + '">' +
+      pr.ppjCal.toFixed(1) + '<span class="fator">' + sinalPct(pr.calFator) + "</span></td>" +
   "</tr>";
 }
 
@@ -1637,8 +1663,18 @@ function initSeletorJanela() {
   if (!sel) return;
   sel.value = String(janelaAtual());
   $("form-janela").addEventListener("submit", (ev) => ev.preventDefault());
+  const explicar = () => {
+    const amp = amplitudeCalendario();
+    $("janela-nota").textContent = amp
+      ? "Nesta janela o calendário mexe entre " + sinalPct(amp.min) + " e " + sinalPct(amp.max) +
+        " na projeção de cada jogador — afina a ordem entre jogadores parecidos, mas não " +
+        "inverte diferenças grandes (um lesionado continua a valer zero)."
+      : "";
+  };
+  explicar();
   sel.addEventListener("change", () => {
     definirJanela(Number(sel.value));
+    explicar();
     const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
     if (eu) desenharOnze(comProjecao(D.players.filter((p) => p.owner === eu.entry_id)));
     initProjecoes();

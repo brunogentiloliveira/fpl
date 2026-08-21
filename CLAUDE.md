@@ -144,6 +144,14 @@ decisões de waiver são na prática permanentes. Os 10 matam o sinal.
 - O **onze inicial não usa a janela** (horizonte 1, `ppj`) — verificado nos testes.
 - A janela para trás (minutos dos últimos 3 jogos) fica em 3: aí a reatividade a mudanças de
   estatuto vale mais do que a estabilidade.
+- **O seletor parecia não fazer nada** (reparo do utilizador). Fazia — só que o efeito real do
+  calendário é de ±5% e ficava escondido dentro do número final. As sugestões de waiver do topo
+  são estruturalmente insensíveis (o Kroupi.Jr está a 0.0 e o substituto a 4.0; ±5% não inverte
+  4 pontos), o que é o comportamento certo. Correção foi de comunicação, não de modelo: a coluna
+  "Calend." mostra agora o ajuste em percentagem por baixo do valor (`sinalPct`), o tooltip lista
+  os adversários com a dificuldade de cada um (`explicarCalendario`), e por baixo do seletor há
+  uma frase com a amplitude real dessa janela (`amplitudeCalendario`), a dizer explicitamente que
+  serve para afinar entre jogadores parecidos e não para inverter diferenças grandes.
 
 ## Pontuação vinda da liga (2026-08-21)
 
