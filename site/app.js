@@ -1209,6 +1209,93 @@ function sinal(v) {
   return (v >= 0 ? "+" : "") + v.toFixed(1);
 }
 
+/* --- Comparação com o mercado livre --- */
+
+/** Livres aproveitáveis, do melhor para o pior. */
+function livresDisponiveis() {
+  return comProjecao(D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status)))
+    .sort((a, b) => b.pr.ppj - a.pr.ppj);
+}
+
+/**
+ * Para cada jogador que recebes, qual seria o melhor livre da mesma posição.
+ *
+ * É a pergunta que decide muitas trocas: se o mercado livre dá o mesmo, não
+ * vale a pena gastar um jogador teu para lá chegar.
+ */
+function compararComLivres(recebo) {
+  const livres = livresDisponiveis();
+  const usados = new Set();
+  return recebo.slice()
+    .sort((a, b) => b.pr.ppj - a.pr.ppj)
+    .map((x) => {
+      const livre = livres.find((l) => l.p.element_type === x.p.element_type &&
+        !usados.has(l.p.id));
+      if (livre) usados.add(livre.p.id);
+      return { recebe: x, livre: livre || null };
+    });
+}
+
+/** Onze que terias se largasses os mesmos jogadores e fosses ao mercado livre. */
+function valorComLivres(meusX, dou, pares) {
+  const substitutos = pares.map((par) => par.livre).filter(Boolean);
+  return valorXI(meusX.filter((x) => !dou.includes(x)).concat(substitutos));
+}
+
+function blocoAlternativa(meusX, dou, recebo, ganhoMeu, eu) {
+  if (recebo.length === 0) return "";
+  const pares = compararComLivres(recebo);
+  const ganhoLivres = valorComLivres(meusX, dou, pares) - valorXI(meusX);
+  const diferenca = ganhoMeu - ganhoLivres;
+
+  let conselho;
+  let cor;
+  if (diferenca >= 0.3) {
+    conselho = "A troca vale mais do que largar os mesmos jogadores e ir ao mercado livre (" +
+      sinal(ganhoMeu) + " contra " + sinal(ganhoLivres) + " pts por jornada), por isso " +
+      "justifica-se envolver outro gestor.";
+    cor = "ok";
+  } else if (diferenca > -0.3) {
+    conselho = "Largar os mesmos jogadores e ir ao mercado livre dá praticamente o mesmo (" +
+      sinal(ganhoLivres) + " contra " + sinal(ganhoMeu) + " pts por jornada) e não depende de " +
+      "o outro gestor aceitar. A troca só compensa se quiseres garantir o jogador antes que " +
+      "outro o apanhe.";
+    cor = "warn";
+  } else {
+    conselho = "Não precisas de trocar: largar os mesmos jogadores e ir ao mercado livre dá " +
+      sinal(ganhoLivres) + " pts por jornada, contra " + sinal(ganhoMeu) + " desta troca.";
+    cor = "bad";
+  }
+  const fila = eu && eu.waiver_pick
+    ? " Nota: os livres estão à vista de todos e és o #" + eu.waiver_pick +
+      " na fila de waivers, por isso não são garantidos."
+    : "";
+
+  const linhas = pares.map((par) => {
+    const x = par.recebe;
+    const l = par.livre;
+    const dif = l ? x.pr.ppj - l.pr.ppj : null;
+    const marca = dif === null ? "" : dif >= 0.3 ? "ok" : dif > -0.3 ? "warn" : "bad";
+    const leitura = dif === null ? "sem livre nessa posição"
+      : dif >= 0.3 ? "vale a pena trocar por ele"
+      : dif > -0.3 ? "equivalente ao que há de graça"
+      : "o livre é melhor";
+    return "<tr><td>" + esc(x.p.web_name) +
+      '<span class="sub">' + (POSICOES[x.p.element_type] || "?") + " · " +
+        nomeClube(x.p.team) + "</span></td>" +
+      '<td class="num">' + x.pr.ppj.toFixed(1) + "</td>" +
+      "<td>" + (l ? esc(l.p.web_name) + '<span class="sub">' + nomeClube(l.p.team) + "</span>" : "—") + "</td>" +
+      '<td class="num">' + (l ? l.pr.ppj.toFixed(1) : "—") + "</td>" +
+      '<td><span class="estado ' + marca + '">' + leitura + "</span></td></tr>";
+  }).join("");
+
+  return '<h3 class="sub-titulo">E se fosses ao mercado livre?</h3>' +
+    '<div class="veredicto ' + cor + '"><p>' + conselho + fila + "</p></div>" +
+    '<table class="tabela tabela-proj"><thead><tr><th>Recebes</th><th class="num">Pts/J</th>' +
+      '<th>Melhor livre igual</th><th class="num">Pts/J</th><th>Leitura</th></tr></thead>' +
+      "<tbody>" + linhas + "</tbody></table>";
+}
+
 function analisarTroca(eu) {
   const alvoId = Number($("troca-gestor").value);
   const outro = D.entries.find((e) => e.entry_id === alvoId);
@@ -1288,7 +1375,8 @@ function analisarTroca(eu) {
     (recebo.length ? '<h3 class="sub-titulo">Recebes</h3><ul class="detalhe-troca">' +
       recebo.map((x) => detalheTroca(x, "recebo")).join("") + "</ul>" : "") +
     (avisos.length ? '<ul class="avisos-troca">' + avisos.map((a) => "<li>" + a + "</li>").join("") +
-      "</ul>" : "");
+      "</ul>" : "") +
+    blocoAlternativa(meusX, dou, recebo, ganhoMeu, eu);
 }
 
 function initAnaliseTroca() {
