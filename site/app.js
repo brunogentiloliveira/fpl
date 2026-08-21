@@ -1146,8 +1146,11 @@ function linhaEscolha(x) {
   const est = estadoDe(x.p);
   const ffs = ffsDe(x.p);
   const alerta = (ffs && ffs.estado === "fora") ? "Fora (Scout)" : (est.sev ? est.rotulo : "");
+  const cargos = etiquetaBolaParada(x.p);
   return '<label class="escolha"><input type="checkbox" value="' + x.p.id + '">' +
     '<span class="escolha-nome">' + esc(x.p.web_name) + "</span>" +
+    (cargos ? ' <span class="estado ok" title="Bola parada: P penáltis, LL livres, C cantos">' +
+      cargos + "</span>" : "") +
     '<span class="escolha-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
       nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + " pts/J</span>" +
     (alerta ? '<span class="estado bad">' + esc(alerta) + "</span>" : "") +
@@ -1157,8 +1160,13 @@ function linhaEscolha(x) {
 /** Uma linha por jogador, com o motivo que o modelo usa. */
 function detalheTroca(x, sentido) {
   const motivo = sentido === "dou" ? porqueSai(x) : porqueEntra(x);
+  const bp = bolaParadaDe(x.p);
+  const cargo = bp && bp.pen === 1 ? " Bate os penáltis da equipa"
+    : bp && (bp.fk === 1 || bp.cantos === 1) ? " É ele que bate as bolas paradas da equipa"
+    : bp && bp.pen === 2 ? " É o segundo na fila dos penáltis" : "";
   return "<li><strong>" + esc(x.p.web_name) + "</strong> (" +
     (POSICOES[x.p.element_type] || "?") + " · " + nomeClube(x.p.team) + ") — " + esc(motivo) +
+    (cargo ? "." + cargo : "") +
     ". Projeta <strong>" + x.pr.ppj.toFixed(1) + " pts/jornada</strong>, " +
     x.pr.prox3.toFixed(1) + " nas próximas três." +
     (x.p.total_points ? " Fez " + x.p.total_points + " pontos na época passada." : "") +
