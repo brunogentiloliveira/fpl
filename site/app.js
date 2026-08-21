@@ -464,6 +464,55 @@ function componentesPP90(p, hist, semCalibrar) {
   };
 }
 
+/* --- Bola parada: penáltis, livres e cantos --- */
+
+// Um penálti vale ~0.79 de golo e as equipas ganham ~0.12 por jogo.
+const PEN_GOLOS_90 = 0.095;
+const QUOTA_PEN = { 1: 1, 2: 0.2, 3: 0.05 };      // 2.º e 3.º batem de vez em quando
+const FK_GOLOS_90 = { 1: 0.02, 2: 0.01 };          // golos de livre direto são raros
+const CANTOS_XA90 = { 1: 0.05, 2: 0.02, 3: 0.01 }; // valem sobretudo em assistências
+
+function bolaParadaDe(p) {
+  return (D.bolaparada || {})[p.id] || null;
+}
+
+/**
+ * Quanto do cargo é que o histórico ainda não reflete.
+ *
+ * Se um jogador já batia os penáltis no ano passado, o xG dele já os inclui e
+ * somar outra vez seria contar a dobrar. O acréscimo vale a sério para quem tem
+ * pouca amostra ou mudou de clube — aí o histórico não diz nada sobre o cargo.
+ */
+function pesoBolaParada(p, hist) {
+  const bp = bolaParadaDe(p);
+  if (!bp) return 0;
+  const confianca = bp.confianca === "alta" ? 1 : 0.5;
+  const tr = (D.transferencias || {})[p.id];
+  if (tr && tr.confirmada) return confianca;
+  return confianca * (MIN_PRIOR / ((hist.minutes || 0) + MIN_PRIOR));
+}
+
+/** Pontos por 90 que o cargo de bola parada acrescenta. */
+function pontosBolaParada(p, hist) {
+  const bp = bolaParadaDe(p);
+  if (!bp) return 0;
+  const golos90 = PEN_GOLOS_90 * (QUOTA_PEN[bp.pen] || 0) + (FK_GOLOS_90[bp.fk] || 0);
+  const assist90 = CANTOS_XA90[bp.cantos] || 0;
+  return (golos90 * (PONTOS_GOLO[p.element_type] || 4) + assist90 * 3) *
+    pesoBolaParada(p, hist);
+}
+
+/** Etiqueta curta dos cargos: P1 penáltis, LL livres, C cantos. */
+function etiquetaBolaParada(p) {
+  const bp = bolaParadaDe(p);
+  if (!bp) return "";
+  const partes = [];
+  if (bp.pen) partes.push("P" + bp.pen);
+  if (bp.fk) partes.push("LL" + bp.fk);
+  if (bp.cantos) partes.push("C" + bp.cantos);
+  return partes.join(" ");
+}
+
 /** Taxa de pontos por 90 usada como base: mistura o esperado com o realizado. */
 function taxaBase(p, hist) {
   const min = hist.minutes || 0;
@@ -538,8 +587,10 @@ function projecao(p, ignorarAusencia) {
   // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
   // Taxa combinada (esperado + realizado), encolhida para o prior da posição.
   const taxa = taxaBase(p, hist);
-  const pp90Hist = taxa === null ? prior.pp90
+  const base = taxa === null ? prior.pp90
     : (taxa * hist.minutes + prior.pp90 * MIN_PRIOR) / (hist.minutes + MIN_PRIOR);
+  const extraBP = pontosBolaParada(p, hist);
+  const pp90Hist = base + extraBP;
   let xminHist = hist.minutes > 0 ? Math.min(90, hist.minutes / JOGOS_EPOCA) : prior.minJogo;
 
   // Jogos já disputados nesta época: a realidade manda mais do que o histórico.
@@ -599,11 +650,11 @@ function projecao(p, ignorarAusencia) {
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !STATUS_FORA.has(p.status);
   return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
-    componentes: componentesPP90(p, hist) };
+    componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p) };
 }
 
 /** Texto da decomposição dos pontos por 90, para tooltip. */
-function decomporPP90(c) {
+function decomporPP90(c, extra) {
   const partes = [
     "presença " + c.presenca.toFixed(1),
     "golos esperados " + c.golos.toFixed(1),
@@ -613,7 +664,8 @@ function decomporPP90(c) {
   if (c.defesas >= 0.05) partes.push("defesas " + c.defesas.toFixed(1));
   if (c.bonus >= 0.05) partes.push("bónus " + c.bonus.toFixed(1));
   if (c.penalizacoes <= -0.05) partes.push("cartões " + c.penalizacoes.toFixed(1));
-  return partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
+  const txt = partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
+  return extra >= 0.05 ? txt + " (+" + extra.toFixed(2) + " de bola parada)" : txt;
 }
 
 function linhaProjecao(p, pr) {
@@ -632,14 +684,18 @@ function linhaProjecao(p, pr) {
     ? ' <span class="estado ok">XI pré-época</span>'
     : pr.pe && pr.pe.estado !== "nao_titular"
       ? ' <span class="estado warn">banco pré-época</span>' : "";
+  const cargos = etiquetaBolaParada(p);
+  const badgeBP = cargos
+    ? ' <span class="estado ok" title="Bola parada: P penáltis, LL livres, C cantos (número = ordem)">' +
+      cargos + "</span>" : "";
   return "<tr>" +
-    "<td>" + esc(p.web_name) + badges + pe +
+    "<td>" + esc(p.web_name) + badges + pe + badgeBP +
       (pr.naoUsado ? ' <span class="estado bad">sem jogar</span>' : "") +
       '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
       (recentes ? " · jogou " + recentes : "") +
       (jogos ? " · " + jogos : "") + "</span></td>" +
     '<td class="num"' + (pr.componentes
-      ? ' title="' + esc(decomporPP90(pr.componentes)) + '"' : "") + ">" +
+      ? ' title="' + esc(decomporPP90(pr.componentes, pr.extraBP)) + '"' : "") + ">" +
       pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
     '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +
@@ -900,6 +956,9 @@ function porqueEntra(x) {
   } else {
     partes.push("deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jogo");
   }
+  const bp = bolaParadaDe(x.p);
+  if (bp && bp.pen === 1) partes.push("bate os penáltis da equipa");
+  else if (bp && (bp.fk === 1 || bp.cantos === 1)) partes.push("é ele que bate as bolas paradas");
   partes.push("vale " + x.pr.pp90.toFixed(1) + " pts por 90 min");
   const cal = calendario(x.pr);
   if (cal) partes.push(cal);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=15">
+<link rel="stylesheet" href="styles.css?v=16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>⚽</text></svg>">
 </head>
 <body>
@@ -143,9 +143,12 @@
           (xA) valorizados pela tabela do FPL (golo 6/5/4 pontos conforme a posição, assistência 3),
           probabilidade de baliza a zero a partir do xG concedido pela equipa, defesas dos
           guarda-redes, bónus e cartões. Toca no número na tabela para veres a decomposição.
-          <strong>Penáltis, livres e cantos contam por aqui</strong>: um penálti vale cerca de 0.79
-          de xG e os cantos e livres alimentam o xA de quem os bate — a API não expõe quem tem o
-          cargo, mas o que eles geram já está nas estatísticas.</p>
+          <strong>Penáltis, livres e cantos</strong> entram por duas vias: o que geraram no ano
+          passado já está no xG e no xA (um penálti vale ~0.79 de xG), e os cargos desta época
+          — recolhidos à mão, porque a API não os expõe — dão um acréscimo à parte, mostrado como
+          etiqueta P/LL/C ao lado do nome. Esse acréscimo é maior para quem mudou de clube ou tem
+          pouco historial, e quase nulo para quem já batia os penáltis no ano passado, senão
+          estaria a contar duas vezes.</p>
         <p>O resultado é puxado para a média de jogadores com draft rank parecido na mesma posição,
           para quem jogou pouco não ficar com um valor inflacionado, e vai passando para
           <strong>o que ele faz nesta época</strong> à medida que os jogos acontecem.</p>
@@ -222,6 +225,6 @@
   <p>Dados: API pública do FPL Draft · horas em Europe/Lisbon</p>
 </footer>
 
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

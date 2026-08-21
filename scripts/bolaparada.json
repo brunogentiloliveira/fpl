@@ -1,0 +1,132 @@
+{
+  "_nota": "Batedores de penáltis, livres diretos e cantos, por ordem, na época 2026/27. Os campos equivalentes da API do FPL (penalties_order, direct_freekicks_order, corners_and_indirect_freekicks_order) vêm vazios para os 600 jogadores, daí a recolha à mão. Base: tabela do Fantasy Football Scout (mantida ao longo da época), cruzada com a da RotoWire em 9 clubes. Onde as duas fontes discordam sobre quem bate os penáltis, fica confianca='media' e o modelo aplica metade do efeito.",
+  "atualizado": "2026-08-21",
+  "fontes": [
+    "https://www.fantasyfootballscout.co.uk/fantasy-premier-league-set-piece-takers",
+    "https://www.rotowire.com/soccer/article/premier-league-set-piece-takers-2026-27-penalties-corners-free-kicks-for-every-team-126070"
+  ],
+  "clubes": {
+    "Arsenal": {
+      "confianca": "media",
+      "_divergencia": "FFS põe Saka primeiro nos penáltis; a RotoWire põe Gyökeres.",
+      "penaltis": ["Saka", "Gyokeres", "Odegaard"],
+      "livres": ["Rice", "Saka", "Eze"],
+      "cantos": ["Rice", "Saka", "Tzolis", "Madueke"]
+    },
+    "Aston Villa": {
+      "confianca": "alta",
+      "penaltis": ["Buendia", "Watkins"],
+      "livres": ["Buendia", "McGinn"],
+      "cantos": ["Cash", "Bailey"]
+    },
+    "Bournemouth": {
+      "confianca": "alta",
+      "penaltis": ["Kluivert", "Kroupi", "Tavernier"],
+      "livres": ["Tavernier", "Kluivert", "Brooks", "Scott"],
+      "cantos": ["Tavernier", "Scott", "Cook", "Brooks", "Christie"]
+    },
+    "Brentford": {
+      "confianca": "alta",
+      "penaltis": ["Thiago", "Schade", "Carvalho", "Jensen"],
+      "livres": ["Lewis-Potter", "Jensen", "Damsgaard"],
+      "cantos": ["Jensen", "Janelt", "Ouattara"]
+    },
+    "Brighton": {
+      "confianca": "alta",
+      "penaltis": ["Gross", "O'Riley"],
+      "livres": ["De Cuyper", "Dunk", "Gomez"],
+      "cantos": ["Gross", "De Cuyper", "Minteh"]
+    },
+    "Chelsea": {
+      "confianca": "alta",
+      "penaltis": ["Palmer", "Fernandez", "Estevao"],
+      "livres": ["James", "Fernandez", "Palmer", "Neto"],
+      "cantos": ["Neto", "James", "Fernandez", "Estevao"]
+    },
+    "Coventry City": {
+      "confianca": "alta",
+      "penaltis": ["Wright", "Torp", "Thomas-Asante", "Grimes"],
+      "livres": ["Torp", "Thomas-Asante", "van Ewijk"],
+      "cantos": ["Grimes", "Torp", "Rudoni"]
+    },
+    "Crystal Palace": {
+      "confianca": "alta",
+      "penaltis": ["Mateta", "Sarr", "Devenny"],
+      "livres": ["Pino", "Devenny", "Wharton"],
+      "cantos": ["Wharton", "Hughes", "Kamada", "McNeil"]
+    },
+    "Everton": {
+      "confianca": "alta",
+      "penaltis": ["Ndiaye", "Garner", "Barry"],
+      "livres": ["Garner", "Dewsbury-Hall"],
+      "cantos": ["Garner", "Hackney", "Dibling"]
+    },
+    "Fulham": {
+      "confianca": "alta",
+      "penaltis": ["Muniz", "Iwobi", "Robinson"],
+      "livres": ["Kevin"],
+      "cantos": ["Iwobi", "Bobb", "Kevin"]
+    },
+    "Hull City": {
+      "confianca": "alta",
+      "penaltis": ["McBurnie"],
+      "livres": [],
+      "cantos": ["Slater", "Giles"]
+    },
+    "Ipswich Town": {
+      "confianca": "alta",
+      "penaltis": ["Clarke", "Philogene", "Hirst"],
+      "livres": ["Nunez"],
+      "cantos": ["Davis", "Nunez", "Clarke", "Philogene"]
+    },
+    "Leeds": {
+      "confianca": "alta",
+      "penaltis": ["Calvert-Lewin", "Nmecha"],
+      "livres": ["Stach", "Wilson", "Longstaff"],
+      "cantos": ["Stach", "Wilson", "Longstaff"]
+    },
+    "Liverpool": {
+      "confianca": "alta",
+      "penaltis": ["Szoboszlai", "Gakpo", "Mac Allister"],
+      "livres": ["Szoboszlai", "Wirtz"],
+      "cantos": ["Szoboszlai", "Gakpo", "Wirtz"]
+    },
+    "Man City": {
+      "confianca": "alta",
+      "penaltis": ["Haaland", "Marmoush", "Doku", "Matheus N."],
+      "livres": ["Marmoush", "Cherki", "Semenyo"],
+      "cantos": ["Anderson", "Cherki", "Marmoush", "Foden"]
+    },
+    "Man Utd": {
+      "confianca": "alta",
+      "penaltis": ["Bruno Fernandes"],
+      "livres": ["Bruno Fernandes", "Mbeumo"],
+      "cantos": ["Bruno Fernandes", "Mbeumo", "Amad"]
+    },
+    "Newcastle": {
+      "confianca": "alta",
+      "penaltis": ["Woltemade"],
+      "livres": ["Hall", "Schar"],
+      "cantos": ["Hall", "Elanga"]
+    },
+    "Nott'm Forest": {
+      "confianca": "alta",
+      "penaltis": ["Wood", "Igor Jesus", "Mcatee", "Gibbs-White"],
+      "livres": ["Gibbs-White", "Murillo"],
+      "cantos": ["Hutchinson", "Williams", "Ndoye"]
+    },
+    "Spurs": {
+      "confianca": "media",
+      "_divergencia": "FFS põe Solanke primeiro nos penáltis; a RotoWire põe Richarlison.",
+      "penaltis": ["Solanke", "Kudus", "Simons", "Richarlison"],
+      "livres": ["Pedro Porro", "Simons", "Kudus"],
+      "cantos": ["Tel", "Simons", "Pedro Porro"]
+    },
+    "Sunderland": {
+      "confianca": "alta",
+      "penaltis": ["Diarra", "Le Fee"],
+      "livres": ["Xhaka", "Le Fee"],
+      "cantos": ["Xhaka", "Hume", "Le Fee"]
+    }
+  }
+}

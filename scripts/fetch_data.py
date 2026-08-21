@@ -539,6 +539,44 @@ def fetch_preepoca(nomes_clubes, players):
     return saida
 
 
+def fetch_bolaparada(nomes_clubes, players):
+    """Batedores de penáltis, livres e cantos (scripts/bolaparada.json).
+
+    Os campos da API (`penalties_order` e companhia) vêm vazios para todos os
+    jogadores, por isso a informação é recolhida à mão de tabelas públicas.
+    Guarda a ordem de cada jogador em cada tipo de bola parada."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bolaparada.json")
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            bruto = json.load(f)
+    except (OSError, ValueError) as exc:
+        print(f"Aviso: bolaparada.json não lido ({exc}).", file=sys.stderr)
+        return {}
+
+    por_clube = {}
+    for p in players:
+        por_clube.setdefault(p["team"], []).append(p)
+    id_por_nome = {nome: tid for tid, nome in nomes_clubes.items()}
+
+    saida = {}
+    for nome, dados in (bruto.get("clubes") or {}).items():
+        tid = id_por_nome.get(nome)
+        if tid is None:
+            print(f"Aviso: clube '{nome}' do bolaparada.json não existe na liga.", file=sys.stderr)
+            continue
+        candidatos = por_clube.get(tid, [])
+        for tipo, chave in (("penaltis", "pen"), ("livres", "fk"), ("cantos", "cantos")):
+            for ordem, quem in enumerate(dados.get(tipo) or [], start=1):
+                pid = casar_nome(quem, candidatos)
+                if pid is None:
+                    print(f"Aviso: bola parada {nome}: '{quem}' sem correspondência.",
+                          file=sys.stderr)
+                    continue
+                registo = saida.setdefault(str(pid), {"confianca": dados.get("confianca", "media")})
+                registo.setdefault(chave, ordem)
+    return saida
+
+
 def snapshot_historico(players, anterior, game):
     """Agregados da época anterior, congelados antes de a nova época os substituir.
 
@@ -643,6 +681,7 @@ def main():
         "jornadas": fetch_jornadas(game, anterior),
         "preepoca": fetch_preepoca(nomes_clubes, players),
         "ffs": fetch_ffs(players, nomes_clubes),
+        "bolaparada": fetch_bolaparada(nomes_clubes, players),
         "historico": snapshot_historico(players, anterior, game),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),

@@ -124,6 +124,28 @@ realizada: passa a estimar o que o jogador **gera**.
 - A coluna Pts/90 tem `title` com a decomposição (presença · golos · assistências · baliza a
   zero · defesas · bónus · cartões), para o número não ser uma caixa preta.
 
+## Bola parada (batedores, 2026-08-21)
+
+Os campos da API (`penalties_order`, `direct_freekicks_order`, cantos) vêm vazios para os 600
+jogadores, por isso os cargos ficam em `scripts/bolaparada.json`, recolhidos à mão da tabela
+do **Fantasy Football Scout** (que a mantém durante a época) e **cruzados com a RotoWire** em
+9 clubes. As duas fontes divergiam no Arsenal (Saka vs Gyökeres) e no Spurs (Solanke vs
+Richarlison): esses clubes ficam com `confianca: "media"` e o efeito é reduzido a metade.
+`fetch_bolaparada()` casa os nomes por clube (`casar_nome`) — 113 jogadores, os 20 clubes com
+batedor de penáltis identificado.
+
+**Como entra no modelo, sem contar a dobrar** (`pontosBolaParada`): um penálti vale ~0.79 de
+golo e as equipas ganham ~0.12 por jogo, logo `PEN_GOLOS_90 = 0.095` para o 1.º batedor (20%
+para o 2.º, 5% para o 3.º), mais uma parcela pequena para livres diretos e cantos. O ponto
+subtil: **quem já batia os penáltis no ano passado tem isso dentro do xG**, portanto somar
+outra vez seria duplicar. O acréscimo é multiplicado por `pesoBolaParada`, que mede o quanto
+o histórico *não* cobre: 1 se o jogador mudou de clube (o histórico é de outro sítio),
+senão `MIN_PRIOR / (minutos + MIN_PRIOR)`. Na prática: B.Fernandes (3065 min, três cargos)
+leva só +0.16 pts/90; o Hackney (0 min, transferido, cantos #2) leva o peso todo.
+
+Os cargos aparecem como etiqueta na tabela de projeções (P/LL/C + ordem), na decomposição do
+tooltip e nas justificações ("bate os penáltis da equipa").
+
 ## Analisador de trocas (separador "Analisar troca", 2026-08-21)
 
 Avalia uma troca concreta — recebida ou a propor — com **N jogadores de cada lado**, não só
