@@ -1590,11 +1590,147 @@ function desenharChips(meusX) {
           '<p class="porque">' + explicar(c.nome) + "</p></li>").join("") + "</ul>";
 }
 
+/* --- Melhor plantel possível dentro do orçamento (modo clássico) --- */
+
+/**
+ * Escolhe 15 jogadores dentro do orçamento, com 2 GR / 5 DEF / 5 MED / 3 AV e
+ * no máximo 3 por clube, a maximizar os pontos do onze.
+ *
+ * O banco não pontua, por isso a estratégia é a que toda a gente usa: banco
+ * barato para libertar dinheiro, e o dinheiro todo no onze. Para cada formação
+ * válida começa-se pelo plantel mais barato e vai-se fazendo a melhoria que dá
+ * mais pontos por milhão gasto, até o dinheiro acabar.
+ */
+function melhorPlantelPossivel() {
+  const squad = (D.regras || {}).squad || {};
+  const orcamento = (squad.total_spend || 1000) / 10;
+  const limiteClube = squad.team_limit || 3;
+  const lim = limitesXI();
+
+  const aptos = comProjecao(D.players.filter((p) =>
+    p.now_cost && !STATUS_FORA.has(p.status) && projecao(p).ppj > 0));
+  const porPos = { 1: [], 2: [], 3: [], 4: [] };
+  aptos.forEach((x) => porPos[x.p.element_type].push(x));
+  [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppjCal - a.pr.ppjCal));
+  if ([1, 2, 3, 4].some((pos) => porPos[pos].length < 5)) return null;
+
+  const NO_PLANTEL = { 1: 2, 2: 5, 3: 5, 4: 3 };
+  let melhor = null;
+
+  for (let def = lim[2][0]; def <= lim[2][1]; def += 1) {
+    for (let med = lim[3][0]; med <= lim[3][1]; med += 1) {
+      const av = 10 - def - med;
+      if (av < lim[4][0] || av > lim[4][1]) continue;
+      const noXI = { 1: 1, 2: def, 3: med, 4: av };
+
+      // Base: os mais baratos que cumprem as regras, para haver margem.
+      const escolhidos = [];
+      const clubes = {};
+      const cabe = (x) => (clubes[x.p.team] || 0) < limiteClube;
+      let ok = true;
+      [1, 2, 3, 4].forEach((pos) => {
+        const baratos = porPos[pos].slice().sort((a, b) => a.p.now_cost - b.p.now_cost);
+        let postos = 0;
+        for (const x of baratos) {
+          if (postos >= NO_PLANTEL[pos]) break;
+          if (!cabe(x)) continue;
+          escolhidos.push(x);
+          clubes[x.p.team] = (clubes[x.p.team] || 0) + 1;
+          postos += 1;
+        }
+        if (postos < NO_PLANTEL[pos]) ok = false;
+      });
+      if (!ok) continue;
+
+      let custo = escolhidos.reduce((s, x) => s + precoDe(x.p), 0);
+
+      // Melhorias: a que render mais pontos por milhão, enquanto houver dinheiro.
+      for (let passo = 0; passo < 60; passo += 1) {
+        let melhorTroca = null;
+        escolhidos.forEach((atual, i) => {
+          const pos = atual.p.element_type;
+          const naPos = escolhidos.filter((x) => x.p.element_type === pos)
+            .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal);
+          const titular = naPos.indexOf(atual) < noXI[pos];
+          porPos[pos].forEach((cand) => {
+            if (escolhidos.some((x) => x.p.id === cand.p.id)) return;
+            const dCusto = precoDe(cand.p) - precoDe(atual.p);
+            if (custo + dCusto > orcamento + 1e-9) return;
+            const mesmoClube = cand.p.team === atual.p.team;
+            if (!mesmoClube && (clubes[cand.p.team] || 0) >= limiteClube) return;
+            // Um suplente só interessa se for barato; o valor está no onze.
+            const dPontos = (cand.pr.ppjCal - atual.pr.ppjCal) * (titular ? 1 : 0.15);
+            if (dPontos <= 0) return;
+            const ganho = dPontos / Math.max(dCusto, 0.1);
+            if (!melhorTroca || ganho > melhorTroca.ganho) {
+              melhorTroca = { i, atual, cand, dCusto, ganho };
+            }
+          });
+        });
+        if (!melhorTroca) break;
+        clubes[melhorTroca.atual.p.team] -= 1;
+        clubes[melhorTroca.cand.p.team] = (clubes[melhorTroca.cand.p.team] || 0) + 1;
+        escolhidos[melhorTroca.i] = melhorTroca.cand;
+        custo += melhorTroca.dCusto;
+      }
+
+      const xi = melhorXI(escolhidos);
+      const pontos = xi.reduce((s, x) => s + x.pr.ppjCal, 0);
+      if (!melhor || pontos > melhor.pontos) {
+        const banco = escolhidos.filter((x) => !xi.includes(x));
+        melhor = { formacao: def + "-" + med + "-" + av, xi, banco, custo, pontos, escolhidos };
+      }
+    }
+  }
+  return melhor;
+}
+
+function chipsPorPosicao(lista) {
+  const porPos = { 1: [], 2: [], 3: [], 4: [] };
+  lista.forEach((x) => porPos[x.p.element_type].push(x));
+  [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppjCal - a.pr.ppjCal));
+  return [1, 2, 3, 4].map((pos) =>
+    '<div class="linha-campo">' + porPos[pos].map((x) =>
+      '<span class="chip"><span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
+      '<span class="chip-info">' + nomeClube(x.p.team) + " · " + precoDe(x.p).toFixed(1) + "M</span>" +
+      '<span class="chip-info">' + x.pr.ppjCal.toFixed(1) + " pts</span></span>").join("") +
+    "</div>").join("");
+}
+
+function desenharMelhorPlantel() {
+  const alvo = $("plantel-otimo");
+  if (!alvo) return;
+  const melhor = melhorPlantelPossivel();
+  if (!melhor) { alvo.innerHTML = '<p class="nota">Sem dados suficientes.</p>'; return; }
+
+  const orcamento = ((D.regras.squad || {}).total_spend || 1000) / 10;
+  const capitao = melhor.xi.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)[0];
+  const clubes = {};
+  melhor.escolhidos.forEach((x) => { clubes[x.p.team] = (clubes[x.p.team] || 0) + 1; });
+  const maisUsados = Object.entries(clubes).filter(([, n]) => n >= 2)
+    .map(([t, n]) => n + "× " + (D.teams[t] || {}).short_name).join(", ");
+
+  $("otimo-resumo").textContent = melhor.formacao + " · " + melhor.custo.toFixed(1) + "M de " +
+    orcamento.toFixed(1) + "M · ≈ " + melhor.pontos.toFixed(1) + " pts nesta jornada";
+
+  alvo.innerHTML =
+    '<div class="veredicto ok"><p>Capitão: <strong>' + esc(capitao.p.web_name) + "</strong> (" +
+      nomeClube(capitao.p.team) + ") — " + (capitao.pr.ppjCal * 2).toFixed(1) +
+      " pts com a braçadeira. Sobram <strong>" + (orcamento - melhor.custo).toFixed(1) +
+      "M</strong> no banco." + (maisUsados ? " Concentração: " + maisUsados + "." : "") + "</p></div>" +
+    '<div class="campo">' + chipsPorPosicao(melhor.xi) + "</div>" +
+    '<p class="nota"><strong>Suplentes:</strong> ' + melhor.banco
+      .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)
+      .map((x) => esc(x.p.web_name) + " (" + (POSICOES[x.p.element_type] || "?") + " · " +
+        precoDe(x.p).toFixed(1) + "M)").join(" · ") + "</p>";
+}
+
 function initClassica() {
   if (!ehClassica()) return;
   const equipa = minhaEquipaClassica();
   const meusIds = new Set((equipa && equipa.picks || []).map((x) => x.id));
   const meusX = comProjecao(D.players.filter((p) => meusIds.has(p.id)));
+  if (meusX.length === 0) desenharMelhorPlantel();
   desenharCapitao(meusX);
   desenharTransferencias(meusX);
   desenharChips(meusX);
