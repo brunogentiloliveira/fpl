@@ -324,16 +324,41 @@ function mediana(v) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** Época anterior congelada na recolha (o bootstrap passa a ser desta época). */
+function historicoDe(p) {
+  const h = (D.historico || {})[p.id];
+  return h || { minutes: p.minutes, starts: p.starts, total_points: p.total_points };
+}
+
+/** Jornadas já disputadas pela equipa do jogador, da mais antiga para a mais recente. */
+function utilizacao(p) {
+  const js = D.jornadas || {};
+  return Object.keys(js)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .filter((ev) => {
+      const eq = js[ev].equipas || [];
+      return eq.length === 0 || eq.includes(p.team);
+    })
+    .map((ev) => {
+      const s = js[ev].stats[String(p.id)] || [0, 0];
+      return { event: ev, minutos: s[0], pontos: s[1], finalizada: !!js[ev].finalizada };
+    });
+}
+
 function construirPriors() {
   priorsPos = {};
   [1, 2, 3, 4].forEach((pos) => {
     priorsPos[pos] = D.players
-      .filter((p) => p.element_type === pos && p.minutes >= MIN_PRIOR)
-      .map((p) => ({
-        rank: p.draft_rank ?? 1e9,
-        pp90: (p.total_points / p.minutes) * 90,
-        minJogo: Math.min(90, p.minutes / JOGOS_EPOCA),
-      }))
+      .filter((p) => p.element_type === pos && historicoDe(p).minutes >= MIN_PRIOR)
+      .map((p) => {
+        const h = historicoDe(p);
+        return {
+          rank: p.draft_rank ?? 1e9,
+          pp90: (h.total_points / h.minutes) * 90,
+          minJogo: Math.min(90, h.minutes / JOGOS_EPOCA),
+        };
+      })
       .sort((a, b) => a.rank - b.rank);
   });
 }
@@ -364,13 +389,32 @@ function fatorDificuldade(d) {
 
 function projecao(p) {
   const prior = priorDe(p);
+  const hist = historicoDe(p);
   // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
-  const pp90 = ((p.total_points + (prior.pp90 * MIN_PRIOR) / 90) / (p.minutes + MIN_PRIOR)) * 90;
+  const pp90Hist =
+    ((hist.total_points + (prior.pp90 * MIN_PRIOR) / 90) / (hist.minutes + MIN_PRIOR)) * 90;
+  let xminHist = hist.minutes > 0 ? Math.min(90, hist.minutes / JOGOS_EPOCA) : prior.minJogo;
 
-  let xmin = p.minutes > 0 ? Math.min(90, p.minutes / JOGOS_EPOCA) : prior.minJogo;
+  // Jogos já disputados nesta época: a realidade manda mais do que o histórico.
+  const uso = utilizacao(p).filter((u) => u.finalizada);
+  const jogosObs = uso.length;
+  const peso = Math.min(1, jogosObs / 5); // 5 jogos ⇒ decide sozinho
+  const ultimos = uso.slice(-3);
+
+  let pp90 = pp90Hist;
+  let xmin = xminHist;
+  if (jogosObs > 0) {
+    const minEpoca = uso.reduce((s, u) => s + u.minutos, 0);
+    const ptsEpoca = uso.reduce((s, u) => s + u.pontos, 0);
+    pp90 = ((ptsEpoca + (pp90Hist * MIN_PRIOR) / 90) / (minEpoca + MIN_PRIOR)) * 90;
+    const mediaRecente = ultimos.reduce((s, u) => s + u.minutos, 0) / ultimos.length;
+    xmin = peso * mediaRecente + (1 - peso) * xminHist;
+  }
+
   const tr = (D.transferencias || {})[p.id];
   let bump = null;
-  if (tr && tr.confirmada && !STATUS_FORA.has(p.status)) {
+  // O piso da transferência é uma suposição: assim que houver jogos, vale o que se viu.
+  if (tr && tr.confirmada && jogosObs < 3 && !STATUS_FORA.has(p.status)) {
     const piso = pisoTransferencia(tr.valor);
     if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
   }
@@ -384,7 +428,9 @@ function projecao(p) {
   const ppj = (pp90 * xmin) / 90;
   const jogos = ((D.fixtures || {})[String(p.team)] || []).slice(0, 3);
   const prox3 = jogos.reduce((s, j) => s + ppj * fatorDificuldade(j.difficulty), 0);
-  return { pp90, xmin, ppj, prox3, jogos, tr, bump };
+  const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
+    !STATUS_FORA.has(p.status);
+  return { pp90, xmin, ppj, prox3, jogos, tr, bump, ultimos, jogosObs, naoUsado };
 }
 
 function linhaProjecao(p, pr) {
@@ -398,9 +444,12 @@ function linhaProjecao(p, pr) {
     '<span class="fx d' + j.difficulty + '">' +
       (D.teams[String(j.opponent)] || {}).short_name +
       (j.is_home ? "" : " (F)") + "</span>").join(" ");
+  const recentes = minutosRecentes(pr);
   return "<tr>" +
     "<td>" + esc(p.web_name) + badges +
+      (pr.naoUsado ? ' <span class="estado bad">sem jogar</span>' : "") +
       '<span class="sub">' + nomeClube(p.team) + " · " + (POSICOES[p.element_type] || "?") +
+      (recentes ? " · jogou " + recentes : "") +
       (jogos ? " · " + jogos : "") + "</span></td>" +
     '<td class="num">' + pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
@@ -610,14 +659,26 @@ function calendario(pr) {
   return "calendário equilibrado (" + adv + ")";
 }
 
+function minutosRecentes(pr) {
+  if (!pr.ultimos || pr.ultimos.length === 0) return null;
+  return pr.ultimos.map((u) => u.minutos + "'").join(", ");
+}
+
 function porqueSai(x) {
   const est = estadoDe(x.p);
   if (STATUS_FORA.has(x.p.status)) {
     return "está " + est.rotulo.toLowerCase() + " e não pontua";
   }
+  if (x.pr.naoUsado) {
+    return "não saiu do banco nos últimos " + x.pr.ultimos.length + " jogos";
+  }
   if (x.p.status === "d") {
     return est.rotulo.toLowerCase() + ", o que corta os minutos esperados para " +
       Math.round(x.pr.xmin);
+  }
+  const recentes = minutosRecentes(x.pr);
+  if (recentes && x.pr.xmin < 60) {
+    return "tem jogado pouco (" + recentes + " nos últimos jogos)";
   }
   if (x.pr.xmin < 55) {
     return "só deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jornada";
@@ -627,7 +688,10 @@ function porqueSai(x) {
 
 function porqueEntra(x) {
   const partes = [];
-  if (x.pr.tr && x.pr.tr.confirmada) {
+  const recentes = minutosRecentes(x.pr);
+  if (recentes) {
+    partes.push("já jogou " + recentes + " nas últimas jornadas");
+  } else if (x.pr.tr && x.pr.tr.confirmada) {
     partes.push("custou " + x.pr.tr.moeda + x.pr.tr.valor + "M, por isso deve ser titular");
   } else if (x.pr.xmin >= 70) {
     partes.push("é titular certo (~" + Math.round(x.pr.xmin) + " min por jogo)");
@@ -638,6 +702,44 @@ function porqueEntra(x) {
   const cal = calendario(x.pr);
   if (cal) partes.push(cal);
   return partes.join(", ");
+}
+
+/* --- Utilização real nas jornadas já disputadas --- */
+
+function desenharUtilizacao(meusX) {
+  const jornadas = Object.keys(D.jornadas || {});
+  if (jornadas.length === 0) { $("nota-uso").hidden = false; return; }
+
+  const linhas = meusX
+    .map((x) => ({ x, uso: utilizacao(x.p) }))
+    .filter((l) => l.uso.length > 0)
+    .sort((a, b) => {
+      const pa = a.uso.reduce((s, u) => s + u.pontos, 0);
+      const pb = b.uso.reduce((s, u) => s + u.pontos, 0);
+      return pb - pa;
+    });
+  if (linhas.length === 0) { $("nota-uso").hidden = false; return; }
+
+  const totalPts = linhas.reduce((s, l) => s + l.uso.reduce((t, u) => t + u.pontos, 0), 0);
+  $("uso-resumo").textContent = linhas[0].uso.length + " jornada" +
+    (linhas[0].uso.length === 1 ? "" : "s") + " · " + totalPts + " pts do plantel";
+
+  $("uso-plantel").innerHTML = '<table class="tabela tabela-proj"><thead><tr>' +
+    '<th>Jogador</th><th>Jornadas (minutos · pontos)</th><th class="num">Pts</th>' +
+    "</tr></thead><tbody>" +
+    linhas.map(({ x, uso }) => {
+      const pts = uso.reduce((s, u) => s + u.pontos, 0);
+      const chips = uso.slice(-5).map((u) => {
+        const nivel = u.minutos === 0 ? "d5" : u.minutos < 45 ? "d3" : "d1";
+        return '<span class="fx ' + nivel + '">GW' + u.event + " " + u.minutos + "' · " +
+          u.pontos + "</span>";
+      }).join(" ");
+      return "<tr><td>" + esc(x.p.web_name) +
+        '<span class="sub">' + nomeClube(x.p.team) + " · " +
+          (POSICOES[x.p.element_type] || "?") + "</span></td>" +
+        "<td>" + chips + "</td>" +
+        '<td class="num forte">' + pts + "</td></tr>";
+    }).join("") + "</tbody></table>";
 }
 
 function etiquetaJogador(x) {
@@ -653,6 +755,7 @@ function initSugestoes() {
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
   desenharOnze(meusX);
+  desenharUtilizacao(meusX);
 
   // --- Contexto da liga ---
   const ev = D.next_event ? D.next_event.name : "próxima jornada";
@@ -729,24 +832,27 @@ function initSugestoes() {
 const NIVEIS = { 3: "bad", 2: "bad", 1: "warn" };
 
 function riscoRotacao(p) {
-  const gw = D.game.current_event; // null antes do arranque da época
-  if (p.minutes === 0) {
-    return { nivel: 2, texto: "Sem minutos na Premier League" };
-  }
-  if (gw == null) {
-    // starts/minutes ainda são da época passada (38 jornadas)
-    if (p.starts <= 12) {
-      return { nivel: 2, texto: "Só " + p.starts + " titularidades em 38 na época passada" };
+  // Com jogos disputados, o que interessa são os minutos que ele teve mesmo.
+  const uso = utilizacao(p).filter((u) => u.finalizada);
+  if (uso.length >= 2) {
+    const ult = uso.slice(-3);
+    const media = ult.reduce((s, u) => s + u.minutos, 0) / ult.length;
+    if (ult.every((u) => u.minutos === 0)) {
+      return { nivel: 2, texto: "Não saiu do banco nos últimos " + ult.length + " jogos" };
     }
-    if (p.starts <= 21) {
-      return { nivel: 1, texto: p.starts + " titularidades em 38 na época passada" };
-    }
+    const sufixo = " min nos últimos " + ult.length + " jogos";
+    if (media < 45) return { nivel: 2, texto: "Média de " + Math.round(media) + sufixo };
+    if (media < 70) return { nivel: 1, texto: "Média de " + Math.round(media) + sufixo };
     return null;
   }
-  if (gw < 3) return null; // amostra demasiado pequena
-  const razao = p.starts / gw;
-  if (razao < 0.4) return { nivel: 2, texto: "Titular em " + p.starts + " de " + gw + " jornadas" };
-  if (razao < 0.7) return { nivel: 1, texto: "Titular em " + p.starts + " de " + gw + " jornadas" };
+  const h = historicoDe(p);
+  if (h.minutes === 0) return { nivel: 2, texto: "Sem minutos na Premier League" };
+  if (h.starts <= 12) {
+    return { nivel: 2, texto: "Só " + h.starts + " titularidades em 38 na época passada" };
+  }
+  if (h.starts <= 21) {
+    return { nivel: 1, texto: h.starts + " titularidades em 38 na época passada" };
+  }
   return null;
 }
 
@@ -782,9 +888,9 @@ function initConferencias() {
   c.clubes.forEach((cl) => cl.itens.forEach((i) => i.mencoes.forEach((id) => mencionados.add(id))));
 
   // --- Lista de risco ---
-  $("risco-legenda").textContent = D.game.current_event == null
-    ? "Estado clínico da API e titularidades da época passada (a época ainda não começou)."
-    : "Estado clínico da API e titularidades desta época.";
+  $("risco-legenda").textContent = Object.keys(D.jornadas || {}).length === 0
+    ? "Estado clínico da API e titularidades da época passada (ainda não há jogos disputados)."
+    : "Estado clínico da API e minutos realmente jogados nas jornadas já disputadas.";
 
   const emRisco = meus
     .map((p) => ({ p, r: riscoJogador(p, mencionados) }))

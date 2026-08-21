@@ -151,3 +151,25 @@ que já tem fallback.
     aparecem na sugestão para a decisão ser informada.
   - **Contexto da liga**: lugar, pontos e diferença para o líder (quando houver classificação),
     posição na fila de waivers (`waiver_pick`) e nº de movimentos recentes na liga.
+- **Utilização real por jornada (feito 2026-08-21, pedido do utilizador)**: quem jogou, quantos
+  minutos e quantos pontos — e o efeito disso nas projeções e sugestões.
+  - **Fonte**: o utilizador pediu SofaScore/FlashScore. **Não usar**: o SofaScore devolve 403 a
+    pedidos automáticos (até no robots.txt) e os termos do FlashScore proíbem extração de dados.
+    A mesma informação está na API que já usamos: `GET /event/{ev}/live` dá minutos e pontos por
+    jogador em cada jornada (`elements`) e as fixtures dessa jornada.
+  - `fetch_jornadas()`: percorre 1..current_event; jornadas já `finalizada` ficam em cache no
+    próprio data.json e não são repedidas. Guarda `{finalizada, equipas, stats:{id:[min,pts]}}`;
+    quem não jogou não aparece (ausente = 0 minutos) para o ficheiro não crescer. O parser aceita
+    `elements` como objeto (Draft) ou lista (FPL clássico) — testado com payloads sintéticos,
+    porque a época só arranca a 2026-08-21 às 19:00 UTC.
+  - `snapshot_historico()`: congela minutes/starts/total_points da época passada **antes** de o
+    bootstrap-static passar a refletir a nova época; fica em `data.json → historico` e nunca é
+    recalculado depois da primeira vez. Sem isto, as projeções perderiam a base logo na GW1.
+  - **Projeção v2** (app.js): `pp90` = pontos desta época encolhidos para o pp90 histórico (que
+    por sua vez já está encolhido para o prior de rank/posição); `xmin` = média dos minutos reais
+    das últimas 3 jornadas com peso `min(1, jogos/5)` contra a estimativa histórica — ao 5.º jogo
+    a realidade decide sozinha. O piso da transferência cara só se aplica **antes do 3.º jogo**
+    (depois disso vale o que se viu em campo). `naoUsado` marca quem tem 0 minutos nos últimos
+    jogos estando disponível.
+  - `riscoRotacao` passou a usar os minutos reais quando há ≥2 jornadas; só recorre às
+    titularidades da época passada antes disso.

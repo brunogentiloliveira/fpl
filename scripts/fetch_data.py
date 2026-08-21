@@ -265,18 +265,90 @@ def fetch_conferencias(clubes, meus, feeds):
     return saida
 
 
-def load_previous_news(out_path):
-    """ids -> news_added da recolha anterior, para detetar entradas novas no boletim.
-
-    Devolve None se não houver recolha anterior (primeira execução): nesse caso
-    nada é marcado como novo, para não pintar o boletim inteiro de vermelho."""
+def load_anterior(out_path):
+    """Recolha anterior completa (ou None na primeira execução)."""
     try:
         with open(out_path, encoding="utf-8") as f:
-            prev = json.load(f)
-        return {p["id"]: p.get("news_added")
-                for p in prev.get("players", []) if p.get("news")}
-    except (OSError, ValueError, KeyError):
+            return json.load(f)
+    except (OSError, ValueError):
         return None
+
+
+def news_anteriores(anterior):
+    """ids -> news_added da recolha anterior, para detetar entradas novas no boletim.
+
+    Devolve None se não houver recolha anterior: nesse caso nada é marcado como
+    novo, para não pintar o boletim inteiro de vermelho."""
+    if not anterior:
+        return None
+    return {p["id"]: p.get("news_added")
+            for p in anterior.get("players", []) if p.get("news")}
+
+
+def _elementos_live(live):
+    """A API devolve `elements` como objeto {id: {...}}; aceitar lista também."""
+    els = live.get("elements")
+    if isinstance(els, dict):
+        return list(els.items())
+    if isinstance(els, list):
+        return [(e.get("id"), e) for e in els]
+    return []
+
+
+def fetch_jornadas(game, anterior):
+    """Minutos e pontos de cada jogador em cada jornada já disputada.
+
+    É esta a resposta a "quem jogou e quem ficou de fora": vem da própria API
+    do FPL (`/event/{ev}/live`), a mesma que dá os pontos. Jornadas já
+    terminadas não voltam a ser pedidas — ficam em cache no data.json."""
+    atual = game.get("current_event")
+    if not atual:
+        return {}
+    cache = (anterior or {}).get("jornadas") or {}
+    saida = {}
+    for ev in range(1, int(atual) + 1):
+        chave = str(ev)
+        guardada = cache.get(chave)
+        if guardada and guardada.get("finalizada"):
+            saida[chave] = guardada
+            continue
+        try:
+            live = get(f"/event/{ev}/live")
+        except Exception as exc:
+            print(f"Aviso: jornada {ev} falhou ({exc}).", file=sys.stderr)
+            if guardada:
+                saida[chave] = guardada
+            continue
+
+        stats = {}
+        for eid, dados in _elementos_live(live):
+            s = (dados or {}).get("stats") or dados or {}
+            minutos = s.get("minutes") or 0
+            pontos = s.get("total_points") or 0
+            if minutos or pontos:  # ausentes = 0 minutos, não vale a pena guardar
+                stats[str(eid)] = [minutos, pontos]
+        jogos = live.get("fixtures") or []
+        equipas = sorted({t for j in jogos
+                          for t in (j.get("team_h"), j.get("team_a")) if t})
+        saida[chave] = {
+            "finalizada": bool(jogos) and all(j.get("finished") for j in jogos),
+            "equipas": equipas,
+            "stats": stats,
+        }
+    return saida
+
+
+def snapshot_historico(players, anterior):
+    """Agregados da época anterior, congelados antes de a nova época os substituir.
+
+    O bootstrap-static traz os totais da época passada até a nova começar; a
+    partir daí passam a ser desta época. Guardar o retrato mantém a base das
+    projeções quando ainda há poucos jogos disputados."""
+    anteriores = (anterior or {}).get("historico")
+    if anteriores:
+        return anteriores
+    return {str(p["id"]): {"minutes": p["minutes"], "starts": p["starts"],
+                           "total_points": p["total_points"]} for p in players}
 
 
 def pick_next_event(events, game):
@@ -304,7 +376,8 @@ def main():
 
     owners = {es["element"]: es["owner"] for es in status["element_status"]}
     out_path = os.path.join(OUT_DIR, "data.json")
-    prev_news = load_previous_news(out_path)
+    anterior = load_anterior(out_path)
+    prev_news = news_anteriores(anterior)
 
     players = []
     for el in bootstrap["elements"]:
@@ -365,6 +438,8 @@ def main():
                   for t in bootstrap["teams"]},
         "players": players,
         "fixtures": fixtures,
+        "jornadas": fetch_jornadas(game, anterior),
+        "historico": snapshot_historico(players, anterior),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
         "conferencias": {
