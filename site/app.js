@@ -893,6 +893,96 @@ function initProjecoes() {
   desenharLivres();
 }
 
+/* --- Próximos jogos dos meus jogadores --- */
+
+const fmtDiaHora = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon", weekday: "short", day: "numeric", month: "short",
+});
+const fmtHora = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon", hour: "2-digit", minute: "2-digit",
+});
+
+/**
+ * Agrupa os próximos jogos por partida: cada uma com a data, a hora e os meus
+ * jogadores que entram nela.
+ */
+function proximosJogos(meusX, limite) {
+  const partidas = new Map();
+  meusX.forEach((x) => {
+    (x.pr.jogos || []).forEach((j) => {
+      if (!j.kickoff) return;
+      const casa = j.is_home ? x.p.team : j.opponent;
+      const fora = j.is_home ? j.opponent : x.p.team;
+      const chave = j.event + ":" + casa + "-" + fora;
+      if (!partidas.has(chave)) {
+        partidas.set(chave, {
+          evento: j.event, kickoff: new Date(j.kickoff),
+          casa, fora, dificuldade: j.difficulty, jogadores: [],
+        });
+      }
+      const partida = partidas.get(chave);
+      if (!partida.jogadores.some((y) => y.p.id === x.p.id)) {
+        partida.jogadores.push(x);
+      }
+    });
+  });
+
+  return [...partidas.values()]
+    .filter((m) => m.kickoff >= new Date(Date.now() - 2 * 36e5)) // ainda a decorrer conta
+    .sort((a, b) => a.kickoff - b.kickoff)
+    .slice(0, limite || 12);
+}
+
+function desenharProximosJogos(meusX) {
+  const alvo = $("proximos-jogos");
+  if (!alvo) return;
+  const partidas = proximosJogos(meusX, 12);
+  if (partidas.length === 0) {
+    alvo.innerHTML = '<p class="nota">Sem jogos agendados para os teus jogadores.</p>';
+    $("proximos-resumo").textContent = "";
+    return;
+  }
+
+  const primeira = partidas[0];
+  const horas = Math.round((primeira.kickoff - Date.now()) / 36e5);
+  $("proximos-resumo").textContent = horas <= 0
+    ? "a decorrer"
+    : horas < 48
+      ? "o próximo é daqui a " + horas + (horas === 1 ? " hora" : " horas")
+      : "o próximo é " + fmtDiaHora.format(primeira.kickoff);
+
+  let diaAtual = "";
+  alvo.innerHTML = partidas.map((m) => {
+    const dia = fmtDiaHora.format(m.kickoff);
+    const cabecalho = dia !== diaAtual ? (diaAtual = dia, '<h4 class="dia">' + dia + "</h4>") : "";
+    const jogadores = m.jogadores
+      .sort((a, b) => b.pr.ppj - a.pr.ppj)
+      .map((x) => {
+        const est = estadoDe(x.p);
+        const ffs = ffsDe(x.p);
+        const fora = STATUS_FORA.has(x.p.status) || (ffs && ffs.estado === "fora");
+        return '<span class="chip">' +
+          '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
+          '<span class="chip-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
+            x.pr.ppj.toFixed(1) + " pts</span>" +
+          (fora ? '<span class="estado bad">fora</span>'
+                : est.sev === "warn" ? '<span class="estado warn">dúvida</span>' : "") +
+        "</span>";
+      }).join("");
+
+    return cabecalho +
+      '<div class="jogo">' +
+        '<div class="jogo-linha">' +
+          '<span class="hora">' + fmtHora.format(m.kickoff) + "</span>" +
+          '<span class="equipas">' + nomeClube(m.casa) + " – " + nomeClube(m.fora) + "</span>" +
+          '<span class="fx d' + m.dificuldade + '">dif. ' + m.dificuldade + "</span>" +
+          '<span class="gw">GW' + m.evento + "</span>" +
+        "</div>" +
+        '<div class="linha-campo jogo-jogadores">' + jogadores + "</div>" +
+      "</div>";
+  }).join("");
+}
+
 /* ---------- Sugestões da jornada ---------- */
 
 // Formações válidas: lidas de settings.squad da liga (1 GR, 3-5 DEF, 2-5 MED, 1-3 AV).
@@ -1172,6 +1262,7 @@ function initSugestoes() {
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
   desenharOnze(meusX);
+  desenharProximosJogos(meusX);
   desenharUtilizacao(meusX);
 
   // --- Contexto da liga ---

@@ -61,7 +61,7 @@ def calendario_por_clube(fixtures, desde):
     saida = {}
     for j in sorted(fixtures, key=lambda x: (x.get("event") or 99, x.get("id", 0))):
         ev = j.get("event")
-        if not ev or ev < desde or j.get("finished"):
+        if not ev or ev < desde or j.get("finished") or j.get("finished_provisional"):
             continue
         for casa in (True, False):
             eq = j["team_h"] if casa else j["team_a"]
@@ -70,7 +70,7 @@ def calendario_por_clube(fixtures, desde):
             lista = saida.setdefault(str(eq), [])
             if len(lista) < 10:
                 lista.append({"event": ev, "opponent": adv, "is_home": casa,
-                              "difficulty": dif})
+                              "difficulty": dif, "kickoff": j.get("kickoff_time")})
     return saida
 
 
@@ -331,7 +331,8 @@ def main():
         "teams": {str(t["id"]): {"name": t["name"], "short_name": t["short_name"]}
                   for t in bootstrap["teams"]},
         "players": players,
-        "fixtures": calendario_por_clube(fixtures, (proximo and proximo["id"]) or 1),
+        # A jornada a decorrer entra: os jogos que faltam hoje são os que interessam.
+        "fixtures": calendario_por_clube(fixtures, atual or (proximo and proximo["id"]) or 1),
         "jornadas": fetch_jornadas(atual, anterior, fixtures),
         "historico": fd.snapshot_historico(players, anterior, game),
         "preepoca": fd.fetch_preepoca(nomes_clubes, players),

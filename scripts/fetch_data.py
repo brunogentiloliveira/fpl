@@ -364,6 +364,28 @@ def fetch_fixtures(bootstrap, desde_evento):
     for el in bootstrap["elements"]:
         representante.setdefault(el["team"], el["id"])
 
+    # Assim que o deadline passa, a jornada a decorrer desaparece tanto do
+    # `fixtures` do jogador como do bootstrap-static, mesmo com jogos por
+    # realizar. Só `/event/{ev}/live` os mantém — e são precisamente os que
+    # interessam para saber quem joga hoje.
+    por_jogar = {}
+    try:
+        jogos_atuais = (get(f"/event/{desde_evento}/live") or {}).get("fixtures") or []
+    except Exception as exc:
+        registar("Jogos da jornada a decorrer", False, exc)
+        jogos_atuais = []
+    for j in jogos_atuais:
+        if j.get("finished") or j.get("finished_provisional"):
+            continue
+        ev = j.get("event") or desde_evento
+        for casa in (True, False):
+            eq = j["team_h"] if casa else j["team_a"]
+            adv = j["team_a"] if casa else j["team_h"]
+            por_jogar.setdefault(str(eq), []).append({
+                "event": ev, "opponent": adv, "is_home": casa,
+                "difficulty": 3, "kickoff": j.get("kickoff_time"),
+            })
+
     saida = {}
     for team_id, el_id in representante.items():
         try:
@@ -371,15 +393,20 @@ def fetch_fixtures(bootstrap, desde_evento):
         except Exception as exc:
             print(f"Aviso: calendário da equipa {team_id} falhou ({exc}).", file=sys.stderr)
             continue
-        saida[str(team_id)] = [
+        do_bootstrap = por_jogar.get(str(team_id), [])
+        vistos = {(x["event"], x["opponent"]) for x in do_bootstrap}
+        saida[str(team_id)] = do_bootstrap + [
             {
                 "event": j["event"],
                 "opponent": j["opponent"],
                 "is_home": j["is_home"],
                 "difficulty": j["difficulty"],
+                "kickoff": j.get("kickoff_time"),
             }
             for j in jogos
-            if j.get("event") and j["event"] >= desde_evento and not j.get("finished")
+            if j.get("event") and j["event"] >= desde_evento
+            and not (j.get("finished") or j.get("finished_provisional"))
+            and (j["event"], j["opponent"]) not in vistos
         ][:10]
     return saida
 
@@ -676,7 +703,10 @@ def main():
         print(f"Aviso: gestor '{apelido}' não encontrado; sem conferências.", file=sys.stderr)
 
     feeds = fetch_feeds_clubes()
-    fixtures = fetch_fixtures(bootstrap, next_ev["id"] if next_ev else 1)
+    # Começar na jornada a decorrer, não na seguinte: os jogos que ainda faltam
+    # hoje são os mais relevantes de todos.
+    desde = game.get("current_event") or (next_ev["id"] if next_ev else 1)
+    fixtures = fetch_fixtures(bootstrap, desde)
     noticias_mercado = fetch_noticias_mercado()
 
     data = {

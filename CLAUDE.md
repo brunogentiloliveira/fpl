@@ -313,6 +313,24 @@ porque cada ponto que esse jogador faz é terreno perdido para todos ao mesmo te
 2026-08-22: 13 dos meus 15 eram só meus, e faltavam-me B.Fernandes (capitão de três deles),
 João Pedro e Calafiori.
 
+## Próximos jogos (2026-08-22)
+
+Secção nas Sugestões com **quando é que os meus jogadores entram em campo**, hora de Lisboa,
+agrupada por dia: hora, jogo, dificuldade, jornada e os meus jogadores em cada partida (com
+aviso de quem está fora ou em dúvida). Serve nos dois modos — os "meus" são os do `owner` no
+Draft e as `picks` na clássica, e em ambos vêm do mesmo `meusX`.
+
+Para isto foi preciso guardar `kickoff` nas fixtures (antes só se guardava evento, adversário,
+casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a apanhar:
+
+- **Clássica**: `/fixtures/` mantém os jogos por disputar da jornada a decorrer. Basta incluir
+  a jornada atual (não só a seguinte) e excluir `finished`/`finished_provisional`.
+- **Draft**: assim que o deadline passa, a jornada a decorrer **desaparece** do `fixtures` do
+  `element-summary` (vai para o `history`, mesmo sem o jogo se ter realizado) **e** do
+  `bootstrap-static.fixtures`, que passa a começar na jornada seguinte. O único sítio onde os
+  jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
+  juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
+
 ## Separadores por modo e Mercado (2026-08-22)
 
 - **Conferências** passou a ser **só do Draft** (`data-modo="draft"`), a pedido do utilizador.
