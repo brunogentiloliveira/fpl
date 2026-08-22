@@ -313,6 +313,22 @@ porque cada ponto que esse jogador faz é terreno perdido para todos ao mesmo te
 2026-08-22: 13 dos meus 15 eram só meus, e faltavam-me B.Fernandes (capitão de três deles),
 João Pedro e Calafiori.
 
+## Separadores por modo e Mercado (2026-08-22)
+
+- **Conferências** passou a ser **só do Draft** (`data-modo="draft"`), a pedido do utilizador.
+- **Mercado** mostra coisas diferentes conforme o modo:
+  - *Draft*: movimentos da liga **agrupados por jornada** (`movimentosPorJornada`), da mais
+    recente para a mais antiga, mais as notícias de transferências do Sky.
+  - *Clássica*: **a liga jornada a jornada** (`desenharMercadoClassica`) — pontos de cada
+    equipa, o que ficou no banco, transferências com a penalização, e chips usados. Vem do
+    `/entry/{id}/history/` de cada participante, recolhido em `fetch_liga()`.
+  - As **notícias de transferências ficam só no Draft**.
+- O feed do Sky **não vem ordenado** (uma "Transfer Centre LIVE" de anteontem aparecia antes de
+  negócios fechados no próprio dia): `fetch_noticias_mercado` passa a ordenar por data
+  decrescente.
+- Nomes dos chips traduzidos num sítio só (`nomeChip`), partilhado entre as sugestões e o
+  mercado.
+
 ## Equipa do utilizador na clássica
 
 `FPL_ENTRY_ID=2420779` ("Bazukas Team") está fixado no `atualizar.cmd`. O id encontra-se

@@ -1667,10 +1667,6 @@ function desenharChips(meusX) {
   const capitao = xi.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)[0];
   const valorBanco = banco.reduce((s, x) => s + x.pr.ppjCal, 0);
 
-  const NOMES = {
-    wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost",
-    "3xc": "Triple Captain", manager: "Assistant Manager",
-  };
   const explicar = (nome) => {
     if (nome === "bboost") {
       return meusX.length
@@ -1698,7 +1694,7 @@ function desenharChips(meusX) {
   $("chips-lista").innerHTML = disponiveis.length === 0
     ? '<p class="nota">Sem chips disponíveis nesta janela.</p>'
     : '<ul class="sugestoes">' + disponiveis.map((c) =>
-        "<li><p class=\"alvo\"><strong>" + (NOMES[c.nome] || c.nome) + "</strong> " +
+        "<li><p class=\"alvo\"><strong>" + nomeChip(c.nome) + "</strong> " +
           "(jornadas " + c.inicio + " a " + c.fim + ")</p>" +
           '<p class="porque">' + explicar(c.nome) + "</p></li>").join("") + "</ul>";
 }
@@ -2320,6 +2316,82 @@ function nomeJogador(id) {
   return p ? esc(p.web_name) + ' <span class="clube">(' + nomeClube(p.team) + ")</span>" : "?";
 }
 
+/* --- Mercado: o que se passou na liga, jornada a jornada --- */
+const NOMES_CHIP = {
+  wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost",
+  "3xc": "Triple Captain", manager: "Assistant Manager",
+};
+
+function nomeChip(nome) {
+  return NOMES_CHIP[nome] || nome;
+}
+
+
+/** Movimentos do Draft agrupados por jornada, da mais recente para a mais antiga. */
+function movimentosPorJornada(transacoes) {
+  const porEvento = {};
+  transacoes.forEach((t) => {
+    const ev = t.event || 0;
+    (porEvento[ev] = porEvento[ev] || []).push(t);
+  });
+  return Object.keys(porEvento).map(Number).sort((a, b) => b - a)
+    .map((ev) => ({ evento: ev, itens: porEvento[ev] }));
+}
+
+/** Resultados da mini-liga clássica em cada jornada. */
+function jornadasDaLigaClassica() {
+  const liga = ligaClassica();
+  if (!liga) return [];
+  const eventos = new Set();
+  liga.participantes.forEach((p) =>
+    (p.historico || []).forEach((h) => eventos.add(h.jornada)));
+
+  return [...eventos].sort((a, b) => b - a).map((ev) => {
+    const linhas = liga.participantes.map((p) => {
+      const h = (p.historico || []).find((x) => x.jornada === ev);
+      return h ? { p, h } : null;
+    }).filter(Boolean).sort((a, b) => b.h.pontos - a.h.pontos);
+    return { evento: ev, linhas };
+  });
+}
+
+function desenharMercadoClassica() {
+  const alvo = $("liga-jornadas");
+  if (!alvo) return;
+  const jornadas = jornadasDaLigaClassica();
+  const eu = (minhaEquipaClassica() || {}).id;
+  if (jornadas.length === 0) {
+    alvo.innerHTML = '<p class="nota">Ainda não há jornadas concluídas. Depois de cada uma, ' +
+      "aparece aqui o que cada equipa fez: pontos, transferências, penalizações e chips.</p>";
+    return;
+  }
+
+  alvo.innerHTML = jornadas.map(({ evento, linhas }) => {
+    const melhor = linhas[0];
+    return '<h3 class="sub-titulo">Gameweek ' + evento +
+      ' <span class="sub-total">melhor: ' + esc(melhor.p.nome) + " com " +
+      melhor.h.pontos + " pts</span></h3>" +
+      '<table class="tabela tabela-proj"><thead><tr><th>Equipa</th>' +
+        '<th class="num">Pontos</th><th class="num">Total</th>' +
+        '<th class="num">Banco</th><th>Transferências</th></tr></thead><tbody>' +
+        linhas.map(({ p, h }) => {
+          const chip = (p.chips_usados || []).find((c) => c.jornada === evento);
+          const trocas = h.transferencias
+            ? h.transferencias + (h.custo ? " (−" + h.custo + " pts)" : "")
+            : "—";
+          return '<tr class="' + (p.entry === eu ? "eu" : "") + '">' +
+            "<td>" + esc(p.nome) + (p.entry === eu ? " ★" : "") +
+              '<span class="sub">' + esc(p.gestor) +
+              (chip ? " · " + esc(nomeChip(chip.chip)) : "") + "</span></td>" +
+            '<td class="num forte">' + h.pontos + "</td>" +
+            '<td class="num">' + h.total + "</td>" +
+            '<td class="num">' + h.banco + "</td>" +
+            "<td>" + trocas + "</td></tr>";
+        }).join("") +
+      "</tbody></table>";
+  }).join("");
+}
+
 function initMercado() {
   const m = D.mercado || { noticias: [], transacoes: [] };
 
@@ -2327,7 +2399,9 @@ function initMercado() {
     $("nota-movimentos").hidden = false;
   } else {
     const KINDS = { w: "waiver", f: "free agency" };
-    $("lista-movimentos").innerHTML = m.transacoes.map((t) => {
+    $("lista-movimentos").innerHTML = movimentosPorJornada(m.transacoes).map((grupo) =>
+      '<li class="grupo">Gameweek ' + grupo.evento + " (" + grupo.itens.length + ")</li>" +
+      grupo.itens.map((t) => {
       const eq = entradasPorEntryId[t.entry];
       const aceite = t.result === "a";
       const data = t.added ? fmtDataHora.format(new Date(t.added)) : "";
@@ -2342,7 +2416,12 @@ function initMercado() {
         '<p class="troca">Entra ' + nomeJogador(t.element_in) +
           " · sai " + nomeJogador(t.element_out) + "</p>" +
       "</li>";
-    }).join("");
+    }).join("")).join("");
+  }
+
+  if (ehClassica()) {
+    desenharMercadoClassica();
+    return;   // as notícias de transferências ficam só no Draft
   }
 
   if (m.noticias.length === 0) {

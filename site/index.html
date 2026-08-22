@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=28">
+<link rel="stylesheet" href="styles.css?v=30">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -35,7 +35,7 @@
 
 <nav class="tabs" role="tablist" aria-label="Secções">
   <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
-  <button role="tab" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
+  <button role="tab" data-modo="draft" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
   <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
   <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
@@ -260,13 +260,23 @@
   </section>
 
   <section id="painel-mercado" role="tabpanel" aria-labelledby="tab-mercado" hidden>
+    <div data-modo="classica" hidden>
+      <h2 class="sec-titulo">A liga jornada a jornada</h2>
+      <p class="nota">O que cada equipa fez em cada jornada: pontos, o que ficou no banco,
+        transferências (com a penalização, se a houve) e chips usados.</p>
+      <div id="liga-jornadas"></div>
+    </div>
+
     <h2 class="sec-titulo" data-modo="draft">Movimentos da liga</h2>
     <ul class="movimentos" id="lista-movimentos" data-modo="draft"></ul>
     <p class="nota" id="nota-movimentos" data-modo="draft" hidden>Ainda sem movimentos na liga.</p>
-    <h2 class="sec-titulo">Notícias de transferências</h2>
-    <p class="nota">Fonte: Sky Sports Transfer Centre (em inglês). Itens "Papers" são rumores da imprensa.</p>
-    <ul class="wire" id="lista-wire"></ul>
-    <p class="nota" id="nota-wire" hidden>Sem notícias externas nesta atualização.</p>
+    <div data-modo="draft">
+      <h2 class="sec-titulo">Notícias de transferências</h2>
+      <p class="nota">Fonte: Sky Sports Transfer Centre (em inglês), da mais recente para a mais
+        antiga. Itens "Papers" são rumores da imprensa.</p>
+      <ul class="wire" id="lista-wire"></ul>
+      <p class="nota" id="nota-wire" hidden>Sem notícias externas nesta atualização.</p>
+    </div>
   </section>
 </main>
 
@@ -275,7 +285,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=28"></script>
+<script src="app.js?v=30"></script>
 
 </body>
 </html>

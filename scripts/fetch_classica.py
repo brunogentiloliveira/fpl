@@ -232,6 +232,21 @@ def fetch_liga(league_id, evento):
             p["capitao"] = next((x["element"] for x in escolhas if x.get("is_captain")), None)
             p["chip"] = picks.get("active_chip")
             break
+        try:
+            hist = get(f'/entry/{p["entry"]}/history/')
+            p["historico"] = [{
+                "jornada": h.get("event"),
+                "pontos": h.get("points"),
+                "total": h.get("total_points"),
+                "banco": h.get("points_on_bench"),
+                "transferencias": h.get("event_transfers"),
+                "custo": h.get("event_transfers_cost"),
+                "classificacao": h.get("overall_rank"),
+            } for h in hist.get("current", [])]
+            p["chips_usados"] = [{"chip": c.get("name"), "jornada": c.get("event")}
+                                 for c in hist.get("chips", [])]
+        except Exception:
+            p["historico"] = []
         participantes.append(p)
 
     fd.registar("Mini-liga clássica", True,

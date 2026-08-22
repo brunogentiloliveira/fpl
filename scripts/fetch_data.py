@@ -169,6 +169,9 @@ def fetch_noticias_mercado():
     for it in itens:
         baixa = it["titulo"].lower()
         it["rumor"] = baixa.startswith("papers") or "rumour" in baixa
+    # O feed não vem ordenado: a "Transfer Centre LIVE" de anteontem aparecia
+    # antes de negócios fechados hoje.
+    itens.sort(key=lambda i: i.get("data") or "", reverse=True)
     registar("Sky · transferências", True, f"{len(itens)} notícias")
     return itens
 
