@@ -394,6 +394,15 @@ function historicoDe(p) {
   return h || { minutes: p.minutes, starts: p.starts, total_points: p.total_points };
 }
 
+/**
+ * O número que o outro gestor olha primeiro: os pontos da época passada. Vem do
+ * histórico congelado — `total_points` do bootstrap passa a contar a época a
+ * decorrer assim que ela arranca.
+ */
+function pontosEpocaPassada(p) {
+  return historicoDe(p).total_points || 0;
+}
+
 /** Jornadas já disputadas pela equipa do jogador, da mais antiga para a mais recente. */
 function utilizacao(p) {
   const js = D.jornadas || {};
@@ -724,7 +733,11 @@ function projecao(p, ignorarAusencia) {
   // Jogos já disputados nesta época: a realidade manda mais do que o histórico.
   const uso = utilizacao(p).filter((u) => u.finalizada);
   const jogosObs = uso.length;
-  const peso = Math.min(1, jogosObs / 5); // 5 jogos ⇒ decide sozinho
+  // Quanto se confia no que já se viu em campo. n/(n+2): um jogo já vale um
+  // terço (antes valia um quinto, e a média da época passada continuava a
+  // mandar mesmo contra a evidência direta); nunca chega a 1, porque o
+  // historial mantém sempre alguma palavra.
+  const peso = jogosObs / (jogosObs + 2);
   const ultimos = uso.slice(-3);
 
   let pp90 = pp90Hist;
@@ -745,11 +758,14 @@ function projecao(p, ignorarAusencia) {
     if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
   }
 
-  // Antes da primeira jornada, o último ensaio de pré-época é o melhor indício
-  // de quem o treinador vai lançar. Deixa de contar assim que houver jogos a sério.
-  const pe = jogosObs === 0 ? preEpocaDe(p) : null;
+  // O último ensaio de pré-época é o melhor indício de quem o treinador lança
+  // enquanto não há jogos a sério. Perde peso à medida que eles aparecem, em
+  // vez de desaparecer de repente: basta uma jornada para o cortar a direito
+  // e um titular confirmado em campo ficava a valer menos do que quem ainda
+  // não jogou.
+  const pe = preEpocaDe(p);
   if (pe && !STATUS_FORA.has(p.status)) {
-    const forca = pe.confianca === "alta" ? 1 : 0.5;
+    const forca = (pe.confianca === "alta" ? 1 : 0.5) * (1 - peso);
     if (pe.estado === "titular") {
       const alvo = 72;
       if (alvo > xmin) xmin += (alvo - xmin) * forca;
@@ -1080,7 +1096,7 @@ function sugestoesTrocas(meusX, euEntry) {
         if (ganhoDeles >= GANHO_MIN_TROCA) {
           // Ambos melhoram o onze: acontece quando as posições fortes diferem.
           propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "ambos" });
-        } else if (meu.p.total_points > deles.p.total_points) {
+        } else if (pontosEpocaPassada(meu.p) > pontosEpocaPassada(deles.p)) {
           // Soma zero na projeção, mas ele recebe o jogador com mais cartaz
           // (pontos da época passada) — é assim que as trocas passam numa liga.
           propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "cartaz" });
@@ -1171,13 +1187,18 @@ function porqueSai(x) {
   if (recentes && x.pr.xmin < 60) {
     return "tem jogado pouco (" + recentes + " nos últimos jogos)";
   }
-  if (x.pr.pe && x.pr.pe.estado !== "titular") {
+  if (citaPreEpoca(x.pr) && x.pr.pe.estado !== "titular") {
     return PE_TEXTO[x.pr.pe.estado];
   }
   if (x.pr.xmin < 55) {
     return "só deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jornada";
   }
   return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min, abaixo da alternativa";
+}
+
+/** A pré-época pesa cada vez menos; passados 3 jogos deixa de valer a pena cita-la. */
+function citaPreEpoca(pr) {
+  return !!pr.pe && pr.jogosObs < 3;
 }
 
 const PE_TEXTO = {
@@ -1193,7 +1214,7 @@ function porqueEntra(x) {
   const jogouMesmo = x.pr.ultimos && x.pr.ultimos.some((u) => u.minutos > 0);
   if (recentes && jogouMesmo) {
     partes.push("já jogou " + recentes + " nas últimas jornadas");
-  } else if (x.pr.pe && x.pr.pe.estado === "titular") {
+  } else if (citaPreEpoca(x.pr) && x.pr.pe.estado === "titular") {
     partes.push(PE_TEXTO.titular);
   } else if (x.pr.tr && x.pr.tr.confirmada) {
     partes.push("custou " + x.pr.tr.moeda + x.pr.tr.valor + "M, por isso deve ser titular");
@@ -1257,6 +1278,26 @@ function etiquetaJogador(x) {
     (est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "");
 }
 
+/**
+ * Com a jornada a meio, uns jogadores já têm mais um jogo de informação do que
+ * outros — e é aí que as sugestões são menos de fiar. Diz quantas equipas já
+ * jogaram em vez de deixar isso escondido no modelo.
+ */
+function avisoJornadaACorrer() {
+  const alvo = $("sug-jornada");
+  if (!alvo) return;
+  const eventos = Object.keys(D.jornadas || {}).map(Number).sort((a, b) => a - b);
+  const ev = eventos[eventos.length - 1];
+  const j = ev ? D.jornadas[ev] : null;
+  const jogaram = j && !j.finalizada ? (j.equipas || []).length : 0;
+  const total = (D.teams || []).length || 20;
+  alvo.hidden = !jogaram || jogaram >= total;
+  if (alvo.hidden) return;
+  alvo.textContent = "Jornada " + ev + " a decorrer: " + jogaram + " de " + total +
+    " equipas já jogaram. Quem já entrou em campo tem mais um jogo de informação " +
+    "do que os outros, por isso as sugestões só ficam comparáveis no fim da jornada.";
+}
+
 function initSugestoes() {
   const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
@@ -1283,6 +1324,8 @@ function initSugestoes() {
     .filter((t) => t.result === "a").length;
   if (movs) partes.push(movs + " movimentos recentes na liga");
   $("sug-contexto").textContent = partes.join(" · ") + ".";
+
+  avisoJornadaACorrer();
 
   // --- Waivers / free agency ---
   const livres = sugestoesLivres(meusX);
@@ -1322,8 +1365,8 @@ function initSugestoes() {
         ? " Ele também tem interesse: o onze dele sobe " + t.ganhoDeles.toFixed(1) +
           " pontos, porque " + esc(t.meu.p.web_name) + " encaixa melhor no plantel dele."
         : " Ele pode aceitar porque recebe o nome maior: " + esc(t.meu.p.web_name) + " fez " +
-          t.meu.p.total_points + " pontos na época passada e " + esc(t.deles.p.web_name) +
-          " fez " + t.deles.p.total_points + " — é o número que salta à vista, mesmo que a " +
+          pontosEpocaPassada(t.meu.p) + " pontos na época passada e " + esc(t.deles.p.web_name) +
+          " fez " + pontosEpocaPassada(t.deles.p) + " — é o número que salta à vista, mesmo que a " +
           "projeção para esta época diga o contrário.";
       return "<li class=\"" + t.tipo + "\">" +
         '<p class="alvo">Propor a <strong>' + esc(t.outro.entry_name) + "</strong> (" +
@@ -1985,7 +2028,8 @@ function detalheTroca(x, sentido) {
     (cargo ? "." + cargo : "") +
     ". Projeta <strong>" + x.pr.ppj.toFixed(1) + " pts/jornada</strong>, " +
     x.pr.ppjCal.toFixed(1) + " com o calendário das próximas " + janelaAtual() + "." +
-    (x.p.total_points ? " Fez " + x.p.total_points + " pontos na época passada." : "") +
+    (pontosEpocaPassada(x.p)
+      ? " Fez " + pontosEpocaPassada(x.p) + " pontos na época passada." : "") +
     "</li>";
 }
 
@@ -2143,7 +2187,7 @@ function analisarTroca(eu) {
 
   const somaPpj = (l) => l.reduce((t, x) => t + x.pr.ppj, 0);
   const somaCal = (l) => l.reduce((t, x) => t + x.pr.ppjCal, 0);
-  const cartaz = (l) => l.reduce((t, x) => t + (x.p.total_points || 0), 0);
+  const cartaz = (l) => l.reduce((t, x) => t + pontosEpocaPassada(x.p), 0);
 
   let veredicto;
   let cor;

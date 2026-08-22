@@ -331,6 +331,45 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Evidência dos primeiros jogos: o Ødegaard pelo Ngumoha (2026-08-22)
+
+Reparo do utilizador: com a GW1 a meio, as sugestões mandavam trocar o **Ødegaard** (75 min e
+11 pontos na sexta) pelo **Ngumoha**, que ainda não tinha jogado. Não era uma opinião do modelo
+sobre futebol — eram dois defeitos a somar-se, ambos do lado dos **minutos esperados**:
+
+- **A pré-época era cortada a direito.** `jogosObs === 0 ? preEpocaDe(p) : null` deitava fora o
+  sinal assim que a equipa jogasse **uma vez**. Ora a pré-época dizia "titular" e a GW1
+  *confirmou* — descartava-se uma prova que estava a ser corroborada. Agora o sinal **desvanece**:
+  a força é multiplicada por `(1 - peso)`, igual ao que já se fazia com o histórico.
+- **O peso da evidência real era baixo demais no início.** `peso = min(1, jogosObs/5)` dava 0.2
+  a um jogo, ou seja 80% para a média da época passada (1363 min/38 = 35.9 min/jogo, uma época
+  de lesões) contra 20% para os 75 minutos que se acabaram de ver. Passou a **`n/(n+2)`**: um
+  jogo vale 1/3, e nunca chega a 1 — o historial mantém sempre alguma palavra, ao contrário do
+  `min(1, n/5)`, que aos 5 jogos o silenciava por completo.
+
+Efeito no caso concreto: Ødegaard de `xmin` 43.7 → **64.3** e de 2.62 → **3.85** pts/jornada; a
+sugestão desapareceu. O Ngumoha fica nos 3.96 enquanto o Liverpool não jogar, o que é o que a
+informação disponível permite dizer.
+
+**A parte que a correção não resolve** (resposta ao "ou só devia esperar pelo fim da jornada?"):
+com a jornada a meio, quem já jogou tem literalmente mais um jogo de informação do que os outros
+— aqui, 2 equipas em 20. Isso deixou de ser um precipício, mas continua a ser desigual. Em vez de
+o esconder, `avisoJornadaACorrer()` põe uma faixa no topo das Sugestões a dizer quantas equipas
+já jogaram e que as comparações só ficam equilibradas no fim da jornada. Vale nos dois modos.
+
+Nota: as **frases** deixaram de citar a pré-época passados 3 jogos (`citaPreEpoca`) — o modelo
+continua a usá-la com peso residual, mas "começou no banco no último ensaio" em dezembro seria
+absurdo.
+
+## O "cartaz" das trocas apanhado na mesma revisão (2026-08-22)
+
+`p.total_points` do bootstrap **passa a contar a época a decorrer** assim que ela arranca, e as
+trocas continuavam a chamar-lhe "pontos na época passada": a sugestão dizia que o Ødegaard "fez
+11 pontos na época passada". Pior do que a frase, era o **critério** — o desempate das trocas
+por cartaz comparava totais de uma jornada em vez de épocas inteiras. `pontosEpocaPassada()`
+lê o `historico` congelado (Ødegaard 74, Muñoz 136). Serve para o desempate, para o texto da
+proposta, para a linha da tabela na análise de trocas e para o detalhe por jogador.
+
 ## Separadores por modo e Mercado (2026-08-22)
 
 - **Conferências** passou a ser **só do Draft** (`data-modo="draft"`), a pedido do utilizador.
