@@ -50,6 +50,35 @@ def achatar_pontuacao(scoring):
     plano.setdefault("concede_limit", 2)
     plano.setdefault("saves_limit", 3)
     plano.setdefault("long_play_limit", 60)
+    return completar_limiares(plano)
+
+
+# Ações defensivas necessárias para os 2 pontos. Recurso apenas: os valores
+# certos vêm da API (ver completar_limiares).
+LIMIARES_OMISSAO = {"GKP": 0, "DEF": 10, "MID": 12, "FWD": 12}
+
+
+def completar_limiares(plano):
+    """A clássica publica os pontos da contribuição defensiva mas não o limiar.
+
+    O Draft publica ambos e as regras do jogo são as mesmas, por isso é de lá
+    que vêm — escrevê-los à mão foi o que já deu dois erros de facto (o golo
+    de guarda-redes e o castigo por golos sofridos)."""
+    if any(k.startswith("defensive_contribution_limit") for k in plano):
+        return plano
+    try:
+        draft = fd.get("/bootstrap-static")["settings"]["scoring"]
+        achados = {k: v for k, v in draft.items()
+                   if k.startswith("defensive_contribution_limit")}
+    except Exception as exc:
+        achados = {}
+        fd.registar("Limiares defensivos (via Draft)", False, exc)
+    if achados:
+        plano.update(achados)
+        fd.registar("Limiares defensivos (via Draft)", True, f"{len(achados)} posições")
+    else:
+        for pos, v in LIMIARES_OMISSAO.items():
+            plano[f"defensive_contribution_limit_{pos}"] = v
     return plano
 
 
@@ -331,7 +360,8 @@ def main():
         # A jornada a decorrer entra: os jogos que faltam hoje são os que interessam.
         "fixtures": calendario_por_clube(fixtures, atual or (proximo and proximo["id"]) or 1),
         "jornadas": fetch_jornadas(atual, anterior, fixtures),
-        "historico": fd.snapshot_historico(players, anterior, game),
+        "historico": fd.completar_historico(
+            fd.snapshot_historico(players, anterior, game), players),
         "preepoca": fd.fetch_preepoca(nomes_clubes, players),
         "bolaparada": bola_parada_da_api(bootstrap["elements"]),
         "ffs": fd.fetch_ffs(players, nomes_clubes),

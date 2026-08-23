@@ -331,6 +331,77 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Contribuição defensiva: uma categoria de pontuação que faltava (2026-08-23)
+
+O maior buraco encontrado até hoje. A liga pontua `defensive_contribution` com **2 pontos** a
+quem chega ao limiar de ações defensivas **naquele jogo** (10 para DEF, 12 para MED/AV) e o
+modelo ignorava-a por completo — a par de `penalties_missed` e dos limiares de minutos.
+
+Medido em 178 defesas/médios com 900+ min na época passada (`history_past` da API clássica):
+
+| | Média pts/90 | % dos pontos | Amplitude entre jogadores |
+|---|---|---|---|
+| Defesas (limiar 10) | **0.67** | **15%** | **1.63** (Wieffer → Frimpong) |
+| Médios (limiar 12) | **0.37** | 8% | **1.46** (Anderson → Elanga) |
+| *Bónus, para comparar* | 0.31 | 7% | 1.31 |
+| *Calendário, para comparar* | — | — | ~0.20 |
+
+Com o limiar de waiver em 0.4 pts/jornada, isto sozinho inverte decisões. E o erro era
+**sistemático**: subvalorizava defesas e médios de recuperação.
+
+- **Modelo** (`pontosContribuicaoDefensiva`): sendo um limiar **por jogo** e não um total, a
+  média não chega — usa-se a mesma Poisson da baliza a zero, `P(X ≥ limiar) × 2`, via
+  `probPoissonAtinge`. Aproximação assumida: as ações defensivas são provavelmente mais
+  dispersas do que uma Poisson (subestima quem está longe do limiar, sobrestima quem está muito
+  acima). Verificável agora que as jornadas ficam guardadas uma a uma.
+- **Dados**: a época a decorrer já vinha no bootstrap (`PLAYER_FIELDS`, sem uso). A época
+  passada **não estava** no retrato congelado, e este já não se refaz. `completar_historico()`
+  vai buscá-la ao `history_past` da API clássica, cruzando pelo **`code`** (604 em 604 batem
+  certo), e corre **uma só vez**: no fim os campos ficam a 0 em quem não tem época passada, o
+  que faz a verificação de início dá-los como presentes. 366 de 367 elegíveis.
+- **Corroboração**: `calibEsperado` — o fator que existe precisamente para tapar o que o modelo
+  não tem — caiu de **1.21 para 1.087**. Era a maior parcela em falta.
+- **Efeito real**: 3 dos 10 melhores livres mudaram (entram Ampadu, Wieffer, Scott; saem
+  Hinshelwood, Neto, Gravenberch); os GR descem ~0.18 (não recebem esta categoria e o nível
+  geral baixou). A sugestão de waiver do topo passou a ser o Richards (CRY).
+- **Clássica**: publica os pontos mas **não os limiares**. Como escrevê-los à mão foi o que já
+  deu dois erros de facto, `completar_limiares()` vai buscá-los ao Draft (mesmas regras de jogo),
+  com `LIMIARES_OMISSAO` só como recurso e um registo no diagnóstico.
+
+## As estatísticas desta época a entrar no modelo (2026-08-23)
+
+Antes, a época a decorrer entrava **só como pontos realizados** (`ptsEpoca`, encolhido com
+`MIN_PRIOR`); o xG/xA/xGC/bónus ficavam ancorados a maio para sempre. Era o contrário da
+premissa do modelo: um avançado com quatro jogos, 1.9 de xG e zero golos continuava a ser
+julgado pela época passada.
+
+`historicoCombinado(p, hist)` devolve um objeto com a forma do histórico onde cada estatística
+é `contagem desta época + taxa da época passada × MIN_PRIOR`, com `minutes = minEpoca +
+MIN_PRIOR`. É a **mesma fórmula que já se usava só para os pontos**, alargada a tudo — por isso
+`componentesPP90()` e `taxaBase()` não mudaram uma linha, e o passo especial dos pontos
+desapareceu. Com um jogo, esta época pesa ~9%; às dez jornadas, mais de metade.
+
+Dois pormenores: o encolhimento para o prior da posição usa os **minutos reais das duas épocas**
+(não os sintéticos do combinado, senão um estreante ficava com o prior subvalorizado), e quem
+não tem retrato congelado não é combinado — o `historicoDe` já lhe devolve esta época, e
+combinar contá-la-ia duas vezes.
+
+Efeito: Ødegaard 3.85 → 3.51, porque os 11 pontos da GW1 vieram com 0.21 de xG — o modelo passa
+a dizer "marcou acima do que gerou, não extrapoles".
+
+## O limiar dos 60 minutos: medido e deixado como está (2026-08-23)
+
+O modelo dá `presenca = 2` e escala tudo por `xmin/90`, quando a presença (2 pts aos 60 min,
+1 antes), a baliza a zero e a própria contribuição defensiva são **por jogo**, não por minuto.
+Parecia um erro estrutural. Não é, e o motivo é que `xmin = P(joga) × minutos quando joga`:
+para quem joga 90 ou não joga, o escalonamento linear está **exatamente certo**.
+
+Medido: **0.048 pts/jornada** de erro médio absoluto em 267 jogadores com 900+ min, **nenhum**
+acima de 0.25 (o pior é o Baleba, +0.25, com 72 min por titularidade). Nos jogadores de recurso
+(200-900 min, muitos suplentes), 0.154 de média e 1 em 46 acima de 0.25 — e aí as minhas próprias
+suposições (80 min por titularidade, 20 por entrada) já valem isso. **Não compensa**; medir
+poupou o trabalho.
+
 ## BPS: testado e rejeitado; e o que se passou a guardar (2026-08-23)
 
 Pergunta do utilizador: "tens em consideração o BPS por causa dos pontos?". Não — o modelo usa

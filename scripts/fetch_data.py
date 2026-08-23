@@ -12,6 +12,7 @@ import sys
 import unicodedata
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
@@ -69,7 +70,7 @@ CONF_RUIDO = (
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "site", "data")
 
 PLAYER_FIELDS = (
-    "id", "web_name", "first_name", "second_name", "team", "element_type",
+    "id", "code", "web_name", "first_name", "second_name", "team", "element_type",
     "draft_rank", "total_points", "status", "news", "news_added",
     "chance_of_playing_next_round", "form", "points_per_game",
     "minutes", "starts",
@@ -77,7 +78,7 @@ PLAYER_FIELDS = (
     "goals_scored", "assists", "clean_sheets", "saves", "bonus", "penalties_saved",
     "expected_goals", "expected_assists", "expected_goal_involvements",
     "expected_goals_conceded", "yellow_cards", "red_cards", "own_goals",
-    "defensive_contribution",
+    "defensive_contribution", "penalties_missed",
 )
 
 # Estatísticas congeladas da época anterior: base do modelo de pontos esperados.
@@ -85,6 +86,7 @@ HIST_FIELDS = (
     "minutes", "starts", "total_points", "goals_scored", "assists", "clean_sheets",
     "saves", "bonus", "penalties_saved", "yellow_cards", "red_cards", "own_goals",
     "expected_goals", "expected_assists", "expected_goals_conceded",
+    "defensive_contribution", "penalties_missed",
 )
 
 # Valores de transferência nos títulos/resumos das notícias (ex.: "£85m deal").
@@ -673,6 +675,79 @@ def snapshot_historico(players, anterior, game):
     return {str(p["id"]): {c: p.get(c) for c in HIST_FIELDS} for p in players}
 
 
+# Campos da época passada que o retrato congelado não apanhou a tempo: foram
+# acrescentados ao modelo já com a época a decorrer, altura em que o bootstrap
+# passou a trazer os totais da época nova. Vêm do `history_past` da API
+# clássica, que guarda as épocas completas, e os jogadores cruzam-se pelo
+# `code` (604 em 604 batem certo).
+BACKFILL_CAMPOS = ("defensive_contribution", "penalties_missed")
+BASE_CLASSICA = "https://fantasy.premierleague.com/api"
+
+
+def get_classica(path):
+    req = urllib.request.Request(BASE_CLASSICA + path,
+                                 headers={"User-Agent": "fpl-draft-dashboard"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
+
+
+def completar_historico(historico, players):
+    """Preenche no retrato congelado os campos que ele não chegou a apanhar.
+
+    Corre **uma vez**: no fim, os campos ficam com valor (0 quando o jogador
+    não tem época passada), portanto a verificação de início dá-os como
+    presentes e não se repetem os pedidos."""
+    if not historico:
+        return historico
+    if not any(h.get(c) is None for h in historico.values() for c in BACKFILL_CAMPOS):
+        return historico
+
+    try:
+        classica = get_classica("/bootstrap-static/")["elements"]
+    except Exception as exc:
+        registar("Época passada (defensivas)", False, exc)
+        return historico
+    por_code = {e.get("code"): e["id"] for e in classica}
+    # Só quem jogou o suficiente para a taxa dizer alguma coisa; os outros
+    # ficam a zero e caem no prior da posição, como já acontecia.
+    alvos = [(str(p["id"]), por_code.get(p.get("code"))) for p in players
+             if por_code.get(p.get("code"))
+             and (historico.get(str(p["id"])) or {}).get("minutes", 0) >= 90]
+
+    def uma(par):
+        pid, cid = par
+        try:
+            passadas = get_classica(f"/element-summary/{cid}/").get("history_past") or []
+        except Exception:
+            return pid, None
+        # A última entrada é a época passada; `history_past` só tem épocas fechadas.
+        return pid, (passadas[-1] if passadas else None)
+
+    obtidos = 0
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for pid, epoca in ex.map(uma, alvos):
+            if not epoca:
+                continue
+            # Guarda-chuva: se os minutos divergirem muito do retrato, é outra
+            # época (ou outro jogador) e não vale a pena misturar.
+            guardado = (historico.get(pid) or {}).get("minutes") or 0
+            if guardado and abs((epoca.get("minutes") or 0) - guardado) > 0.2 * guardado:
+                continue
+            for campo in BACKFILL_CAMPOS:
+                historico[pid][campo] = epoca.get(campo) or 0
+            obtidos += 1
+
+    # Quem ficou de fora fica a zero, para isto não voltar a correr.
+    for h in historico.values():
+        for campo in BACKFILL_CAMPOS:
+            h.setdefault(campo, 0)
+            if h[campo] is None:
+                h[campo] = 0
+    registar("Época passada (defensivas)", obtidos > 0,
+             f"{obtidos} de {len(alvos)} jogadores")
+    return historico
+
+
 def pick_next_event(events, game):
     """Evento cujo deadline conta para a contagem decrescente."""
     by_id = {ev["id"]: ev for ev in events}
@@ -776,7 +851,8 @@ def main():
         "preepoca": fetch_preepoca(nomes_clubes, players),
         "ffs": fetch_ffs(players, nomes_clubes),
         "bolaparada": fetch_bolaparada(nomes_clubes, players),
-        "historico": snapshot_historico(players, anterior, game),
+        "historico": completar_historico(
+            snapshot_historico(players, anterior, game), players),
         "transferencias": extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
         "conferencias": {

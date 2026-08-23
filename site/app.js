@@ -478,9 +478,42 @@ function castigoGolosSofridos(pos, xgc90) {
   const castigos = limite === 2 ? (xgc90 - impar) / 2 : xgc90 / limite;
   return castigos * porCada;
 }
+/** P(X >= k) com X ~ Poisson(media). */
+function probPoissonAtinge(media, k) {
+  let acumulado = 0;
+  let termo = Math.exp(-media);
+  for (let i = 0; i < k; i += 1) {
+    acumulado += termo;
+    termo *= media / (i + 1);
+  }
+  return Math.max(0, Math.min(1, 1 - acumulado));
+}
+
+/**
+ * Contribuição defensiva: a liga dá 2 pontos a quem chega ao limiar de ações
+ * defensivas **naquele jogo** (10 para defesas, 12 para médios e avançados).
+ *
+ * Sendo um limiar por jogo e não um total, a média não chega: usa-se a mesma
+ * Poisson da baliza a zero para estimar com que frequência é atingido. Vale
+ * 0.67 pts/90 a um defesa médio (15% dos pontos dele) e chega a 1.6 nos mais
+ * defensivos — o maior fator que o modelo ignorava.
+ *
+ * Aproximação assumida: as ações defensivas são provavelmente mais dispersas
+ * do que uma Poisson, o que subestima quem está longe do limiar e sobrestima
+ * quem está muito acima. Com as jornadas agora guardadas uma a uma, isto passa
+ * a ser verificável ao fim de algumas.
+ */
+function pontosContribuicaoDefensiva(pos, dc90) {
+  const pontos = regraPos("defensive_contribution", pos, 0);
+  const limiar = regraPos("defensive_contribution_limit", pos, 0);
+  if (!pontos || !limiar || dc90 <= 0) return 0;
+  return probPoissonAtinge(dc90, limiar) * pontos;
+}
+
 // Peso do modelo de xG/xA contra a taxa de pontos que o jogador fez mesmo.
 // As estatísticas subjacentes preveem melhor o futuro; os pontos reais apanham
-// o que o modelo não tem (bónus por BPS, contribuições defensivas).
+// o que o modelo não tem (penáltis defendidos fora de época, sequências de bónus,
+// o que quer que a Poisson das defensivas não capte).
 const PESO_ESPERADO = 0.5;
 
 function num(v) {
@@ -500,8 +533,9 @@ function num(v) {
  * livres alimentam o xA de quem os bate.
  */
 // Fator que alinha a média do modelo esperado com a dos pontos realmente feitos.
-// O modelo não tem tudo (as contribuições defensivas vêm a zero nesta API), por
-// isso ficaria sistematicamente abaixo; isto corrige o nível sem mexer na ordem.
+// Nenhum modelo apanha tudo, por isso o nível fica ao lado; isto alinha-o com a
+// média realizada sem mexer na ordenação. Desceu para perto de 1 quando as
+// contribuições defensivas entraram — eram a maior parcela em falta.
 let calibEsperado = 1;
 
 function calibrarEsperado() {
@@ -535,14 +569,17 @@ function componentesPP90(p, hist, semCalibrar) {
     ? (por90(hist.saves) / regra("saves_limit", 3)) * regra("saves", 1) +
       por90(hist.penalties_saved) * regra("penalties_saved", 5)
     : 0;
+  const defensivas = pontosContribuicaoDefensiva(
+    pos, por90(hist.defensive_contribution));
   const bonus = por90(hist.bonus);
   const cartoes = por90(hist.yellow_cards) * regra("yellow_cards", -1) +
-    por90(hist.red_cards) * regra("red_cards", -3);
+    por90(hist.red_cards) * regra("red_cards", -3) +
+    por90(hist.penalties_missed) * regra("penalties_missed", -2);
   const autoGolos = por90(hist.own_goals) * regra("own_goals", -2);
 
   const presenca = regra("long_play", 2);
-  const total = presenca + golos + assist + baliza + sofridos + defesas + bonus +
-    cartoes + autoGolos;
+  const total = presenca + golos + assist + baliza + sofridos + defesas +
+    defensivas + bonus + cartoes + autoGolos;
   const k = semCalibrar ? 1 : calibEsperado;
   return {
     total: Math.max(0, total) * k,
@@ -552,6 +589,7 @@ function componentesPP90(p, hist, semCalibrar) {
     baliza: baliza * k,
     sofridos: sofridos * k,
     defesas: defesas * k,
+    defensivas: defensivas * k,
     bonus: bonus * k,
     penalizacoes: (cartoes + autoGolos) * k,
   };
@@ -723,16 +761,53 @@ function fatorCalendario(jogos) {
   return pesos > 0 ? soma / pesos : 1;
 }
 
+// Estatísticas que fazem sentido somar entre épocas — as que o modelo de pontos
+// esperados lê. Ficam de fora minutos e titularidades, que são o denominador.
+const CAMPOS_COMBINAVEIS = [
+  "total_points", "expected_goals", "expected_assists", "expected_goals_conceded",
+  "saves", "penalties_saved", "bonus", "yellow_cards", "red_cards",
+  "penalties_missed", "own_goals", "defensive_contribution",
+];
+
+/**
+ * Época passada e época a decorrer no mesmo objeto, para o modelo de pontos
+ * esperados poder olhar para as duas.
+ *
+ * Cada estatística fica com as contagens desta época mais uma pseudo-contagem
+ * da taxa da época passada, que vale MIN_PRIOR minutos. É a mesma fórmula que
+ * já se usava só para os pontos, alargada a tudo o resto: com um jogo esta
+ * época pesa 90/990 (~9%), ao fim de dez jornadas passa de metade.
+ *
+ * Sem isto, um avançado com quatro jogos, 1.9 de xG e zero golos continuava a
+ * ser julgado pelo que fez em maio — o contrário da premissa do modelo.
+ */
+function historicoCombinado(p, hist) {
+  const minEpoca = num(p.minutes);
+  // Sem retrato congelado, `hist` já é esta época: combinar seria contá-la duas vezes.
+  if (minEpoca <= 0 || !(D.historico || {})[p.id]) return hist;
+  const minHist = hist.minutes || 0;
+  const saida = { minutes: minEpoca + MIN_PRIOR, starts: hist.starts };
+  CAMPOS_COMBINAVEIS.forEach((campo) => {
+    const taxaHist = minHist > 0 ? num(hist[campo]) / minHist : 0;
+    saida[campo] = num(p[campo]) + taxaHist * MIN_PRIOR;
+  });
+  return saida;
+}
+
 function projecao(p, ignorarAusencia) {
   const prior = priorDe(p);
   const hist = historicoDe(p);
-  // Encolhimento: poucos minutos ⇒ o valor aproxima-se do prior da posição/rank.
-  // Taxa combinada (esperado + realizado), encolhida para o prior da posição.
-  const taxa = taxaBase(p, hist);
+  // Taxa combinada (esperado + realizado) sobre as duas épocas.
+  const combinado = historicoCombinado(p, hist);
+  const taxa = taxaBase(p, combinado);
+  // O encolhimento para o prior da posição usa os minutos REAIS das duas
+  // épocas, não os sintéticos do combinado — senão um estreante com 200
+  // minutos ficava com o prior subvalorizado.
+  const minTotal = (hist.minutes || 0) + num(p.minutes);
   const base = taxa === null ? prior.pp90
-    : (taxa * hist.minutes + prior.pp90 * MIN_PRIOR) / (hist.minutes + MIN_PRIOR);
-  const extraBP = pontosBolaParada(p, hist);
-  const pp90Hist = base + extraBP;
+    : (taxa * minTotal + prior.pp90 * MIN_PRIOR) / (minTotal + MIN_PRIOR);
+  const extraBP = pontosBolaParada(p, { ...hist, minutes: minTotal });
+  const pp90 = base + extraBP;
   let xminHist = hist.minutes > 0 ? Math.min(90, hist.minutes / JOGOS_EPOCA) : prior.minJogo;
 
   // Jogos já disputados nesta época: a realidade manda mais do que o histórico.
@@ -745,12 +820,10 @@ function projecao(p, ignorarAusencia) {
   const peso = jogosObs / (jogosObs + 2);
   const ultimos = uso.slice(-3);
 
-  let pp90 = pp90Hist;
+  // Os pontos desta época já entram pelo `combinado`, com todas as outras
+  // estatísticas; aqui só restam os minutos.
   let xmin = xminHist;
   if (jogosObs > 0) {
-    const minEpoca = uso.reduce((s, u) => s + u.minutos, 0);
-    const ptsEpoca = uso.reduce((s, u) => s + u.pontos, 0);
-    pp90 = ((ptsEpoca + (pp90Hist * MIN_PRIOR) / 90) / (minEpoca + MIN_PRIOR)) * 90;
     const mediaRecente = ultimos.reduce((s, u) => s + u.minutos, 0) / ultimos.length;
     xmin = peso * mediaRecente + (1 - peso) * xminHist;
   }
@@ -834,6 +907,9 @@ function decomporPP90(c, extra) {
   ];
   if (c.baliza >= 0.05) partes.push("baliza a zero " + c.baliza.toFixed(1));
   if (c.defesas >= 0.05) partes.push("defesas " + c.defesas.toFixed(1));
+  if (c.defensivas >= 0.05) {
+    partes.push("contribuição defensiva " + c.defensivas.toFixed(1));
+  }
   if (c.bonus >= 0.05) partes.push("bónus " + c.bonus.toFixed(1));
   if (c.sofridos <= -0.05) partes.push("golos sofridos " + c.sofridos.toFixed(1));
   if (c.penalizacoes <= -0.05) partes.push("cartões " + c.penalizacoes.toFixed(1));

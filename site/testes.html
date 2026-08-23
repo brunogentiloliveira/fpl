@@ -37,6 +37,8 @@ function historicoSintetico(jogadores) {
       goals_scored: 5, assists: 5, clean_sheets: 8, saves: p.element_type === 1 ? 90 : 0,
       bonus: 10, penalties_saved: 0, yellow_cards: 3, red_cards: 0, own_goals: 0,
       expected_goals: "6.0", expected_assists: "4.0", expected_goals_conceded: "40.0",
+      // 360 em 2700 min = 12 por 90, o valor típico de quem chega ao limiar.
+      defensive_contribution: p.dc === undefined ? 360 : p.dc, penalties_missed: 0,
     };
   });
   return h;
@@ -77,6 +79,11 @@ D = {
       clean_sheets_MID: 1, clean_sheets_FWD: 0, goals_conceded_GKP: -1,
       goals_conceded_DEF: -1, concede_limit: 2, saves: 1, saves_limit: 3,
       penalties_saved: 5, yellow_cards: -1, red_cards: -3, own_goals: -2,
+      penalties_missed: -2,
+      defensive_contribution_GKP: 0, defensive_contribution_DEF: 2,
+      defensive_contribution_MID: 2, defensive_contribution_FWD: 2,
+      defensive_contribution_limit_GKP: 0, defensive_contribution_limit_DEF: 10,
+      defensive_contribution_limit_MID: 12, defensive_contribution_limit_FWD: 12,
     },
     squad: {
       play: 11, min_play_GKP: 1, max_play_GKP: 1, min_play_DEF: 3, max_play_DEF: 5,
@@ -212,6 +219,68 @@ verificar("decaimento faz a próxima jornada pesar mais",
   fatorCalendario([{ difficulty: 5 }, { difficulty: 1 }]));
 
 /* --- Projeção nunca negativa --- */
+/* --- Contribuição defensiva: um limiar por jogo, não um total --- */
+verificar("Poisson: P(X>=0) é 1", Math.abs(probPoissonAtinge(3, 0) - 1) < 1e-9);
+verificar("Poisson: media muito abaixo do limiar dá quase zero",
+  probPoissonAtinge(2, 12) < 0.001);
+verificar("Poisson: media muito acima do limiar dá quase um",
+  probPoissonAtinge(30, 10) > 0.99);
+verificar("Poisson é monótona na média",
+  probPoissonAtinge(8, 10) < probPoissonAtinge(12, 10));
+
+verificar("guarda-redes não recebem contribuição defensiva",
+  pontosContribuicaoDefensiva(1, 20) === 0);
+verificar("defesa acima do limiar recebe quase os 2 pontos",
+  pontosContribuicaoDefensiva(2, 18) > 1.8);
+verificar("médio tem limiar mais alto do que o defesa",
+  pontosContribuicaoDefensiva(3, 11) < pontosContribuicaoDefensiva(2, 11));
+verificar("sem ações defensivas não há pontos",
+  pontosContribuicaoDefensiva(2, 0) === 0);
+
+(function () {
+  const def = D.players.find(function (x) { return x.element_type === 2; });
+  const h = historicoDe(def);
+  const com = componentesPP90(def, h);
+  const sem = componentesPP90(def, Object.assign({}, h, { defensive_contribution: 0 }));
+  verificar("a contribuição defensiva entra no total dos pts/90",
+    com.total > sem.total + 0.2, "com " + com.total.toFixed(2) + " vs sem " + sem.total.toFixed(2));
+  verificar("e aparece na decomposição do tooltip",
+    decomporPP90(com, 0).indexOf("contribuição defensiva") >= 0);
+})();
+
+/* --- Estatísticas desta época a entrar no modelo --- */
+(function () {
+  const base = D.players.find(function (x) { return x.element_type === 3; });
+  const semJogos = Object.assign({}, base, { minutes: 0 });
+  verificar("sem minutos nesta época, o histórico fica intacto",
+    historicoCombinado(semJogos, historicoDe(base)) === historicoDe(base));
+
+  const h = historicoDe(base);
+  const comJogos = Object.assign({}, base, {
+    minutes: 900, total_points: 50, expected_goals: "5.0", expected_assists: "2.0",
+    expected_goals_conceded: "10.0", bonus: 5, saves: 0, penalties_saved: 0,
+    yellow_cards: 1, red_cards: 0, penalties_missed: 0, own_goals: 0,
+    defensive_contribution: 60,
+  });
+  const comb = historicoCombinado(comJogos, h);
+  verificar("os minutos combinados são os desta época mais o prior",
+    comb.minutes === 900 + MIN_PRIOR);
+  verificar("com 900 min desta época, ela pesa metade",
+    Math.abs(900 / (900 + MIN_PRIOR) - 0.5) < 1e-9);
+
+  // Dois gémeos com os mesmos pontos, um com xG alto e outro sem: o xG decide.
+  const comum = { minutes: 450, total_points: 20, bonus: 2, saves: 0,
+    penalties_saved: 0, yellow_cards: 0, red_cards: 0, penalties_missed: 0,
+    own_goals: 0, defensive_contribution: 30, expected_goals_conceded: "5.0",
+    expected_assists: "1.0" };
+  const comXG = historicoCombinado(Object.assign({}, base, comum,
+    { expected_goals: "5.0" }), h);
+  const semXG = historicoCombinado(Object.assign({}, base, comum,
+    { expected_goals: "0.0" }), h);
+  verificar("com os mesmos pontos, quem tem mais xG projeta mais",
+    componentesPP90(base, comXG).total > componentesPP90(base, semXG).total);
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

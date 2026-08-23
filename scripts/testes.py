@@ -148,6 +148,28 @@ def testa_live():
               not fd.jornada_em_cache({**nova, "equipas": []}))
 
 
+# ---------- retrato da época passada ----------
+
+def testa_completar_historico():
+    print("Retrato da época passada")
+    # Já preenchido: tem de sair sem tocar na rede (se pedisse, rebentava aqui,
+    # porque não há players nem ligação a contar).
+    cheio = {"1": {"minutes": 2000, "defensive_contribution": 300, "penalties_missed": 1}}
+    verificar("não repete o trabalho quando os campos já lá estão",
+              fd.completar_historico(cheio, []) is cheio)
+    verificar("histórico vazio passa incólume", fd.completar_historico({}, []) == {})
+
+    # Sem jogadores para cruzar, tudo fica a zero em vez de ficar a None —
+    # senão a verificação de início dava sempre em falta e repetia os pedidos.
+    vazio = {"1": {"minutes": 2000}}
+    saida = fd.completar_historico(vazio, [])
+    verificar("campos em falta ficam a zero, não a None",
+              saida["1"]["defensive_contribution"] == 0
+              and saida["1"]["penalties_missed"] == 0)
+    verificar("e à segunda já não há nada a fazer",
+              fd.completar_historico(saida, []) is saida)
+
+
 # ---------- ficheiros curados ----------
 
 def testa_ficheiros():
@@ -180,6 +202,7 @@ def main():
     testa_nomes()
     testa_ffs()
     testa_live()
+    testa_completar_historico()
     testa_ficheiros()
     print()
     if FALHAS:
