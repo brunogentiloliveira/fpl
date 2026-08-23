@@ -110,9 +110,7 @@ def fetch_jornadas(atual, anterior, fixtures):
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        # Uma jornada dada como terminada mas sem equipas registadas vem de uma
-        # versão anterior com um erro: vale a pena voltar a pedi-la.
-        if guardada and guardada.get("finalizada") and guardada.get("equipas"):
+        if fd.jornada_em_cache(guardada):
             saida[chave] = guardada
             continue
         try:
@@ -125,9 +123,8 @@ def fetch_jornadas(atual, anterior, fixtures):
         stats = {}
         for eid, dados in fd._elementos_live(live):
             s = (dados or {}).get("stats") or dados or {}
-            minutos, pontos = s.get("minutes") or 0, s.get("total_points") or 0
-            if minutos or pontos:
-                stats[str(eid)] = [minutos, pontos]
+            if s.get("minutes") or s.get("total_points"):
+                stats[str(eid)] = fd.linha_jornada(s)
         jogos = por_evento.get(ev, [])
         # "Jogado" (90 minutos feitos) conta os minutos logo; "finalizada"
         # espera pela confirmação dos bónus antes de ir para cache.

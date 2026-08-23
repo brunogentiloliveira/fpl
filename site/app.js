@@ -419,8 +419,13 @@ function utilizacao(p) {
       // Conta quando o jogo DESTE jogador já se realizou. A jornada inteira só
       // fica "finalizada" depois dos bónus, mas os minutos já são definitivos.
       const jogado = eq.length ? eq.includes(p.team) : !!j.finalizada;
-      const s = j.stats[String(p.id)] || [0, 0];
-      return { event: ev, minutos: s[0], pontos: s[1], finalizada: jogado };
+      const s = j.stats[String(p.id)] || [];
+      // BPS e expected só existem em jornadas recolhidas a partir de 2026-08-23;
+      // nas anteriores ficam indefinidos, e quem os usa tem de contar com isso.
+      return {
+        event: ev, minutos: s[0] || 0, pontos: s[1] || 0, finalizada: jogado,
+        bps: s[2], xg: s[3], xa: s[4], xgc: s[5],
+      };
     });
 }
 

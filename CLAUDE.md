@@ -331,6 +331,42 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## BPS: testado e rejeitado; e o que se passou a guardar (2026-08-23)
+
+Pergunta do utilizador: "tens em consideração o BPS por causa dos pontos?". Não — o modelo usa
+o **bónus realizado** (`componentesPP90`, parcela `bonus`), e o teste diz que está certo assim.
+
+Medido com `history_past` da API clássica (que **tem** `bps` de épocas anteriores, ao contrário
+do `historico` congelado daqui): 575 pares época→época seguinte com 900+ minutos dos dois lados,
+validação repetida treinando em metade e testando na outra, com regressão para os dois previsores
+(a primeira tentativa deu regressão só ao BPS e inverteu o resultado):
+
+| Previsor do bónus/90 seguinte | MAE | Ganho sobre dar a média a todos |
+|---|---|---|
+| média a toda a gente | 0.198 | — |
+| **BPS/90** | 0.196 | **0.8%** |
+| **bónus realizado/90** | **0.184** | **7.3%** |
+| metade e metade | 0.187 | 5.8% |
+
+O BPS é quase inútil e misturá-lo **piora**. Razão estrutural: o bónus é um *lugar no top-3
+daquele jogo*, e o BPS enche-se de volume (passes, desarmes, recuperações) que não ganha essa
+corrida — um defesa acumula BPS e nunca é top-3. Contexto: o bónus vale 7% dos pontos (0.31 em
+4.24 pts/90) mas a amplitude entre jogadores é 1.31 pts/90, bem mais do que o calendário.
+
+**O que o teste não cobre**: o regime de início de época. Com 3 jogos o bónus realizado é quase
+binário (0 ou 3) e o BPS é contínuo — aí podia acrescentar. Não é testável com a API, porque o
+histórico jornada a jornada só existe para a época a decorrer.
+
+Daí a mudança: `fetch_jornadas` (nos dois modos) passa a guardar `JORNADA_CAMPOS` =
+**minutos, pontos, BPS, xG, xA, xGC** por jogador e jornada, em lista e não em dicionário
+(600 jogadores × 38 jornadas — repetir as chaves custaria mais do que os números). Custo real:
+596K → 600K. `jornada_em_cache()` substitui o guarda antigo e **repede as jornadas guardadas
+no formato de dois campos**, senão ficavam presas sem BPS para sempre. O `utilizacao()` do
+app.js expõe `bps/xg/xa/xgc`, que ficam `undefined` nas jornadas antigas.
+
+Por agora é **só recolha: o modelo não os usa**, e a projeção não mexeu (Ødegaard 3.85 antes e
+depois). Serve para responder com números à pergunta do BPS ao fim de 4-5 jornadas.
+
 ## Evidência dos primeiros jogos: o Ødegaard pelo Ngumoha (2026-08-22)
 
 Reparo do utilizador: com a GW1 a meio, as sugestões mandavam trocar o **Ødegaard** (75 min e

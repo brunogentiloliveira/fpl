@@ -470,6 +470,33 @@ def _elementos_live(live):
     return []
 
 
+# O que se guarda por jogador em cada jornada, por esta ordem. É uma lista e não
+# um dicionário porque multiplica por ~600 jogadores × 38 jornadas: repetir os
+# nomes das chaves custaria mais espaço do que os próprios números.
+# Os três primeiros são inteiros; os expected vêm como texto ("0.35") na API.
+JORNADA_CAMPOS = ("minutes", "total_points", "bps",
+                  "expected_goals", "expected_assists", "expected_goals_conceded")
+
+
+def linha_jornada(s):
+    """Estatísticas de um jogador numa jornada, na ordem de JORNADA_CAMPOS."""
+    return ([int(s.get(c) or 0) for c in JORNADA_CAMPOS[:3]] +
+            [round(float(s.get(c) or 0), 2) for c in JORNADA_CAMPOS[3:]])
+
+
+def jornada_em_cache(guardada):
+    """Entrada de cache reaproveitável, em vez de voltar a pedir a jornada.
+
+    Exige três coisas: estar terminada, ter as equipas registadas (sem elas a
+    entrada vem de uma versão com um erro antigo) e ter os campos todos — as
+    jornadas recolhidas antes do BPS/xG só têm minutos e pontos, e não vale a
+    pena perdê-los para sempre por estarem em cache."""
+    if not (guardada and guardada.get("finalizada") and guardada.get("equipas")):
+        return False
+    primeira = next(iter((guardada.get("stats") or {}).values()), None)
+    return primeira is None or len(primeira) >= len(JORNADA_CAMPOS)
+
+
 def fetch_jornadas(game, anterior):
     """Minutos e pontos de cada jogador em cada jornada já disputada.
 
@@ -484,9 +511,7 @@ def fetch_jornadas(game, anterior):
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        # Uma jornada dada como terminada mas sem equipas registadas vem de uma
-        # versão anterior com um erro: vale a pena voltar a pedi-la.
-        if guardada and guardada.get("finalizada") and guardada.get("equipas"):
+        if jornada_em_cache(guardada):
             saida[chave] = guardada
             continue
         try:
@@ -500,10 +525,9 @@ def fetch_jornadas(game, anterior):
         stats = {}
         for eid, dados in _elementos_live(live):
             s = (dados or {}).get("stats") or dados or {}
-            minutos = s.get("minutes") or 0
-            pontos = s.get("total_points") or 0
-            if minutos or pontos:  # ausentes = 0 minutos, não vale a pena guardar
-                stats[str(eid)] = [minutos, pontos]
+            if s.get("minutes") or s.get("total_points"):
+                # Ausentes = 0 minutos; não vale a pena guardar.
+                stats[str(eid)] = linha_jornada(s)
         jogos = live.get("fixtures") or []
         # Duas noções diferentes de "acabou":
         #  - jogado: os 90 minutos já foram, os minutos dos jogadores contam;

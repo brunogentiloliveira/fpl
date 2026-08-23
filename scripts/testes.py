@@ -127,6 +127,26 @@ def testa_live():
     verificar("extrai minutos e pontos do formato objeto",
               fd._elementos_live(casos["objeto (Draft)"])[0][1]["stats"]["minutes"] == 90)
 
+    # A linha por jornada guarda mais do que minutos e pontos: os expected vêm
+    # como texto na API e têm de ficar numéricos.
+    linha = fd.linha_jornada({"minutes": 78, "total_points": 9, "bps": 31,
+                              "expected_goals": "0.4567", "expected_assists": "0.12",
+                              "expected_goals_conceded": "1.5"})
+    verificar("linha da jornada com BPS e expected",
+              linha == [78, 9, 31, 0.46, 0.12, 1.5])
+    verificar("campos em falta ficam a zero, não rebentam",
+              fd.linha_jornada({"minutes": 5}) == [5, 0, 0, 0.0, 0.0, 0.0])
+
+    # Jornadas guardadas antes destes campos não podem ficar presas na cache.
+    antiga = {"finalizada": True, "equipas": [1, 2], "stats": {"3": [90, 6]}}
+    nova = {"finalizada": True, "equipas": [1, 2], "stats": {"3": [90, 6, 28, 0.3, 0.1, 1.2]}}
+    verificar("cache antiga (só min/pts) é repedida", not fd.jornada_em_cache(antiga))
+    verificar("cache completa é reaproveitada", fd.jornada_em_cache(nova))
+    verificar("jornada por terminar nunca vai a cache",
+              not fd.jornada_em_cache({**nova, "finalizada": False}))
+    verificar("jornada sem equipas é repedida",
+              not fd.jornada_em_cache({**nova, "equipas": []}))
+
 
 # ---------- ficheiros curados ----------
 
