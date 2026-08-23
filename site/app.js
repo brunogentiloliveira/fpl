@@ -2626,11 +2626,11 @@ function transferenciasFiltradas() {
   const procura = semAcentos(($("transf-procura") || {}).value || "").trim();
   const soValor = ($("transf-so-valor") || {}).checked;
   return todas.filter((t) => {
-    if (soValor && !t.valor) return false;
+    if (soValor && t.tipo !== "valor") return false;
     if (!procura) return true;
     const p = jogadoresPorId[t.jogador] || {};
-    const alvo = semAcentos(
-      [p.web_name, p.first_name, p.second_name, nomeClube(p.team), t.titulo].join(" "));
+    const alvo = semAcentos([p.web_name, p.first_name, p.second_name,
+      nomeClube(p.team), t.de, t.para, t.titulo].join(" "));
     return alvo.indexOf(procura) >= 0;
   });
 }
@@ -2651,15 +2651,17 @@ function desenharTransferencias() {
   if (!corpo) return;
   const lista = transferenciasFiltradas();
   const todas = ((D.mercado || {}).transferencias_feitas || []);
-  const comValor = todas.filter((t) => t.valor).length;
+  const comValor = todas.filter((t) => t.tipo === "valor").length;
 
   $("transf-total").textContent = todas.length
     ? todas.length + " nesta janela de mercado" : "";
   $("transf-legenda").textContent = todas.length
-    ? "Negócios confirmados desde a abertura do mercado, do mais recente para o mais " +
-      "antigo. O distintivo PL marca os que a Premier League oficializou; os outros " +
-      "vêm de notícias da Sky e podem ser acordos ainda por fechar. Só " + comValor +
-      " de " + todas.length + " têm valor publicado — a fonte oficial não os divulga."
+    ? "Negócios desde a abertura do mercado, do mais recente para o mais antigo. " +
+      comValor + " dos " + todas.length + " têm valor: a tabela do mercado inglês na " +
+      "Wikipedia é a única fonte com a janela toda (os feeds de notícias só trazem " +
+      "as últimas duas semanas). “Livre” e “n/d” vêm de lá tal e qual — não são " +
+      "valores em falta. O distintivo PL marca os negócios que a Premier League " +
+      "oficializou; “Sky” pode ainda ser um acordo por fechar."
     : "";
   $("nota-transf").hidden = lista.length > 0;
   $("tabela-transf").hidden = lista.length === 0;
@@ -2668,20 +2670,30 @@ function desenharTransferencias() {
     const p = jogadoresPorId[t.jogador];
     if (!p) return "";
     const data = t.data ? fmtDataCurta.format(new Date(t.data)) : "—";
-    const valor = t.valor ? esc(t.moeda) + t.valor.toFixed(0) + "M" : "—";
+    const valor = t.tipo === "valor"
+      ? '<span class="forte">' + esc(t.moeda) + t.valor.toFixed(t.valor < 10 ? 1 : 0) + "M</span>"
+      : t.tipo === "livre" ? '<span class="sub">livre</span>'
+      : t.tipo === "nd" ? '<span class="sub">n/d</span>' : "—";
+    const rota = t.de || t.para
+      ? esc(t.de || "?") + ' <span class="seta">→</span> ' + esc(t.para || "?")
+      : '<span class="sub">' + esc(nomeClube(p.team)) + "</span>";
+    const noticia = t.link
+      ? '<span class="fonte-noticia">' + (t.oficial ? "PL" : "Sky") + "</span> " +
+        '<a href="' + esc(t.link) + '" target="_blank" rel="noopener">' +
+          esc(t.titulo) + "</a>"
+      : '<span class="sub">sem notícia associada</span>';
     return "<tr>" +
       '<td class="data">' + data + "</td>" +
-      "<td>" + esc(p.web_name) +
-        '<span class="sub">' + (POSICOES[p.element_type] || "?") + " · " +
-          esc(nomeClube(p.team)) +
-          (t.saiu ? ' <span class="estado bad">saiu da liga</span>' : "") +
+      "<td>" + (t.link
+          ? '<a href="' + esc(t.link) + '" target="_blank" rel="noopener" title="' +
+            esc(t.titulo) + '">' + esc(p.web_name) + "</a>"
+          : esc(p.web_name)) +
+        '<span class="sub">' + (POSICOES[p.element_type] || "?") +
+          (t.saiu ? ' · <span class="estado bad">saiu da liga</span>' : "") +
         "</span></td>" +
-      '<td class="num forte">' + valor + "</td>" +
-      "<td>" +
-        '<span class="fonte-noticia">' + (t.oficial ? "PL" : "Sky") + "</span> " +
-        '<a href="' + esc(t.link) + '" target="_blank" rel="noopener">' +
-          esc(t.titulo) + "</a>" +
-      "</td>" +
+      '<td class="rota">' + rota + "</td>" +
+      '<td class="num">' + valor + "</td>" +
+      '<td class="col-noticia">' + noticia + "</td>" +
     "</tr>";
   }).join("");
 }

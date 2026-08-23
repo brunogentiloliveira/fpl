@@ -181,6 +181,45 @@ def testa_pl():
               len(fd.sem_repetidos(itens)) == 2)
 
 
+# ---------- mercado na Wikipedia ----------
+
+def testa_wiki():
+    print("Mercado (Wikipedia)")
+    # A data usa rowspan: as linhas seguintes têm 4 células e herdam-na. Sem
+    # isto apanhavam-se 77 das 824 linhas da tabela real.
+    html = """
+    <table class="wikitable sortable">
+    <tr><th>Date</th><th>Player</th><th>Moving from</th><th>Moving to</th><th>Fee</th></tr>
+    <tr><td rowspan="2">8 August 2026</td><td>Bruno Guimar&#227;es</td>
+        <td>Newcastle United</td><td>Arsenal</td><td>&#163;75m<sup>[1]</sup></td></tr>
+    <tr><td>Joe Bloggs</td><td>Leeds United</td><td>Derby County</td><td>Free<sup>[2]</sup></td></tr>
+    <tr><td>9 August 2026</td><td>Ana Silva</td><td>Porto</td><td>Fulham</td>
+        <td>Undisclosed</td></tr>
+    </table>"""
+    linhas = fd.parse_wiki_transferencias(html)
+    verificar("lê as três linhas, incluindo as que herdam a data", len(linhas) == 3)
+    verificar("a linha sem data herda a de cima",
+              linhas[1]["data"] == "8 August 2026" and linhas[1]["jogador"] == "Joe Bloggs")
+    verificar("cabeçalho não conta como transferência",
+              all(l["jogador"] != "Player" for l in linhas))
+    verificar("notas de rodapé saem do texto", linhas[0]["valor"] == "£75m")
+    verificar("clubes de origem e destino",
+              linhas[0]["de"] == "Newcastle United" and linhas[0]["para"] == "Arsenal")
+
+    verificar("data em inglês -> ISO",
+              fd.data_wiki_para_iso("8 August 2026") == "2026-08-08T00:00:00Z")
+    verificar("data com dia de dois dígitos",
+              fd.data_wiki_para_iso("23 July 2026") == "2026-07-23T00:00:00Z")
+    verificar("data inválida não rebenta", fd.data_wiki_para_iso("qualquer coisa") is None)
+
+    # "Free" e "Undisclosed" são informação, não valores em falta.
+    verificar("valor em libras", fd.valor_wiki("£75m") == (75.0, "£", "valor"))
+    verificar("valor com decimais", fd.valor_wiki("£8.5m")[0] == 8.5)
+    verificar("transferência livre", fd.valor_wiki("Free")[2] == "livre")
+    verificar("valor não divulgado", fd.valor_wiki("Undisclosed")[2] == "nd")
+    verificar("campo vazio não vira zero com valor", fd.valor_wiki("")[2] == "outro")
+
+
 # ---------- retrato da época passada ----------
 
 def testa_completar_historico():
@@ -236,6 +275,7 @@ def main():
     testa_ffs()
     testa_live()
     testa_pl()
+    testa_wiki()
     testa_completar_historico()
     testa_ficheiros()
     print()

@@ -331,12 +331,52 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Onde estão os valores das transferências (2026-08-23)
+
+Primeira versão do separador tinha **7 valores em 100**. O utilizador reparou e mandou alargar a
+pesquisa, começando pelo Fantasy Football Scout. Fontes sondadas, com o que cada uma deu:
+
+| Fonte | Resultado |
+|---|---|
+| **Fantasy Football Scout** | **Não serve.** É um site de *fantasy*: "transfers" ali são as trocas de FPL e as mudanças de preço. No sitemap, os artigos de mercado real são de 2008-2010 (Rosicky, Robinho, Megson). |
+| Corpo dos artigos da PL | Vem **sempre vazio**, tanto na listagem como no artigo individual. |
+| BBC (`/sport/football/transfers/rss.xml`) | 1 item. O de rumores tem 1 valor em 24. |
+| Sky Transfer Centre | 3 valores em 20 itens (já era usado). |
+| **Guardian** (`football/transfer-window/rss`) | **12 valores em 20** — o melhor dos feeds. Acrescentou 2 jogadores. |
+| **Wikipedia** (`List_of_English_football_transfers_summer_2026`) | **824 linhas, 117 jogadores desta liga, 67 com valor.** |
+
+**A conclusão que interessa**: não era falta de fontes, era **falta de histórico**. Todos os
+feeds de notícias trazem ~20 itens das últimas duas semanas, e a janela vai de maio a agosto.
+A Wikipedia é a única fonte com a janela toda, e ainda por cima tabelada: Data, Jogador, clube
+de origem, clube de destino e valor. Resultado: **66 valores em 136** (eram 7 em 100), mais os
+clubes, que antes não existiam de todo.
+
+- **Permissão**: o robots.txt bloqueia `/w/` e `/api/` (logo nada de `api.php`), mas
+  `/wiki/<artigo>` é permitido — só as páginas `Special:` estão vedadas. Extraem-se factos
+  (nomes, clubes, valores), não texto. Pedido com `Accept-Encoding: gzip` (a página tem 3.5 MB).
+- **`rowspan`**: a coluna da data agrupa as transferências do mesmo dia, por isso as linhas
+  seguintes só têm 4 células e herdam-na. Sem tratar isso apanhavam-se **77 das 824** linhas.
+- **Cruzamento de nomes**: exige que **todas** as palavras do nome da Wikipedia estejam no nome
+  completo do jogador do FPL. Restritivo de propósito — deu 117 correspondências e **zero
+  ambiguidades**.
+- **"Free" e "Undisclosed" não são valores em falta**: são informação, e vão para o ecrã como
+  "livre" e "n/d". 14 livres e 36 não divulgadas.
+- Um teste apanhou que `_texto_celula` não descodificava entidades HTML (`&#163;` ficava
+  literal). Na tabela real não dava erro porque a Wikipedia usa caracteres literais — mas era
+  uma bomba à espera. A ordem certa é: fora a marcação, depois `html.unescape`, só então as
+  notas de rodapé, que podem vir escritas `&#91;1&#93;`.
+- **O Guardian entra só para o preço, nunca para a confirmação**: o feed mistura negócios
+  fechados com rumores ("Football transfer rumours:", "see £50m bid rejected").
+
 ## Separador "Transferências" (2026-08-23, pedido do utilizador)
 
 Só no Draft. Todas as transferências concluídas da janela, da mais recente para a mais antiga,
 com o valor quando existe. Vem de `data.json → mercado.transferencias_feitas`.
 
-- **Junta as duas fontes, que são complementares**: a PL confirma o negócio mas **não publica
+- **Colunas**: Data · Jogador · Movimento (origem → destino) · Valor · Notícia. Em ecrã
+  estreito a coluna da notícia sai (`.col-noticia`) e o link passa para o nome do jogador,
+  senão a página ganhava scroll horizontal a 375px (438 contra 375).
+- **Junta as fontes, que são complementares**: a PL confirma o negócio mas **não publica
   valores**; a Sky publica valores mas também noticia acordos ainda por fechar. Daí a coluna
   levar um distintivo **PL** (oficializado) ou **Sky** (noticiado) — o Baleba aparece com
   £70M e distintivo Sky porque o "Man Utd agree £70m deal" ainda não estava fechado, e por

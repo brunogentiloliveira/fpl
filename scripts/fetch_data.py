@@ -5,6 +5,7 @@ Uso: LEAGUE_ID=12258 python scripts/fetch_data.py
 Só usa a stdlib. A API é pública e não requer autenticação.
 """
 import html
+import gzip
 import json
 import os
 import re
@@ -388,7 +389,172 @@ def pl_transferencias_artigos(paginas=3, por_pagina=100):
     return artigos
 
 
-def transferencias_feitas(players, artigos, achados, desde=None):
+# A Wikipedia mantém a lista completa do mercado inglês numa tabela com Data,
+# Jogador, clube de origem, clube de destino e **valor** — 824 linhas, das quais
+# 117 são jogadores desta liga e 67 têm preço. É a única fonte com histórico:
+# todos os feeds de notícias trazem 20 itens das últimas duas semanas, e a
+# janela vai de maio a agosto.
+#
+# **Permissão**: o robots.txt bloqueia `/w/` e `/api/` (por isso nada de
+# api.php), mas `/wiki/<artigo>` é permitido — só as páginas `Special:` estão
+# vedadas. Extraem-se factos (nomes, clubes, valores), não texto.
+WIKI_ARTIGO = "https://en.wikipedia.org/wiki/List_of_English_football_transfers_{janela}"
+MESES_EN = {m: i + 1 for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june",
+     "july", "august", "september", "october", "november", "december"])}
+
+
+def _texto_celula(html_celula):
+    """Célula de tabela -> texto limpo, sem marcação nem notas de rodapé.
+
+    Pela ordem certa: primeiro fora a marcação, depois as entidades (senão um
+    `&lt;b&gt;` escapado virava tag) e só então as notas, que podem vir
+    escritas como `&#91;1&#93;`."""
+    txt = re.sub(r"<[^>]+>", " ", html_celula)
+    txt = html.unescape(txt)
+    txt = re.sub(r"\[\s*\d+\s*\]", " ", txt)
+    return " ".join(txt.split()).strip()
+
+
+def parse_wiki_transferencias(html):
+    """Tabela da Wikipedia -> [{data, jogador, de, para, valor}].
+
+    A coluna da data usa `rowspan` para agrupar as transferências do mesmo dia,
+    por isso as linhas seguintes só têm 4 células e herdam a data — sem isso
+    apanhavam-se 77 das 824 linhas."""
+    saida = []
+    for tabela in re.findall(
+            r'<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>(.*?)</table>', html, re.S):
+        data = None
+        for linha in re.findall(r"<tr[^>]*>(.*?)</tr>", tabela, re.S):
+            cel = [_texto_celula(c) for c in
+                   re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linha, re.S)]
+            if not cel or cel[0] == "Date":
+                continue
+            if len(cel) >= 5:
+                data, jog, de, para, valor = cel[0], cel[1], cel[2], cel[3], cel[4]
+            elif len(cel) == 4 and data:
+                jog, de, para, valor = cel
+            else:
+                continue
+            saida.append({"data": data, "jogador": jog, "de": de,
+                          "para": para, "valor": valor})
+    return saida
+
+
+def data_wiki_para_iso(txt):
+    """'8 August 2026' -> '2026-08-08T00:00:00Z'."""
+    m = re.match(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", (txt or "").strip())
+    if not m:
+        return None
+    mes = MESES_EN.get(m.group(2).lower())
+    if not mes:
+        return None
+    return f"{m.group(3)}-{mes:02d}-{int(m.group(1)):02d}T00:00:00Z"
+
+
+def valor_wiki(txt):
+    """Campo Fee -> (valor, moeda, tipo). 'Free' e 'Undisclosed' não são zero
+    desconhecido: são informação, e o ecrã distingue-as."""
+    baixo = (txt or "").lower()
+    m = re.search(r"([£€$])\s?(\d+(?:\.\d+)?)\s*m", txt or "", re.I)
+    if m:
+        return round(float(m.group(2)), 1), m.group(1), "valor"
+    if "free" in baixo:
+        return 0, "", "livre"
+    if "undisclos" in baixo:
+        return 0, "", "nd"
+    return 0, "", "outro"
+
+
+def _tokens_nome(txt):
+    return {t for t in sem_acentos(txt or "").lower().replace("-", " ").split() if len(t) >= 3}
+
+
+def fetch_wikipedia_transferencias(players, ano):
+    """Transferências da janela, cruzadas com os jogadores desta liga.
+
+    O cruzamento exige que **todas** as palavras do nome da Wikipedia estejam no
+    nome completo do jogador do FPL. É restritivo de propósito: nas 824 linhas
+    deu 117 correspondências e **zero ambiguidades**."""
+    porJogador = {}
+    for janela in (f"summer_{ano}", f"winter_{ano}%E2%80%93{str(ano + 1)[-2:]}"):
+        try:
+            req = urllib.request.Request(
+                WIKI_ARTIGO.format(janela=janela),
+                headers={"User-Agent": "fpl-draft-dashboard (dashboard pessoal de FPL)",
+                         "Accept-Encoding": "gzip"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                bruto = resp.read()
+                if resp.headers.get("Content-Encoding") == "gzip":
+                    bruto = gzip.decompress(bruto)
+            linhas = parse_wiki_transferencias(bruto.decode("utf-8", "replace"))
+        except Exception:
+            continue  # a janela de inverno não existe até janeiro
+        for r in linhas:
+            alvo = _tokens_nome(r["jogador"])
+            if not alvo:
+                continue
+            cands = [p for p in players
+                     if _tokens_nome(f'{p["first_name"]} {p["second_name"]}') >= alvo]
+            if len(cands) != 1:
+                continue
+            valor, moeda, tipo = valor_wiki(r["valor"])
+            porJogador[str(cands[0]["id"])] = {
+                "data": data_wiki_para_iso(r["data"]), "de": r["de"], "para": r["para"],
+                "valor": valor, "moeda": moeda, "tipo": tipo,
+            }
+    registar("Wikipedia · mercado", bool(porJogador),
+             f"{len(porJogador)} jogadores; "
+             f"{sum(1 for v in porJogador.values() if v['tipo'] == 'valor')} com valor")
+    return porJogador
+
+
+# O Guardian tem um feed dedicado ao mercado, e é de longe o que mais valores
+# traz: 12 dos 20 itens contra 3 do Transfer Centre da Sky. O robots.txt não
+# bloqueia nada de futebol e um RSS existe para ser lido.
+#
+# **Só serve para o preço, nunca para a confirmação**: o feed mistura negócios
+# fechados com rumores ("Football transfer rumours:", "see £50m bid rejected")
+# e quem confirma é a fonte oficial da PL. Fontes avaliadas e postas de lado:
+# o Fantasy Football Scout (é um site de fantasy — "transfers" ali são as
+# trocas de FPL e as mudanças de preço; os artigos de mercado real são de
+# 2008-2010), a BBC (o feed de transferências tem 1 item e o de rumores 1 valor
+# em 24) e o corpo dos artigos da PL, que vem sempre vazio.
+GUARDIAN_MERCADO = "https://www.theguardian.com/football/transfer-window/rss"
+
+
+def fetch_valores_guardian(players):
+    """Valores de transferência no feed de mercado do Guardian: {id: (valor, moeda)}."""
+    try:
+        itens = ler_rss(GUARDIAN_MERCADO, limite=40)
+    except Exception as exc:
+        registar("Guardian · valores", False, exc)
+        return {}
+    padroes = [(p,) + padroes_nome_split(p) for p in players]
+    valores = {}
+    for it in itens:
+        texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
+        m = RE_VALOR.search(texto)
+        if not m:
+            continue
+        valor = float(m.group("valor").replace(",", "."))
+        if m.group("mult").lower().startswith(("bn", "billion")):
+            valor *= 1000
+        candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
+        if not candidatos:
+            candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
+        if len(candidatos) != 1:  # com um valor só, dois nomes é ambíguo demais
+            continue
+        chave = str(candidatos[0]["id"])
+        if valor > valores.get(chave, (0,))[0]:
+            valores[chave] = (round(valor, 1), m.group("moeda"))
+    registar("Guardian · valores", True, f"{len(valores)} jogadores com valor")
+    return valores
+
+
+def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=None,
+                          wiki=None):
     """Transferências concluídas, para o separador Transferências.
 
     Junta as duas fontes: os artigos oficiais da PL (que confirmam o negócio
@@ -420,10 +586,17 @@ def transferencias_feitas(players, artigos, achados, desde=None):
             valor = valor or ant["valor"]
             moeda = moeda or ant["moeda"]
             oficial = oficial or ant["oficial"]
+        # A Wikipedia manda no que é facto tabelado (data, clubes, valor); as
+        # notícias mandam no que é relato (título e link).
+        w = (wiki or {}).get(str(pid)) or {}
         feitas[pid] = {
-            "jogador": pid, "titulo": titulo, "link": link, "data": data,
+            "jogador": pid, "titulo": titulo, "link": link,
+            "data": w.get("data") or data,
+            "de": w.get("de") or "", "para": w.get("para") or "",
             "saiu": p.get("status") in ("u", "n"),
-            "valor": valor or 0, "moeda": moeda or "",
+            "valor": w.get("valor") or valor or 0,
+            "moeda": w.get("moeda") or moeda or "",
+            "tipo": w.get("tipo") or ("valor" if valor else "outro"),
             # A PL só publica negócios fechados; a Sky também noticia acordos
             # ainda por oficializar ("agree £30m deal for"), por isso a origem
             # da confirmação faz diferença e vai para o ecrã.
@@ -440,16 +613,22 @@ def transferencias_feitas(players, artigos, achados, desde=None):
             continue
         for p in candidatos:
             v = achados.get(str(p["id"])) or {}
+            extra = (valores_extra or {}).get(str(p["id"])) or (None, None)
             juntar(p["id"], it["titulo"], it["link"], it["data"],
-                   v.get("valor"), v.get("moeda"), True)
+                   v.get("valor") or extra[0], v.get("moeda") or extra[1], True)
 
     # Negócios que só a Sky noticiou (é de lá que vêm os valores).
     for chave, v in achados.items():
         if v.get("confirmada"):
+            extra = (valores_extra or {}).get(chave) or (None, None)
             juntar(int(chave), v["titulo"], v["link"], v["data"],
-                   v.get("valor"), v.get("moeda"),
+                   v.get("valor") or extra[0], v.get("moeda") or extra[1],
                    v.get("fonte") == "Premier League")
 
+    for chave, w in (wiki or {}).items():
+        pid = int(chave)
+        if pid not in feitas:
+            juntar(pid, "", "", w.get("data"), None, None, False)
     lista = sorted(feitas.values(), key=lambda t: t["data"] or "", reverse=True)
     registar("Transferências concluídas", bool(lista),
              f"{len(lista)} jogadores; {sum(1 for t in lista if t['valor'])} com valor; "
@@ -457,7 +636,7 @@ def transferencias_feitas(players, artigos, achados, desde=None):
     return lista
 
 
-def fetch_pl_transferencias(players, achados, desde=None):
+def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wiki=None):
     """Transferências confirmadas pela fonte oficial.
 
     O `extrair_transferencias` decide "confirmada" por regex nos títulos da
@@ -505,7 +684,20 @@ def fetch_pl_transferencias(players, achados, desde=None):
             novas += 1
     registar("Premier League · transferências", True,
              f"{novas} confirmações em {len(artigos)} artigos")
-    return achados, transferencias_feitas(players, artigos, achados, desde)
+    # O preço do Guardian também melhora o piso de minutos de quem já está
+    # confirmado — é o mesmo dado, vindo de outra fonte.
+    for chave, (valor, moeda) in (valores_extra or {}).items():
+        alvo = achados.get(chave)
+        if alvo and alvo.get("confirmada") and valor > (alvo.get("valor") or 0):
+            alvo.update(valor=valor, moeda=moeda)
+    # O valor da Wikipedia também melhora o piso de minutos de quem está
+    # confirmado — é o mesmo dado, de uma fonte com a janela toda.
+    for chave, w in (wiki or {}).items():
+        alvo = achados.get(chave)
+        if alvo and alvo.get("confirmada") and (w.get("valor") or 0) > (alvo.get("valor") or 0):
+            alvo.update(valor=w["valor"], moeda=w["moeda"])
+    return achados, transferencias_feitas(players, artigos, achados, desde,
+                                          valores_extra, wiki)
 
 
 def fetch_feeds_clubes():
@@ -1053,7 +1245,8 @@ def main():
     transf_modelo, transf_feitas = fetch_pl_transferencias(
         players, extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
-        desde)
+        desde, fetch_valores_guardian(players),
+        fetch_wikipedia_transferencias(players, int(primeira[:4]) if primeira else 2026))
 
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

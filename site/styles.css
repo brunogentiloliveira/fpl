@@ -464,3 +464,13 @@ main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
   color: var(--texto-fraco, #8d97a5);
   vertical-align: middle;
 }
+
+.rota { font-size: 0.82rem; line-height: 1.35; }
+.rota .seta { color: var(--texto-fraco, #8d97a5); padding: 0 0.1rem; }
+
+/* A coluna da notícia é a menos essencial: em ecrã estreito sai da tabela e o
+   link passa a estar no nome do jogador, para a página não ganhar scroll. */
+.col-noticia { display: none; }
+@media (min-width: 40rem) {
+  .col-noticia { display: table-cell; }
+}
