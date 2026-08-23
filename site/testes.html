@@ -71,7 +71,7 @@ D = {
   standings: [], teams: {}, players: todos, fixtures: {}, jornadas: {},
   historico: historicoSintetico(todos), preepoca: {}, transferencias: {}, bolaparada: {},
   ffs: { feed: [], artigo: null, jogadores: {} },
-  mercado: { noticias: [], transacoes: [] }, conferencias: { clubes: [] },
+  mercado: { noticias: [], transacoes: [], transferencias_feitas: [] }, conferencias: { clubes: [] },
   regras: {
     scoring: {
       long_play: 2, goals_scored_GKP: 10, goals_scored_DEF: 6, goals_scored_MID: 5,
@@ -295,6 +295,25 @@ verificar("sem ações defensivas não há pontos",
     sem.bump === null, "bump=" + sem.bump);
   verificar("transferência cara continua a levantar",
     caro.xmin >= 75, "xmin=" + caro.xmin.toFixed(1));
+})();
+
+/* --- Transferências: pesquisa e ordenação --- */
+verificar("acentos não contam na pesquisa", semAcentos("Sánchez") === "sanchez");
+verificar("letras que o NFD não decompõe também",
+  semAcentos("Nørgaard") === "norgaard" && semAcentos("Đurić") === "duric");
+verificar("texto vazio não rebenta", semAcentos(null) === "");
+
+(function () {
+  const guardado = D.mercado.transferencias_feitas;
+  D.mercado.transferencias_feitas = [
+    { jogador: D.players[0].id, titulo: "B sign X", link: "#", data: "2026-08-10T00:00:00Z",
+      saiu: false, valor: 0, moeda: "", oficial: true },
+    { jogador: D.players[1].id, titulo: "A sign Y", link: "#", data: "2026-08-20T00:00:00Z",
+      saiu: false, valor: 40, moeda: "£", oficial: false },
+  ];
+  const todas = transferenciasFiltradas();
+  verificar("mostra as transferências todas por omissão", todas.length === 2);
+  D.mercado.transferencias_feitas = guardado;
 })();
 
 verificar("nenhuma projeção é negativa",

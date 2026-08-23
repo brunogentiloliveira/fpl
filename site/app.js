@@ -2614,6 +2614,86 @@ function desenharMercadoClassica() {
   }).join("");
 }
 
+/* ---------- Transferências concluídas ---------- */
+
+const fmtDataCurta = new Intl.DateTimeFormat("pt-PT", {
+  timeZone: "Europe/Lisbon", day: "2-digit", month: "short",
+});
+
+/** Transferências que passam a pesquisa e o filtro de valor. */
+function transferenciasFiltradas() {
+  const todas = ((D.mercado || {}).transferencias_feitas || []);
+  const procura = semAcentos(($("transf-procura") || {}).value || "").trim();
+  const soValor = ($("transf-so-valor") || {}).checked;
+  return todas.filter((t) => {
+    if (soValor && !t.valor) return false;
+    if (!procura) return true;
+    const p = jogadoresPorId[t.jogador] || {};
+    const alvo = semAcentos(
+      [p.web_name, p.first_name, p.second_name, nomeClube(p.team), t.titulo].join(" "));
+    return alvo.indexOf(procura) >= 0;
+  });
+}
+
+// Letras que o NFD não decompõe, como no `sem_acentos` da recolha: sem isto
+// "Nørgaard" nunca casaria com "Norgaard".
+const LETRAS_SOLTAS = { "ø": "o", "đ": "d", "ł": "l", "ß": "ss",
+  "æ": "ae", "œ": "oe", "þ": "th" };
+
+/** Minúsculas e sem acentos, para a pesquisa não depender de como se escreve. */
+function semAcentos(txt) {
+  return (txt || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/[øđłßæœþ]/g, (c) => LETRAS_SOLTAS[c]);
+}
+
+function desenharTransferencias() {
+  const corpo = document.querySelector("#tabela-transf tbody");
+  if (!corpo) return;
+  const lista = transferenciasFiltradas();
+  const todas = ((D.mercado || {}).transferencias_feitas || []);
+  const comValor = todas.filter((t) => t.valor).length;
+
+  $("transf-total").textContent = todas.length
+    ? todas.length + " nesta janela de mercado" : "";
+  $("transf-legenda").textContent = todas.length
+    ? "Negócios confirmados desde a abertura do mercado, do mais recente para o mais " +
+      "antigo. O distintivo PL marca os que a Premier League oficializou; os outros " +
+      "vêm de notícias da Sky e podem ser acordos ainda por fechar. Só " + comValor +
+      " de " + todas.length + " têm valor publicado — a fonte oficial não os divulga."
+    : "";
+  $("nota-transf").hidden = lista.length > 0;
+  $("tabela-transf").hidden = lista.length === 0;
+
+  corpo.innerHTML = lista.map((t) => {
+    const p = jogadoresPorId[t.jogador];
+    if (!p) return "";
+    const data = t.data ? fmtDataCurta.format(new Date(t.data)) : "—";
+    const valor = t.valor ? esc(t.moeda) + t.valor.toFixed(0) + "M" : "—";
+    return "<tr>" +
+      '<td class="data">' + data + "</td>" +
+      "<td>" + esc(p.web_name) +
+        '<span class="sub">' + (POSICOES[p.element_type] || "?") + " · " +
+          esc(nomeClube(p.team)) +
+          (t.saiu ? ' <span class="estado bad">saiu da liga</span>' : "") +
+        "</span></td>" +
+      '<td class="num forte">' + valor + "</td>" +
+      "<td>" +
+        '<span class="fonte-noticia">' + (t.oficial ? "PL" : "Sky") + "</span> " +
+        '<a href="' + esc(t.link) + '" target="_blank" rel="noopener">' +
+          esc(t.titulo) + "</a>" +
+      "</td>" +
+    "</tr>";
+  }).join("");
+}
+
+function initTransferencias() {
+  const form = $("form-transf");
+  if (!form) return;
+  form.addEventListener("input", desenharTransferencias);
+  form.addEventListener("submit", (ev) => ev.preventDefault());
+  desenharTransferencias();
+}
+
 function initMercado() {
   const m = D.mercado || { noticias: [], transacoes: [] };
 
@@ -2724,6 +2804,7 @@ async function main() {
   if (!ehClassica()) initAnaliseTroca();
   initClassica();
   initSeletorJanela();
+  initTransferencias();
   initMercado();
   initJogadores();
   initTabs();

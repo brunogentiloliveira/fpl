@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 BASE = "https://draft.premierleague.com/api"
@@ -324,9 +324,9 @@ PL_CLUBES = {
 }
 
 
-def pl_conteudo(tag=None, limite=20):
+def pl_conteudo(tag=None, limite=20, offset=0):
     """Artigos da API oficial da PL, opcionalmente de uma etiqueta."""
-    url = (f"{PL_CONTEUDO}?contentTypes=TEXT&offset=0&limit={limite}"
+    url = (f"{PL_CONTEUDO}?contentTypes=TEXT&offset={offset}&limit={limite}"
            "&onlyRestrictedContent=false&detail=DETAILED")
     if tag:
         url += "&tagNames=" + urllib.parse.quote(tag)
@@ -377,7 +377,87 @@ def fetch_pl_clubes(nomes):
     return saida
 
 
-def fetch_pl_transferencias(players, achados):
+def pl_transferencias_artigos(paginas=3, por_pagina=100):
+    """Artigos de `series:transfers`, paginados (o feed vai até 2025)."""
+    artigos = []
+    for i in range(paginas):
+        lote = pl_conteudo("series:transfers", por_pagina, offset=i * por_pagina)
+        artigos += lote
+        if len(lote) < por_pagina:
+            break
+    return artigos
+
+
+def transferencias_feitas(players, artigos, achados, desde=None):
+    """Transferências concluídas, para o separador Transferências.
+
+    Junta as duas fontes: os artigos oficiais da PL (que confirmam o negócio
+    mas não dizem o preço) e o que já foi extraído dos títulos da Sky (que traz
+    os valores). Diferente do `transferencias` que alimenta o modelo — aqui
+    entram também as **saídas** da Premier League, porque saber que um jogador
+    se foi embora é tão útil como saber quem chegou.
+
+    `desde`: só a janela desta época; sem isto vinham dois anos de mercado."""
+    padroes = [(p,) + padroes_nome_split(p) for p in players]
+    por_id = {p["id"]: p for p in players}
+    feitas = {}
+
+    def juntar(pid, titulo, link, data, valor, moeda, oficial):
+        if desde and (data or "") < desde:
+            return
+        p = por_id.get(pid)
+        if not p:
+            return
+        ant = feitas.get(pid)
+        # O mesmo negócio costuma ter dois artigos ("agree deal" e depois
+        # "completes move"): fica o mais recente, mas nunca se perde um valor.
+        if ant:
+            if (ant["data"] or "") >= (data or ""):
+                if valor and not ant["valor"]:
+                    ant.update(valor=valor, moeda=moeda)
+                ant["oficial"] = ant["oficial"] or oficial
+                return
+            valor = valor or ant["valor"]
+            moeda = moeda or ant["moeda"]
+            oficial = oficial or ant["oficial"]
+        feitas[pid] = {
+            "jogador": pid, "titulo": titulo, "link": link, "data": data,
+            "saiu": p.get("status") in ("u", "n"),
+            "valor": valor or 0, "moeda": moeda or "",
+            # A PL só publica negócios fechados; a Sky também noticia acordos
+            # ainda por oficializar ("agree £30m deal for"), por isso a origem
+            # da confirmação faz diferença e vai para o ecrã.
+            "oficial": oficial,
+        }
+
+    for art in artigos:
+        it = pl_item(art)
+        texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
+        candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
+        if not candidatos:
+            candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
+        if not candidatos or len(candidatos) > 2:  # ambíguo demais
+            continue
+        for p in candidatos:
+            v = achados.get(str(p["id"])) or {}
+            juntar(p["id"], it["titulo"], it["link"], it["data"],
+                   v.get("valor"), v.get("moeda"), True)
+
+    # Negócios que só a Sky noticiou (é de lá que vêm os valores).
+    for chave, v in achados.items():
+        if v.get("confirmada"):
+            juntar(int(chave), v["titulo"], v["link"], v["data"],
+                   v.get("valor"), v.get("moeda"),
+                   v.get("fonte") == "Premier League")
+
+    lista = sorted(feitas.values(), key=lambda t: t["data"] or "", reverse=True)
+    registar("Transferências concluídas", bool(lista),
+             f"{len(lista)} jogadores; {sum(1 for t in lista if t['valor'])} com valor; "
+             f"{sum(1 for t in lista if t['oficial'])} confirmados pela PL")
+    return lista
+
+
+def fetch_pl_transferencias(players, achados, desde=None):
     """Transferências confirmadas pela fonte oficial.
 
     O `extrair_transferencias` decide "confirmada" por regex nos títulos da
@@ -386,10 +466,10 @@ def fetch_pl_transferencias(players, achados):
     confirmação sozinha já conta: isenta o jogador do castigo de "não foi
     titular no último ensaio" (o onze do clube antigo não diz nada dele)."""
     try:
-        artigos = pl_conteudo("series:transfers", 40)
+        artigos = pl_transferencias_artigos()
     except Exception as exc:
         registar("Premier League · transferências", False, exc)
-        return achados
+        return achados, []
     padroes = [(p,) + padroes_nome_split(p) for p in players]
     novas = 0
     for art in artigos:
@@ -425,7 +505,7 @@ def fetch_pl_transferencias(players, achados):
             novas += 1
     registar("Premier League · transferências", True,
              f"{novas} confirmações em {len(artigos)} artigos")
-    return achados
+    return achados, transferencias_feitas(players, artigos, achados, desde)
 
 
 def fetch_feeds_clubes():
@@ -964,6 +1044,16 @@ def main():
     desde = game.get("current_event") or (next_ev["id"] if next_ev else 1)
     fixtures = fetch_fixtures(bootstrap, desde)
     noticias_mercado = fetch_noticias_mercado()
+    # Janela desta época: 100 dias antes da primeira jornada. Sem isto vinham
+    # dois anos de mercado, e o feed oficial vai até 2025.
+    primeira = min((e.get("deadline_time") or "" for e in events), default="")
+    desde = ((datetime.fromisoformat(primeira.replace("Z", "+00:00")) -
+              timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
+             if primeira else None)
+    transf_modelo, transf_feitas = fetch_pl_transferencias(
+        players, extrair_transferencias(
+            {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
+        desde)
 
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1010,14 +1100,14 @@ def main():
         "bolaparada": fetch_bolaparada(nomes_clubes, players),
         "historico": completar_historico(
             snapshot_historico(players, anterior, game), players),
-        "transferencias": fetch_pl_transferencias(players, extrair_transferencias(
-            {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes)),
+        "transferencias": transf_modelo,
         "conferencias": {
             "equipa": eu["entry_name"] if eu else None,
             "clubes": fetch_conferencias(clubes, meus, feeds),
         },
         "mercado": {
             "noticias": noticias_mercado,
+            "transferencias_feitas": transf_feitas,
             "transacoes": [
                 {k: t.get(k) for k in ("added", "element_in", "element_out",
                                        "entry", "event", "kind", "result")}

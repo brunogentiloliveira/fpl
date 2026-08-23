@@ -331,6 +331,26 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Separador "Transferências" (2026-08-23, pedido do utilizador)
+
+Só no Draft. Todas as transferências concluídas da janela, da mais recente para a mais antiga,
+com o valor quando existe. Vem de `data.json → mercado.transferencias_feitas`.
+
+- **Junta as duas fontes, que são complementares**: a PL confirma o negócio mas **não publica
+  valores**; a Sky publica valores mas também noticia acordos ainda por fechar. Daí a coluna
+  levar um distintivo **PL** (oficializado) ou **Sky** (noticiado) — o Baleba aparece com
+  £70M e distintivo Sky porque o "Man Utd agree £70m deal" ainda não estava fechado, e por
+  isso ele continua listado no Brighton. Na prática: 97 oficiais, 3 só da Sky, 7 com valor.
+- **Inclui as saídas da liga** (distintivo "saiu da liga"), ao contrário do `transferencias`
+  que alimenta o modelo — saber que o Reijnders se foi embora é tão útil como saber quem chegou.
+- **Janela desta época**: `series:transfers` pagina até 2025 (250 artigos), o que traria dois
+  anos de mercado. O corte são 100 dias antes da primeira jornada, calculado a partir do
+  `deadline_time` do primeiro evento em vez de uma data escrita à mão. Ficam 100 negócios.
+- O mesmo negócio costuma ter dois artigos ("agree deal", depois "completes move"): fica o mais
+  recente, mas o valor nunca se perde ao juntá-los.
+- Pesquisa por jogador ou clube e filtro "só com valor". `semAcentos()` no app.js replica o
+  `sem_acentos` da recolha, incluindo as letras que o NFD não decompõe (ø, đ, ł…).
+
 ## Notícias oficiais da Premier League (2026-08-23, pedido do utilizador)
 
 Segunda fonte a par da Sky: `api.premierleague.com/content/premierleague/en`, a **mesma API que

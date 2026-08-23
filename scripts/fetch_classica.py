@@ -366,7 +366,7 @@ def main():
         "bolaparada": bola_parada_da_api(bootstrap["elements"]),
         "ffs": fd.fetch_ffs(players, nomes_clubes),
         "transferencias": fd.fetch_pl_transferencias(players, fd.extrair_transferencias(
-            {**feeds, "Transfer Centre": noticias}, players, nomes_clubes)),
+            {**feeds, "Transfer Centre": noticias}, players, nomes_clubes))[0],
         "conferencias": {"equipa": minha and minha["nome"],
                          "clubes": fd.fetch_conferencias(clubes, meus, feeds)},
         "mercado": {"noticias": noticias, "transacoes": []},
