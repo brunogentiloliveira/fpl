@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import unicodedata
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -293,6 +294,140 @@ def fetch_ffs(players, nomes_clubes):
     return saida
 
 
+# --- Notícias oficiais da Premier League ---
+# A mesma API que alimenta premierleague.com. O robots.txt do site só bloqueia
+# parâmetros de rastreio (utm_*, fbclid…) e deixa os caminhos de conteúdo
+# livres; a api não declara restrições e é da mesma organização da API do FPL
+# que este projeto já usa.
+PL_CONTEUDO = "https://api.premierleague.com/content/premierleague/en"
+
+# Etiqueta de conteúdo por clube, no espaço de nomes do site da PL, chaveada
+# pelo `name` do bootstrap (como o SKY_CLUBES). Derivada dos nomes oficiais e
+# **verificada uma a uma** contra o plantel de cada clube.
+#
+# A verificação não é zelo a mais: uma etiqueta desconhecida **não dá erro**,
+# devolve o feed geral em silêncio. Num primeiro mapeamento automático por
+# tokens, "Spurs" foi parar ao Wolverhampton (não partilha nenhuma palavra com
+# "Tottenham Hotspur") e "bournemouth" devolveu notícias gerais — o certo é
+# "afc-bournemouth". Os dois pareciam funcionar.
+PL_CLUBES = {
+    "Arsenal": "arsenal", "Aston Villa": "aston-villa",
+    "Bournemouth": "afc-bournemouth", "Brentford": "brentford",
+    "Brighton": "brighton-and-hove-albion", "Chelsea": "chelsea",
+    "Coventry City": "coventry-city", "Crystal Palace": "crystal-palace",
+    "Everton": "everton", "Fulham": "fulham", "Hull City": "hull-city",
+    "Ipswich Town": "ipswich-town", "Leeds": "leeds-united",
+    "Liverpool": "liverpool", "Man City": "manchester-city",
+    "Man Utd": "manchester-united", "Newcastle": "newcastle-united",
+    "Nott'm Forest": "nottingham-forest", "Spurs": "tottenham-hotspur",
+    "Sunderland": "sunderland",
+}
+
+
+def pl_conteudo(tag=None, limite=20):
+    """Artigos da API oficial da PL, opcionalmente de uma etiqueta."""
+    url = (f"{PL_CONTEUDO}?contentTypes=TEXT&offset=0&limit={limite}"
+           "&onlyRestrictedContent=false&detail=DETAILED")
+    if tag:
+        url += "&tagNames=" + urllib.parse.quote(tag)
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "fpl-draft-dashboard",
+        "Origin": "https://www.premierleague.com"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp).get("content") or []
+
+
+def pl_item(art):
+    """Artigo da PL no mesmo formato dos itens de RSS, para partilhar o resto."""
+    data = (art.get("date") or art.get("publishFrom") or "")
+    if data and not data.endswith("Z"):
+        data = data[:19] + "Z"
+    resumo = art.get("description") or art.get("summary") or ""
+    ident = art.get("id")
+    return {
+        "titulo": (art.get("title") or "").strip(),
+        "link": art.get("canonicalUrl") or (
+            f"https://www.premierleague.com/en/news/{ident}" if ident else ""),
+        "data": data or None,
+        "resumo": " ".join(str(resumo).split())[:220],
+        "fonte": "pl",
+    }
+
+
+def fetch_pl_clubes(nomes):
+    """Notícias oficiais de cada clube: {nome_clube: [itens]}.
+
+    Complementa a Sky: aqui vem o que o próprio clube publica — relatos de
+    conferência de imprensa e as atualizações do treinador sobre lesões."""
+    saida, falhas = {}, []
+    for nome in nomes:
+        tag = PL_CLUBES.get(nome)
+        if not tag:
+            falhas.append(nome)
+            continue
+        try:
+            saida[nome] = [pl_item(a) for a in
+                           pl_conteudo("club-produced-content:" + tag, 15)]
+        except Exception:
+            falhas.append(nome)
+            saida[nome] = []
+    registar("Premier League · clubes", not falhas,
+             f"{len(nomes) - len(falhas)}/{len(nomes)} clubes" +
+             (f"; falhou {', '.join(falhas)}" if falhas else ""))
+    return saida
+
+
+def fetch_pl_transferencias(players, achados):
+    """Transferências confirmadas pela fonte oficial.
+
+    O `extrair_transferencias` decide "confirmada" por regex nos títulos da
+    Sky, que é um palpite; um jogador que apareça em `series:transfers` mudou
+    mesmo de clube. Não traz valores — esses continuam a vir da Sky —, mas a
+    confirmação sozinha já conta: isenta o jogador do castigo de "não foi
+    titular no último ensaio" (o onze do clube antigo não diz nada dele)."""
+    try:
+        artigos = pl_conteudo("series:transfers", 40)
+    except Exception as exc:
+        registar("Premier League · transferências", False, exc)
+        return achados
+    padroes = [(p,) + padroes_nome_split(p) for p in players]
+    novas = 0
+    for art in artigos:
+        it = pl_item(art)
+        texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
+        candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
+        if not candidatos:
+            candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
+        if not candidatos or len(candidatos) > 3:
+            continue
+        for p in candidatos:
+            # A lista oficial traz entradas e **saídas**. Marcar uma saída como
+            # transferência confirmada seria dizer ao modelo o contrário do que
+            # aconteceu: o `confirmada` existe para isentar quem mudou de clube
+            # do castigo do onze de pré-época e para lhe dar o piso de minutos.
+            # Quem já não está na liga tem status u/n e projeção zero de
+            # qualquer forma (Reijnders para o Al Qadsiah, Digne para o PSG).
+            if p.get("status") in ("u", "n"):
+                continue
+            chave = str(p["id"])
+            ant = achados.get(chave)
+            if ant and ant.get("confirmada"):
+                continue
+            if ant:  # a Sky tinha o valor mas só como rumor
+                ant.update(confirmada=True, fonte="Premier League",
+                           titulo=it["titulo"], link=it["link"], data=it["data"])
+            else:
+                achados[chave] = {
+                    "valor": 0, "moeda": "", "confirmada": True,
+                    "titulo": it["titulo"], "link": it["link"],
+                    "data": it["data"], "fonte": "Premier League",
+                }
+            novas += 1
+    registar("Premier League · transferências", True,
+             f"{novas} confirmações em {len(artigos)} artigos")
+    return achados
+
+
 def fetch_feeds_clubes():
     """Lê uma vez o feed Sky de cada clube: {nome_clube: [itens]}."""
     feeds = {}
@@ -306,7 +441,29 @@ def fetch_feeds_clubes():
     registar("Sky · clubes", not falhas,
              f"{len(SKY_CLUBES) - len(falhas)}/{len(SKY_CLUBES)} feeds" +
              (f"; falhou {', '.join(falhas)}" if falhas else ""))
+
+    # As notícias oficiais da PL entram pelo mesmo caminho das da Sky, para
+    # aproveitarem o filtro de ruído, a deteção de conferência e o cruzamento
+    # de nomes limitado ao plantel do clube. Fica aqui, e não no main(), para
+    # o modo clássico as ter sem ter de repetir a ligação.
+    for nome, itens in fetch_pl_clubes(sorted(PL_CLUBES)).items():
+        feeds.setdefault(nome, []).extend(itens)
+    for nome, itens in feeds.items():
+        feeds[nome] = sem_repetidos(
+            sorted(itens, key=lambda i: i.get("data") or "", reverse=True))
     return feeds
+
+
+def sem_repetidos(itens):
+    """A mesma notícia pode chegar pelas duas fontes; fica a mais recente."""
+    vistos, unicos = set(), []
+    for it in itens:
+        chave = sem_acentos(it["titulo"]).lower().strip()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        unicos.append(it)
+    return unicos
 
 
 def extrair_transferencias(feeds, players, nomes_clubes):
@@ -853,8 +1010,8 @@ def main():
         "bolaparada": fetch_bolaparada(nomes_clubes, players),
         "historico": completar_historico(
             snapshot_historico(players, anterior, game), players),
-        "transferencias": extrair_transferencias(
-            {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
+        "transferencias": fetch_pl_transferencias(players, extrair_transferencias(
+            {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes)),
         "conferencias": {
             "equipa": eu["entry_name"] if eu else None,
             "clubes": fetch_conferencias(clubes, meus, feeds),

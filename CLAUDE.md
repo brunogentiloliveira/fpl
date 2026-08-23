@@ -331,6 +331,50 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Notícias oficiais da Premier League (2026-08-23, pedido do utilizador)
+
+Segunda fonte a par da Sky: `api.premierleague.com/content/premierleague/en`, a **mesma API que
+alimenta premierleague.com**. Descoberta a ver que pedidos o próprio site faz (não há RSS, e o
+sitemap é só estrutural, sem `<news:>`).
+
+- **Permissão**: o `robots.txt` de www.premierleague.com só bloqueia parâmetros de rastreio
+  (`utm_*`, `fbclid`…) e deixa os caminhos de conteúdo livres; `api.premierleague.com` não
+  declara robots e a página de termos não menciona acesso automatizado. É a mesma organização
+  da API do FPL que o projeto já usa.
+- **Endpoint**: `?contentTypes=TEXT&offset=0&limit=N&onlyRestrictedContent=false&detail=DETAILED`
+  com `&tagNames=`. Precisa do cabeçalho `Origin: https://www.premierleague.com`. Devolve
+  `title`, `description`, `body`, `date`, `canonicalUrl` e `tags`.
+- **Etiquetas úteis**: `club-produced-content:<clube>` (o que o próprio clube publica — relatos
+  de conferência e atualizações do treinador sobre lesões), `series:transfers`, `label:Club News`.
+
+**A armadilha, e porque é que `PL_CLUBES` é um mapa curado**: uma etiqueta desconhecida **não dá
+erro — devolve o feed geral em silêncio**. Num primeiro mapeamento automático por tokens,
+"Spurs" foi parar ao **Wolverhampton** (não partilha nenhuma palavra com "Tottenham Hotspur") e
+"bournemouth" devolveu notícias gerais (o certo é **`afc-bournemouth`**, a mesma irregularidade
+já vista nos slugs da BBC). Os dois *pareciam* funcionar. A validação que apanhou isto foi
+semântica: pedir os artigos de cada clube e confirmar que **jogadores desse clube** aparecem lá.
+19 em 20 batiam certo à primeira.
+
+**Integração**: `fetch_pl_clubes()` devolve os itens no mesmo formato dos de RSS (`pl_item`) e
+entram por dentro de `fetch_feeds_clubes()` — logo aproveitam o filtro de ruído, a deteção de
+antevisão e o cruzamento de nomes limitado ao plantel do clube, e servem os **dois modos** sem
+duplicar código. `sem_repetidos()` junta a mesma notícia vinda das duas fontes. No separador
+Conferências cada item leva um distintivo **PL** ou **Sky**. Resultado: 51 itens oficiais contra
+37 da Sky, entre eles coisas como "Arteta's update on Guimaraes' injury after win over Coventry".
+
+**Transferências confirmadas** (`fetch_pl_transferencias`): o `extrair_transferencias` decide
+"confirmada" por regex nos títulos da Sky, que é um palpite; quem aparece em `series:transfers`
+mudou mesmo de clube. 33 confirmações. Dois travões que a primeira versão não tinha:
+
+- A lista oficial traz **entradas e saídas**. Marcar o Reijnders (Al Qadsiah), o Vicario
+  (Juventus) ou o Digne (PSG) como transferência confirmada era dizer ao modelo o contrário do
+  que aconteceu. Saltam-se os jogadores com status `u`/`n`.
+- A fonte oficial **não publica valores**, e `pisoTransferencia(0)` devolvia **50 minutos** —
+  ou seja, qualquer reforço de plantel ganhava piso de meio jogo. O piso passa a exigir
+  `valor > 0`: o sinal é "custou caro, logo vai jogar", e sem preço não há sinal. Eram **23
+  jogadores** a levar piso indevido. A confirmação sozinha continua a valer para a pré-época
+  (o onze do clube antigo não diz nada de quem mudou). Os valores continuam a vir da Sky.
+
 ## Contribuição defensiva: uma categoria de pontuação que faltava (2026-08-23)
 
 O maior buraco encontrado até hoje. A liga pontua `defensive_contribution` com **2 pontos** a

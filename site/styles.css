@@ -453,3 +453,14 @@ main { padding: 1rem; max-width: 56rem; margin: 0 auto; }
   font-size: 0.85rem;
   color: var(--texto-fraco, #b9c0cc);
 }
+
+.fonte-noticia {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--borda, #2c3440);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--texto-fraco, #8d97a5);
+  vertical-align: middle;
+}

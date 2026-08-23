@@ -830,8 +830,13 @@ function projecao(p, ignorarAusencia) {
 
   const tr = (D.transferencias || {})[p.id];
   let bump = null;
-  // O piso da transferência é uma suposição: assim que houver jogos, vale o que se viu.
-  if (tr && tr.confirmada && jogosObs < 3 && !STATUS_FORA.has(p.status)) {
+  // O piso da transferência é uma suposição: assim que houver jogos, vale o que
+  // se viu. Exige **valor publicado**: o sinal é "custou caro, logo vai jogar".
+  // A fonte oficial confirma mudanças sem dizer o preço, e sem preço não há
+  // sinal nenhum — `pisoTransferencia(0)` devolveria 50 minutos a um reforço
+  // de plantel qualquer. A confirmação sozinha continua a valer para a
+  // pré-época (o onze do clube antigo não diz nada de quem mudou).
+  if (tr && tr.confirmada && tr.valor > 0 && jogosObs < 3 && !STATUS_FORA.has(p.status)) {
     const piso = pisoTransferencia(tr.valor);
     if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
   }
@@ -2508,6 +2513,7 @@ function initConferencias() {
       const nomes = i.mencoes.map((id) => (jogadoresPorId[id] || {}).web_name).filter(Boolean);
       return '<li class="' + (nomes.length ? "mencao" : "") + '">' +
         '<a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.titulo) + "</a>" +
+        ' <span class="fonte-noticia">' + (i.fonte === "pl" ? "PL" : "Sky") + "</span>" +
         (i.conferencia ? ' <span class="estado warn">antevisão</span>' : "") +
         (nomes.length ? ' <span class="estado bad">⚑ ' + esc(nomes.join(", ")) + "</span>" : "") +
         ' <span class="data">' + data + "</span>" +

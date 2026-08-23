@@ -281,6 +281,22 @@ verificar("sem ações defensivas não há pontos",
     componentesPP90(base, comXG).total > componentesPP90(base, semXG).total);
 })();
 
+/* --- Transferência confirmada sem valor não dá piso de minutos --- */
+(function () {
+  const alvo = D.players.find(function (x) { return x.element_type === 4; });
+  const guardado = D.transferencias;
+  const semJogos = { minutes: 0 };
+  D.transferencias = { [alvo.id]: { valor: 0, confirmada: true, moeda: "" } };
+  const sem = projecao(Object.assign({}, alvo, semJogos));
+  D.transferencias = { [alvo.id]: { valor: 60, confirmada: true, moeda: "£" } };
+  const caro = projecao(Object.assign({}, alvo, semJogos));
+  D.transferencias = guardado;
+  verificar("confirmação sem valor não levanta os minutos esperados",
+    sem.bump === null, "bump=" + sem.bump);
+  verificar("transferência cara continua a levantar",
+    caro.xmin >= 75, "xmin=" + caro.xmin.toFixed(1));
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

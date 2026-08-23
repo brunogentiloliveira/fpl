@@ -148,6 +148,39 @@ def testa_live():
               not fd.jornada_em_cache({**nova, "equipas": []}))
 
 
+# ---------- notícias oficiais da Premier League ----------
+
+def testa_pl():
+    print("Premier League (fonte oficial)")
+    # O mapa de clubes é curado porque uma etiqueta errada não dá erro: devolve
+    # o feed geral. Estes dois já passaram por bons num mapeamento automático.
+    verificar("todos os clubes da Sky têm etiqueta na PL",
+              set(fd.SKY_CLUBES) == set(fd.PL_CLUBES),
+              sorted(set(fd.SKY_CLUBES) ^ set(fd.PL_CLUBES)))
+    verificar("Bournemouth usa o slug oficial, não o nome curto",
+              fd.PL_CLUBES["Bournemouth"] == "afc-bournemouth")
+    verificar("Spurs aponta para o Tottenham, não para o Wolverhampton",
+              fd.PL_CLUBES["Spurs"] == "tottenham-hotspur")
+
+    art = {"title": " Arsenal sign X ", "description": "  algum   resumo ",
+           "date": "2026-08-21T10:00:00", "canonicalUrl": "https://exemplo/1"}
+    it = fd.pl_item(art)
+    verificar("artigo da PL fica no formato dos itens de RSS",
+              set(it) >= {"titulo", "link", "data", "resumo", "fonte"})
+    verificar("título e resumo vêm limpos",
+              it["titulo"] == "Arsenal sign X" and it["resumo"] == "algum resumo")
+    verificar("data fica em ISO com Z", it["data"].endswith("Z"))
+    verificar("sem canonicalUrl, constrói o link pelo id",
+              fd.pl_item({"title": "t", "id": 99})["link"].endswith("/99"))
+
+    # Notícias repetidas nas duas fontes contam uma vez.
+    itens = [{"titulo": "Arsenal sign X", "data": "2026-08-21T10:00:00Z"},
+             {"titulo": "arsenal sign x", "data": "2026-08-20T10:00:00Z"},
+             {"titulo": "Outra coisa", "data": "2026-08-19T10:00:00Z"}]
+    verificar("a mesma notícia das duas fontes conta uma vez",
+              len(fd.sem_repetidos(itens)) == 2)
+
+
 # ---------- retrato da época passada ----------
 
 def testa_completar_historico():
@@ -202,6 +235,7 @@ def main():
     testa_nomes()
     testa_ffs()
     testa_live()
+    testa_pl()
     testa_completar_historico()
     testa_ficheiros()
     print()
