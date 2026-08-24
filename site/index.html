@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=41">
+<link rel="stylesheet" href="styles.css?v=42">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -47,6 +47,19 @@
 
 <main>
   <section id="painel-liga" role="tabpanel" aria-labelledby="tab-liga">
+    <div data-modo="draft" id="bloco-jornada" hidden>
+      <h2 class="sec-titulo">A jornada <span id="jornada-resumo" class="sub-total"></span></h2>
+      <p class="nota" id="jornada-legenda"></p>
+      <table class="tabela tabela-proj" id="tabela-jornada">
+        <thead><tr>
+          <th>Equipa e quem lhe falta jogar</th><th class="num">Agora</th>
+          <th class="num">Falta</th><th class="num">Previsão</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2 class="sec-titulo" data-modo="draft">Classificação</h2>
     <table class="tabela" id="tabela-liga">
       <thead><tr><th>#</th><th>Equipa</th><th class="num">Jornada</th><th class="num">Total</th></tr></thead>
       <tbody></tbody>
@@ -313,7 +326,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=41"></script>
+<script src="app.js?v=42"></script>
 
 </body>
 </html>

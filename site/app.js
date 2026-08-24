@@ -2646,6 +2646,88 @@ function initConferencias() {
   }).join("");
 }
 
+/* ---------- A jornada, equipa a equipa ---------- */
+
+/**
+ * Onde está cada gestor nesta jornada: o que já fez, quantos jogadores lhe
+ * faltam e onde deve acabar.
+ *
+ * Só conta o **onze** — no Draft o banco não pontua —, e "já jogou" é o jogo
+ * daquele jogador, não a jornada inteira: com os jogos espalhados pelo fim de
+ * semana, quem joga na segunda ainda tem tudo por fazer.
+ */
+function estadoDaJornada() {
+  const pj = D.picks_jornada || {};
+  const ev = pj.evento;
+  const jornada = (D.jornadas || {})[String(ev)];
+  if (!ev || !jornada || !pj.equipas) return null;
+  const jogaram = new Set(jornada.equipas || []);
+  const stats = jornada.stats || {};
+
+  const linhas = D.entries.map((e) => {
+    const escolhas = pj.equipas[String(e.entry_id)];
+    // Sem escolhas (deadline por passar) o plantel inteiro é o melhor palpite.
+    const ids = escolhas ? escolhas.xi
+      : D.players.filter((p) => p.owner === e.entry_id).map((p) => p.id);
+    const xi = ids.map((id) => jogadoresPorId[id]).filter(Boolean);
+    let feitos = 0;
+    const faltam = [];
+    xi.forEach((p) => {
+      if (jogaram.has(p.team)) {
+        feitos += (stats[String(p.id)] || [0, 0])[1];
+      } else {
+        faltam.push({ p, pr: projecao(p) });
+      }
+    });
+    faltam.sort((a, b) => b.pr.ppj - a.pr.ppj);
+    const porVir = faltam.reduce((t, x) => t + x.pr.ppj, 0);
+    return { entrada: e, feitos, faltam, porVir, previsao: feitos + porVir,
+             completo: !!escolhas };
+  });
+  linhas.sort((a, b) => b.previsao - a.previsao);
+  return { evento: ev, linhas, comEscolhas: linhas.every((l) => l.completo) };
+}
+
+function desenharJornada() {
+  const bloco = $("bloco-jornada");
+  if (!bloco) return;
+  const estado = estadoDaJornada();
+  bloco.hidden = !estado;
+  if (!estado) return;
+
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const totalFaltam = estado.linhas.reduce((t, l) => t + l.faltam.length, 0);
+  $("jornada-resumo").textContent = "Jornada " + estado.evento + " · " +
+    (totalFaltam ? totalFaltam + " jogadores por jogar" : "todos já jogaram");
+  $("jornada-legenda").textContent =
+    "Só conta o onze inicial. “Agora” são os pontos já feitos; “Previsão” soma-lhes o que o " +
+    "modelo espera de quem ainda não entrou em campo." +
+    (estado.comEscolhas ? "" : " Alguns gestores ainda não fecharam o onze — para esses " +
+      "conta o plantel todo, o que inflaciona a previsão.") +
+    " As substituições automáticas não estão contadas: só são aplicadas no fim da jornada.";
+
+  document.querySelector("#tabela-jornada tbody").innerHTML = estado.linhas.map((l) => {
+    const meu = eu && l.entrada.id === eu.id;
+    const quem = l.faltam.length === 0 ? ""
+      : l.faltam.map((x) => '<span class="chip"><span class="chip-nome">' +
+          esc(x.p.web_name) + '</span><span class="chip-info">' +
+          nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + "</span></span>").join("");
+    // Os nomes vão por baixo da equipa, e não numa coluna própria: numa coluna
+    // desapareceriam no telemóvel, que é onde isto mais se olha.
+    return '<tr class="' + (meu ? "eu" : "") + '">' +
+      "<td>" + esc(l.entrada.entry_name) + (meu ? " ★" : "") +
+        '<span class="sub">' + esc(l.entrada.manager) + "</span>" +
+        (l.faltam.length ? '<div class="linha-campo faltam">' + quem + "</div>" : "") +
+      "</td>" +
+      '<td class="num forte">' + l.feitos + "</td>" +
+      '<td class="num">' + (l.faltam.length || "—") + "</td>" +
+      '<td class="num">' + l.previsao.toFixed(1) +
+        (l.porVir >= 0.05 ? '<span class="sub">+' + l.porVir.toFixed(1) + "</span>" : "") +
+      "</td>" +
+    "</tr>";
+  }).join("");
+}
+
 /* ---------- Mercado ---------- */
 
 function nomeJogador(id) {
@@ -2931,6 +3013,7 @@ async function main() {
   if (!ehClassica()) initAnaliseTroca();
   initClassica();
   initSeletorJanela();
+  desenharJornada();
   initTransferencias();
   initMercado();
   initJogadores();

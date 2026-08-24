@@ -327,6 +327,40 @@ verificar("texto vazio não rebenta", semAcentos(null) === "");
   D.classica = guardado;
 })();
 
+/* --- A jornada equipa a equipa: só o onze, e só quem já jogou --- */
+(function () {
+  const guardadoJ = D.jornadas, guardadoP = D.picks_jornada;
+  verificar("sem escolhas da jornada não há tabela", estadoDaJornada() === null);
+
+  const meus = D.players.filter(function (p) { return p.owner === 100; }).slice(0, 15);
+  if (meus.length < 12) { D.jornadas = guardadoJ; D.picks_jornada = guardadoP; return; }
+  const xi = meus.slice(0, 11).map(function (p) { return p.id; });
+  const banco = meus.slice(11).map(function (p) { return p.id; });
+  const clubeQueJogou = meus[0].team;
+  // Toda a gente do clube 1 já jogou; o resto ainda não.
+  D.jornadas = { 3: { finalizada: false, equipas: [clubeQueJogou],
+    stats: Object.fromEntries(meus.map(function (p) { return [String(p.id), [90, 7]]; })) } };
+  D.picks_jornada = { evento: 3, equipas: { 100: { xi: xi, banco: banco } } };
+
+  const e = estadoDaJornada();
+  const linha = e.linhas.find(function (l) { return l.entrada.entry_id === 100; });
+  const doClube = meus.slice(0, 11).filter(function (p) { return p.team === clubeQueJogou; });
+  verificar("conta os pontos de quem já jogou",
+    linha.feitos === doClube.length * 7, "feitos=" + linha.feitos);
+  verificar("nenhum jogador do banco aparece por jogar",
+    !linha.faltam.some(function (x) { return banco.indexOf(x.p.id) >= 0; }));
+  verificar("o onze são no máximo 11 jogadores",
+    linha.faltam.length <= 11);
+  verificar("quem ainda não jogou aparece por jogar",
+    linha.faltam.length === 11 - doClube.length);
+  verificar("a previsão soma o que falta ao que já foi",
+    Math.abs(linha.previsao - (linha.feitos + linha.porVir)) < 1e-9);
+  verificar("as equipas vêm ordenadas pela previsão",
+    e.linhas.every(function (l, i) { return i === 0 || e.linhas[i - 1].previsao >= l.previsao; }));
+
+  D.jornadas = guardadoJ; D.picks_jornada = guardadoP;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

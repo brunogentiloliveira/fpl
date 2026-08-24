@@ -928,6 +928,39 @@ def jornada_em_cache(guardada):
     return primeira is None or len(primeira) >= len(JORNADA_CAMPOS)
 
 
+def fetch_picks_jornada(entries, game):
+    """Onze e banco de cada gestor na jornada a decorrer.
+
+    No Draft só o onze pontua, por isso sem isto a tabela da jornada somaria o
+    plantel inteiro. As escolhas só existem depois do deadline: antes disso o
+    endpoint devolve 404, e a jornada fica sem picks (a tabela cai no plantel).
+
+    Nota: as substituições automáticas (`subs`) só são aplicadas no fim da
+    jornada — a meio vêm sempre vazias."""
+    ev = game.get("current_event")
+    if not ev:
+        return {}
+    equipas, falhas = {}, []
+    for e in entries:
+        try:
+            d = get(f"/entry/{e['entry_id']}/event/{ev}")
+        except Exception:
+            falhas.append(e["entry_name"])
+            continue
+        picks = sorted(d.get("picks") or [], key=lambda x: x.get("position") or 99)
+        if not picks:
+            falhas.append(e["entry_name"])
+            continue
+        equipas[str(e["entry_id"])] = {
+            "xi": [x["element"] for x in picks if (x.get("position") or 99) <= 11],
+            "banco": [x["element"] for x in picks if (x.get("position") or 99) > 11],
+        }
+    registar("Onzes da jornada", bool(equipas),
+             f"{len(equipas)}/{len(entries)} gestores" +
+             (f"; sem escolhas: {', '.join(falhas)}" if falhas else ""))
+    return {"evento": ev, "equipas": equipas} if equipas else {}
+
+
 def fetch_jornadas(game, anterior):
     """Minutos e pontos de cada jogador em cada jornada já disputada.
 
@@ -1288,6 +1321,7 @@ def main():
         "players": players,
         "fixtures": fixtures,
         "jornadas": fetch_jornadas(game, anterior),
+        "picks_jornada": fetch_picks_jornada(details["league_entries"], game),
         "preepoca": fetch_preepoca(nomes_clubes, players),
         "ffs": fetch_ffs(players, nomes_clubes),
         "bolaparada": fetch_bolaparada(nomes_clubes, players),

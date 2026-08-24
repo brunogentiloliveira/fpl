@@ -331,6 +331,28 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## A jornada equipa a equipa (2026-08-24, pedido do utilizador)
+
+Tabela no topo do separador **Liga**, só no Draft: por gestor, os pontos já feitos, quantos
+jogadores lhe faltam entrar em campo, quem são, e a previsão de onde a jornada vai acabar.
+Ordenada pela previsão, com a minha equipa marcada.
+
+- **Só conta o onze.** No Draft o banco não pontua, e sem as escolhas de cada gestor a tabela
+  somaria os 15. `fetch_picks_jornada()` vai a `/entry/{entry_id}/event/{ev}` dos 7 gestores
+  (`position` 1-11 = onze, 12-15 = banco) e guarda em `data.json → picks_jornada`. Antes do
+  deadline o endpoint dá 404: nesse caso a linha cai no plantel todo e a legenda **diz que a
+  previsão está inflacionada**, em vez de mostrar um número errado sem aviso.
+- **"Já jogou" é o jogo daquele jogador**, não a jornada inteira — a mesma distinção que já
+  existia em `utilizacao()`. Com os jogos espalhados pelo fim de semana, quem joga na segunda
+  tem tudo por fazer.
+- **As substituições automáticas não estão contadas**, e a legenda diz isso: a API só as aplica
+  no fim da jornada (`subs` vem vazio a meio).
+- Os nomes de quem falta ficam **por baixo do nome da equipa**, não numa coluna própria — numa
+  coluna desapareceriam em ecrã estreito, que é onde isto mais se olha.
+
+Um teste meu falhou por estar mal escrito: comparei `feitos` (pontos) com uma contagem de
+jogadores. A verificação certa é que nenhum id do banco aparece na lista de quem falta.
+
 ## Sugestões da clássica: o que estava partido (2026-08-24)
 
 Reparo do utilizador: "as sugestões da parte clássica não parecem estar a funcionar". Estavam
