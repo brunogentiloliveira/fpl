@@ -8,7 +8,9 @@ Scout (negações e nomes ambíguos), a correspondência de nomes com acentos e
 apelidos compostos, e os dois formatos possíveis de /event/{ev}/live.
 """
 import json
+import io
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -181,6 +183,22 @@ def testa_pl():
               len(fd.sem_repetidos(itens)) == 2)
 
 
+# ---------- app.js: nomes de funções ----------
+
+def testa_nomes_funcoes():
+    print("Funções do app.js")
+    # Duas funções com o mesmo nome não dão erro em JS: a segunda silencia a
+    # primeira. Foi assim que `desenharTransferencias` do separador novo apagou
+    # a das sugestões da clássica, e a secção ficou vazia sem nada na consola.
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    js = io.open(os.path.join(base, "site", "app.js"), encoding="utf-8").read()
+    nomes = re.findall(r"^function\s+([A-Za-z_$][\w$]*)\s*\(", js, re.M)
+    repetidos = sorted({n for n in nomes if nomes.count(n) > 1})
+    verificar("nenhuma função de topo está declarada duas vezes",
+              not repetidos, repetidos)
+    verificar("o app.js tem funções para verificar", len(nomes) > 50)
+
+
 # ---------- mercado na Wikipedia ----------
 
 def testa_wiki():
@@ -274,6 +292,7 @@ def main():
     testa_nomes()
     testa_ffs()
     testa_live()
+    testa_nomes_funcoes()
     testa_pl()
     testa_wiki()
     testa_completar_historico()

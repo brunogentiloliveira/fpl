@@ -1405,6 +1405,8 @@ function initSugestoes() {
   } else {
     partes.push("A liga ainda não tem classificação");
   }
+  // A fila de waivers e os movimentos da liga são do Draft; na clássica não
+  // existem, e a frase antiga falava deles nos dois modos.
   partes.push("és o #" + (eu.waiver_pick ?? "?") + " na fila de waivers");
   const movs = (D.mercado && D.mercado.transacoes ? D.mercado.transacoes : [])
     .filter((t) => t.result === "a").length;
@@ -1781,6 +1783,87 @@ function desenharCapitao(meusX) {
  * por clube e, se gastar mais do que as transferências livres, render mais do
  * que os 4 pontos da penalização.
  */
+/**
+ * As melhores trocas possíveis, emparelhadas guloso (cada jogador entra ou sai
+ * uma vez só). Respeita o orçamento, a posição e o máximo por clube. Serve as
+ * sugestões de transferência e a decisão do wildcard, que é a mesma pergunta
+ * feita em bloco.
+ */
+function melhoresTransferencias(meusX, maximo) {
+  const equipa = minhaEquipaClassica();
+  if (!equipa || meusX.length === 0) return [];
+  const limiteClube = ((D.regras || {}).squad || {}).team_limit || 3;
+  const banco = equipa.banco || 0;
+  const porClube = {};
+  meusX.forEach((x) => { porClube[x.p.team] = (porClube[x.p.team] || 0) + 1; });
+
+  const candidatos = comProjecao(D.players.filter((p) =>
+    !meusX.some((x) => x.p.id === p.id) && !STATUS_FORA.has(p.status) && p.now_cost));
+
+  const ideias = [];
+  meusX.forEach((meu) => {
+    const orcamento = banco + precoDe(meu.p);
+    candidatos
+      .filter((c) => c.p.element_type === meu.p.element_type)
+      .filter((c) => precoDe(c.p) <= orcamento + 1e-9)
+      .filter((c) => c.p.team === meu.p.team || (porClube[c.p.team] || 0) < limiteClube)
+      .forEach((c) => {
+        const ganho = c.pr.ppjCal - meu.pr.ppjCal;
+        if (ganho > 0.2) {
+          ideias.push({ meu, entra: c, ganho, sobra: orcamento - precoDe(c.p) });
+        }
+      });
+  });
+  ideias.sort((a, b) => b.ganho - a.ganho);
+
+  const usados = new Set();
+  const escolhidas = [];
+  ideias.forEach((i) => {
+    if (usados.has(i.meu.p.id) || usados.has(i.entra.p.id) ||
+        escolhidas.length >= maximo) return;
+    usados.add(i.meu.p.id);
+    usados.add(i.entra.p.id);
+    escolhidas.push(i);
+  });
+  return escolhidas;
+}
+
+/**
+ * Vale a pena gastar o wildcard nesta jornada?
+ *
+ * O wildcard não vale pelo plantel ideal que permite montar — esse está sempre
+ * à frente do teu, porque o modelo tem opiniões e o plantel real tem história.
+ * Vale pelos **−4 que evita**: com uma transferência livre por jornada, fazer N
+ * mudanças de uma vez custa 4×(N−1) pontos. É isso que se mede aqui.
+ *
+ * Só contam as trocas que se pagariam a si próprias mesmo com a penalização
+ * (ganho × janela ≥ 4): as outras não seriam feitas de qualquer maneira, e
+ * incluí-las inflacionaria o caso a favor do chip.
+ */
+function analiseWildcard(meusX) {
+  const equipa = minhaEquipaClassica();
+  const custo = (D.classica || {}).custo_transferencia || 4;
+  if (!equipa || meusX.length === 0) return null;
+
+  const livres = equipa.transferencias_livres != null ? equipa.transferencias_livres : 1;
+  const janela = janelaAtual();
+  const trocas = melhoresTransferencias(meusX, 10);
+  const valem = trocas.filter((t) => t.ganho * janela >= custo);
+  // O ganho conta-se **no onze**, não na soma das trocas: quatro das saídas
+  // costumam ser do banco, e trocar quem não joga não dá pontos nenhuns.
+  const depois = meusX.filter((x) => !valem.some((t) => t.meu.p.id === x.p.id))
+    .concat(valem.map((t) => t.entra));
+  const ganho = valorXI(depois) - valorXI(meusX);
+  const penalizacao = Math.max(0, valem.length - livres) * custo;
+
+  // Três condições: muitas mudanças a precisar de ser feitas, uma fatura de
+  // penalizações que justifique queimar o chip, e um ganho no onze que a pague
+  // dentro da janela (senão está-se a gastar o chip por causa do banco).
+  const usar = valem.length >= 4 && penalizacao >= 2 * custo &&
+    ganho * janela >= penalizacao;
+  return { trocas: valem, quantas: valem.length, ganho, penalizacao, livres, janela, usar };
+}
+
 function desenharTransferencias(meusX) {
   const equipa = minhaEquipaClassica();
   const squad = (D.regras || {}).squad || {};
@@ -1811,37 +1894,7 @@ function desenharTransferencias(meusX) {
 
   const banco = equipa.banco || 0;
   const livres = equipa.transferencias_livres != null ? equipa.transferencias_livres : 1;
-  const porClube = {};
-  meusX.forEach((x) => { porClube[x.p.team] = (porClube[x.p.team] || 0) + 1; });
-
-  const candidatos = comProjecao(D.players.filter((p) =>
-    !meusX.some((x) => x.p.id === p.id) && !STATUS_FORA.has(p.status) && p.now_cost));
-
-  const ideias = [];
-  meusX.forEach((meu) => {
-    const orcamento = banco + precoDe(meu.p);
-    candidatos
-      .filter((c) => c.p.element_type === meu.p.element_type)
-      .filter((c) => precoDe(c.p) <= orcamento + 1e-9)
-      .filter((c) => c.p.team === meu.p.team ||
-        (porClube[c.p.team] || 0) < limiteClube)
-      .forEach((c) => {
-        const ganho = c.pr.ppjCal - meu.pr.ppjCal;
-        if (ganho > 0.2) {
-          ideias.push({ meu, entra: c, ganho, sobra: orcamento - precoDe(c.p) });
-        }
-      });
-  });
-  ideias.sort((a, b) => b.ganho - a.ganho);
-
-  const usados = new Set();
-  const escolhidas = [];
-  ideias.forEach((i) => {
-    if (usados.has(i.meu.p.id) || usados.has(i.entra.p.id) || escolhidas.length >= 5) return;
-    usados.add(i.meu.p.id);
-    usados.add(i.entra.p.id);
-    escolhidas.push(i);
-  });
+  const escolhidas = melhoresTransferencias(meusX, 5);
 
   $("tr-resumo").textContent = banco.toFixed(1) + "M no banco · " + livres +
     " transferência" + (livres === 1 ? "" : "s") + " livre" + (livres === 1 ? "" : "s");
@@ -1876,6 +1929,7 @@ function desenharTransferencias(meusX) {
 /** Chips: quanto valeria usá-los nesta jornada. */
 function desenharChips(meusX) {
   const equipa = minhaEquipaClassica();
+  const custoChip = (D.classica || {}).custo_transferencia || 4;
   const chips = (D.classica || {}).chips || [];
   const usados = new Set((equipa && equipa.chips_usados || []).map((c) => c.chip));
   const ev = D.next_event && D.next_event.id;
@@ -1901,8 +1955,36 @@ function desenharChips(meusX) {
         : "Triplica o capitão: guarda para quem tenha jornada dupla e bom calendário.";
     }
     if (nome === "wildcard") {
-      return "Refaz o plantel sem custo. Usa quando tiveres três ou mais transferências " +
-        "necessárias ao mesmo tempo.";
+      const w = analiseWildcard(meusX);
+      if (!w) {
+        return "Refaz o plantel sem custo. Usa quando tiveres várias transferências " +
+          "necessárias ao mesmo tempo.";
+      }
+      const conta = w.quantas + " troca" + (w.quantas === 1 ? "" : "s") +
+        " compensam nas próximas " + w.janela + " jornadas" +
+        (w.quantas ? " (" + w.trocas.slice(0, 3).map((t) =>
+          esc(t.meu.p.web_name) + "→" + esc(t.entra.p.web_name)).join(", ") +
+          (w.quantas > 3 ? ", …" : "") + ")" : "");
+      if (w.usar) {
+        return "<strong>Usa nesta jornada.</strong> " + conta + ", e o teu onze sobe " +
+          w.ganho.toFixed(1) + " pts por jornada. Feitas à mão custariam −" + w.penalizacao +
+          " pts de penalização (tens " + w.livres + " transferência" +
+          (w.livres === 1 ? "" : "s") + " livre" + (w.livres === 1 ? "" : "s") +
+          "); o wildcard faz as mesmas de graça. Conta com a projeção estar certa, " +
+          "e o chip só se usa uma vez.";
+      }
+      if (w.quantas === 0) {
+        return "<strong>Guarda-o.</strong> Nenhuma troca compensa a penalização de −" +
+          custoChip + " pts agora, portanto não há nada que o wildcard resolva.";
+      }
+      const porque = w.quantas >= 4 && w.ganho * w.janela < w.penalizacao
+        ? " As trocas que faltam são quase todas de banco, e o banco não pontua."
+        : "";
+      return "<strong>Guarda-o.</strong> Só " + conta + " — dá para as fazer com as " +
+        "transferências livres" + (w.penalizacao ? " e −" + w.penalizacao + " pts" : "") +
+        "." + porque + " O wildcard vale a pena quando forem quatro ou mais ao mesmo " +
+        "tempo e o onze subir o suficiente para pagar as penalizações, ou quando uma " +
+        "vaga de lesões te obrigar.";
     }
     if (nome === "freehit") {
       return "Plantel só por uma jornada, volta ao normal a seguir. Serve para jornadas " +
@@ -2054,12 +2136,45 @@ function desenharMelhorPlantel() {
         precoDe(x.p).toFixed(1) + "M)").join(" · ") + "</p>";
 }
 
+/** Onde estou: mini-liga, classificação geral e orçamento. */
+function contextoClassica(equipa) {
+  const ev = D.next_event ? D.next_event.name : "próxima jornada";
+  $("sug-titulo").textContent = "Sugestões para a " + ev;
+  if (!equipa) {
+    $("sug-contexto").textContent =
+      "Sem FPL_ENTRY_ID: as sugestões são gerais, não para o teu plantel.";
+    return;
+  }
+  const partes = [esc(equipa.nome) + " · " + equipa.pontos + " pts"];
+  if (equipa.classificacao) {
+    partes.push(equipa.classificacao.toLocaleString("pt-PT") + "º no geral");
+  }
+  const liga = ligaClassica();
+  const eu = liga && (liga.participantes || []).find((x) => x.entry === equipa.id);
+  if (eu && liga) {
+    const lider = liga.participantes.reduce((a, b) => (a.total >= b.total ? a : b));
+    const dif = lider.total - eu.total;
+    partes.push(eu.rank + "º em " + liga.participantes.length + " na " + esc(liga.nome) +
+      (dif > 0 ? " (a " + dif + " do líder)" : " — és o líder"));
+  }
+  $("sug-contexto").textContent = partes.join(" · ") + ".";
+}
+
 function initClassica() {
   if (!ehClassica()) return;
   const equipa = minhaEquipaClassica();
   const meusIds = new Set((equipa && equipa.picks || []).map((x) => x.id));
   const meusX = comProjecao(D.players.filter((p) => meusIds.has(p.id)));
-  if (meusX.length === 0) desenharMelhorPlantel();
+  contextoClassica(equipa);
+  // O plantel ideal só interessa quando não há equipa carregada (era a versão
+  // do deadline); com plantel, a decisão útil são as transferências.
+  const semEquipa = meusX.length === 0;
+  const blocoOtimo = $("bloco-otimo");
+  if (blocoOtimo) blocoOtimo.hidden = !semEquipa;
+  if (semEquipa) desenharMelhorPlantel();
+  // "Livres" é vocabulário do Draft: na clássica todos se compram por um preço.
+  const tituloLivres = $("titulo-livres");
+  if (tituloLivres) tituloLivres.textContent = "Melhores opções do mercado";
   desenharCapitao(meusX);
   desenharTransferencias(meusX);
   desenharChips(meusX);
@@ -2646,7 +2761,7 @@ function semAcentos(txt) {
     .replace(/[øđłßæœþ]/g, (c) => LETRAS_SOLTAS[c]);
 }
 
-function desenharTransferencias() {
+function desenharTabelaTransferencias() {
   const corpo = document.querySelector("#tabela-transf tbody");
   if (!corpo) return;
   const lista = transferenciasFiltradas();
@@ -2701,9 +2816,9 @@ function desenharTransferencias() {
 function initTransferencias() {
   const form = $("form-transf");
   if (!form) return;
-  form.addEventListener("input", desenharTransferencias);
+  form.addEventListener("input", desenharTabelaTransferencias);
   form.addEventListener("submit", (ev) => ev.preventDefault());
-  desenharTransferencias();
+  desenharTabelaTransferencias();
 }
 
 function initMercado() {

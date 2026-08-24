@@ -331,6 +331,46 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Sugestões da clássica: o que estava partido (2026-08-24)
+
+Reparo do utilizador: "as sugestões da parte clássica não parecem estar a funcionar". Estavam
+mesmo, e a causa principal foi **regressão minha da véspera**.
+
+- **Colisão de nomes.** Criei `desenharTransferencias()` para o separador Transferências novo e
+  já existia uma função com esse nome para as sugestões da clássica. Em JS isto **não dá erro**:
+  a segunda declaração silencia a primeira por hoisting. Resultado: a secção "Transferências"
+  das sugestões ficava com o título e nada por baixo, e a consola limpa. A do separador passou a
+  `desenharTabelaTransferencias()`. **Há agora um teste** (`testa_nomes_funcoes`) que lê o app.js
+  e falha se houver dois `function` de topo com o mesmo nome — teria apanhado isto.
+- **Vocabulário do Draft no modo clássico**: o contexto dizia "és o #? na fila de waivers" (não
+  há waivers na clássica) e a tabela chamava-se "Melhores livres" (na clássica todos se compram).
+  `contextoClassica()` mostra agora equipa, pontos, classificação geral e o lugar na mini-liga.
+- **Ordem das secções.** Capitão, Transferências e Chips — as três decisões da jornada — estavam
+  **por baixo** da Precisão do modelo e do plantel ideal. Subiram para logo a seguir ao onze.
+- **"Melhor plantel possível"** era a versão feita à pressa no deadline, quando o `FPL_ENTRY_ID`
+  ainda não era conhecido. Com plantel carregado não serve para nada e passou a ficar escondido
+  (`#bloco-otimo`), em vez de aparecer com o título e o corpo vazio.
+
+## Quando usar o wildcard (2026-08-24, pedido do utilizador)
+
+O chip deixou de ter um texto genérico e passa a olhar para o plantel. `analiseWildcard()`.
+
+**O raciocínio, que não é o óbvio**: o wildcard *não* vale pelo plantel ideal que permite montar
+— esse está sempre à frente do teu, porque o modelo tem opiniões e um plantel real tem história.
+Vale pelos **−4 que evita**: com uma transferência livre por jornada, fazer N mudanças de uma vez
+custa `4 × (N − 1)` pontos.
+
+- Só contam as trocas que **se pagariam a si próprias mesmo com a penalização**
+  (`ganho × janela ≥ 4`); as outras não seriam feitas de qualquer maneira e inflacionariam o caso
+  a favor do chip.
+- **O ganho conta-se no onze** (`valorXI` antes/depois), não na soma das trocas. Isto apanhou um
+  erro grosseiro na primeira versão: das 6 trocas sugeridas, **4 eram de jogadores do banco**, e
+  trocar quem não joga não dá pontos nenhuns. O número passou de 10.1 para **4.1 pts/jornada** —
+  a diferença é real porque as saídas do banco libertam orçamento para o onze.
+- **Veredicto com três condições**: ≥ 4 trocas a compensar, penalização ≥ 8 pts, e o ganho no
+  onze a pagar a penalização dentro da janela. Quando não recomenda, diz porquê — incluindo o
+  caso "as trocas que faltam são quase todas de banco, e o banco não pontua".
+
 ## Onde estão os valores das transferências (2026-08-23)
 
 Primeira versão do separador tinha **7 valores em 100**. O utilizador reparou e mandou alargar a

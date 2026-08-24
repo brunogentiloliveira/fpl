@@ -316,6 +316,17 @@ verificar("texto vazio não rebenta", semAcentos(null) === "");
   D.mercado.transferencias_feitas = guardado;
 })();
 
+/* --- Wildcard: o ganho conta-se no onze, não na soma das trocas --- */
+(function () {
+  if (typeof analiseWildcard !== "function") return;
+  const guardado = D.classica;
+  // Sem equipa clássica não há análise nenhuma, e não pode rebentar.
+  D.classica = undefined;
+  verificar("sem equipa clássica, o wildcard não é analisado",
+    analiseWildcard([]) === null);
+  D.classica = guardado;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 
