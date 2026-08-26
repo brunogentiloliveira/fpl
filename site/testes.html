@@ -361,6 +361,28 @@ verificar("texto vazio não rebenta", semAcentos(null) === "");
   D.jornadas = guardadoJ; D.picks_jornada = guardadoP;
 })();
 
+/* --- A justificação de quem sai tem de bater certo com os números --- */
+(function () {
+  const faz = (pp90, xmin) => ({ p: { status: "a", web_name: "X" },
+    pr: { pp90: pp90, xmin: xmin, ffs: null, naoUsado: false, ultimos: [], pe: null,
+          jogosObs: 5 } });
+  // O caso real: o Ødegaard rendia MAIS por 90 e a frase dizia "abaixo da
+  // alternativa" com os números ao lado a dizer o contrário.
+  const texto = porqueSai(faz(4.9, 64), faz(4.4, 80));
+  verificar("não afirma que rende menos quando rende mais",
+    texto.indexOf("abaixo da alternativa") < 0, texto);
+  verificar("diz que o motivo são os minutos",
+    /min/.test(texto) && texto.indexOf("64") >= 0 && texto.indexOf("80") >= 0, texto);
+  const igual = porqueSai(faz(4.5, 60), faz(4.6, 85));
+  verificar("com rendimento igual, aponta os minutos",
+    igual.indexOf("mesmo por 90") >= 0, igual);
+  const pior = porqueSai(faz(3.0, 80), faz(5.0, 80));
+  verificar("quando rende mesmo menos, di-lo com os dois números",
+    pior.indexOf("3.0") >= 0 && pior.indexOf("5.0") >= 0, pior);
+  verificar("sem alternativa não inventa comparação",
+    porqueSai(faz(4.9, 64)).indexOf("alternativa") < 0);
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

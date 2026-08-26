@@ -515,29 +515,57 @@ def _texto_celula(html_celula):
     return " ".join(txt.split()).strip()
 
 
-def parse_wiki_transferencias(html):
-    """Tabela da Wikipedia -> [{data, jogador, de, para, valor}].
+# A página tem duas tabelas com esquemas diferentes: a das transferências
+# (Date, Player, Moving from, Moving to, Fee) e a dos **empréstimos**
+# (Start date, End date, Name, Moving from, Moving to), que não tem valor.
+# Lê-las pela posição das colunas trocava tudo na segunda — o "Ethan Wheatley"
+# aparecia com "30 June 2027" no lugar do nome.
+WIKI_COLUNAS = {
+    "date": "data", "start date": "data", "player": "jogador", "name": "jogador",
+    "moving from": "de", "moving to": "para", "fee": "valor",
+}
 
-    A coluna da data usa `rowspan` para agrupar as transferências do mesmo dia,
-    por isso as linhas seguintes só têm 4 células e herdam a data — sem isso
-    apanhavam-se 77 das 824 linhas."""
+
+def parse_wiki_transferencias(html):
+    """Tabelas da Wikipedia -> [{data, jogador, de, para, valor}].
+
+    As colunas são identificadas pelo **cabeçalho**, não pela ordem. A coluna
+    da data usa `rowspan` para agrupar o mesmo dia: as linhas seguintes trazem
+    menos células e herdam as da esquerda — sem isso apanhavam-se 77 das 824."""
     saida = []
     for tabela in re.findall(
             r'<table[^>]*class="[^"]*wikitable[^"]*"[^>]*>(.*?)</table>', html, re.S):
-        data = None
-        for linha in re.findall(r"<tr[^>]*>(.*?)</tr>", tabela, re.S):
+        linhas = re.findall(r"<tr[^>]*>(.*?)</tr>", tabela, re.S)
+        if not linhas:
+            continue
+        cabecalho = [WIKI_COLUNAS.get(_texto_celula(c).lower())
+                     for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linhas[0], re.S)]
+        if "jogador" not in cabecalho or "para" not in cabecalho:
+            continue
+        emprestimos = "valor" not in cabecalho
+        anterior = {}
+        for linha in linhas[1:]:
             cel = [_texto_celula(c) for c in
                    re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linha, re.S)]
-            if not cel or cel[0] == "Date":
+            if not cel:
                 continue
-            if len(cel) >= 5:
-                data, jog, de, para, valor = cel[0], cel[1], cel[2], cel[3], cel[4]
-            elif len(cel) == 4 and data:
-                jog, de, para, valor = cel
-            else:
+            # Menos células do que colunas: as da esquerda vieram de um rowspan.
+            herdadas = len(cabecalho) - len(cel)
+            if herdadas < 0:
                 continue
-            saida.append({"data": data, "jogador": jog, "de": de,
-                          "para": para, "valor": valor})
+            reg = {}
+            for i, campo in enumerate(cabecalho):
+                if not campo:
+                    continue
+                reg[campo] = anterior.get(campo, "") if i < herdadas else cel[i - herdadas]
+            if not reg.get("jogador") or not reg.get("para"):
+                continue
+            anterior = reg
+            saida.append({
+                "data": reg.get("data", ""), "jogador": reg["jogador"],
+                "de": reg.get("de", ""), "para": reg["para"],
+                "valor": "Loan" if emprestimos else reg.get("valor", ""),
+            })
     return saida
 
 
@@ -563,6 +591,8 @@ def valor_wiki(txt):
         return 0, "", "livre"
     if "undisclos" in baixo:
         return 0, "", "nd"
+    if "loan" in baixo:
+        return 0, "", "emprestimo"
     return 0, "", "outro"
 
 
@@ -601,7 +631,7 @@ def fetch_wikipedia_transferencias(players, ano):
     O cruzamento exige que **todas** as palavras do nome da Wikipedia estejam no
     nome completo do jogador do FPL. É restritivo de propósito: nas 824 linhas
     deu 117 correspondências e **zero ambiguidades**."""
-    porJogador = {}
+    porJogador, soltas = {}, []
     for janela in (f"summer_{ano}", f"winter_{ano}%E2%80%93{str(ano + 1)[-2:]}"):
         try:
             req = urllib.request.Request(
@@ -628,17 +658,24 @@ def fetch_wikipedia_transferencias(players, ano):
                 continue
             cands = [p for p in players
                      if _tokens_nome(f'{p["first_name"]} {p["second_name"]}') >= alvo]
-            if len(cands) != 1:
-                continue
             valor, moeda, tipo = valor_wiki(r["valor"])
-            porJogador[str(cands[0]["id"])] = {
+            reg = {
                 "data": data_wiki_para_iso(r["data"]), "de": r["de"], "para": r["para"],
                 "valor": valor, "moeda": moeda, "tipo": tipo,
             }
+            if len(cands) == 1:
+                porJogador[str(cands[0]["id"])] = reg
+            elif not cands:
+                # Sem jogador na FPL não há nada a dizer ao modelo, mas a
+                # transferência existe e interessa ver: ou é um reforço que a
+                # FPL ainda não acrescentou, ou uma saída da liga (o Højlund
+                # para o Nápoles por £38M não aparecia em lado nenhum).
+                soltas.append(dict(reg, nome=r["jogador"]))
     registar("Wikipedia · mercado", bool(porJogador),
              f"{len(porJogador)} jogadores; "
-             f"{sum(1 for v in porJogador.values() if v['tipo'] == 'valor')} com valor")
-    return porJogador
+             f"{sum(1 for v in porJogador.values() if v['tipo'] == 'valor')} com valor; "
+             f"{len(soltas)} sem jogador na FPL")
+    return porJogador, soltas
 
 
 # O Guardian tem um feed dedicado ao mercado, e é de longe o que mais valores
@@ -685,7 +722,7 @@ def fetch_valores_guardian(players):
 
 
 def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=None,
-                          wiki=None):
+                          wiki=None, soltas=None):
     """Transferências concluídas, para o separador Transferências.
 
     Junta as duas fontes: os artigos oficiais da PL (que confirmam o negócio
@@ -755,14 +792,21 @@ def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=N
         pid = int(chave)
         if pid not in feitas:
             juntar(pid, "", "", w.get("data"), None, None, False)
-    lista = sorted(feitas.values(), key=lambda t: t["data"] or "", reverse=True)
+    # Negócios que a FPL ainda não conhece (reforços acabados de fechar) ou que
+    # já não lhe pertencem (saídas da liga). Entram com o nome da Wikipedia e
+    # sem `jogador`, porque não há nenhum a que os ligar.
+    avulso = [dict(t, jogador=None, titulo="", link="", saiu=False, oficial=True)
+              for t in (soltas or []) if not desde or (t.get("data") or "") >= desde]
+    lista = sorted(list(feitas.values()) + avulso,
+                   key=lambda t: t["data"] or "", reverse=True)
     registar("Transferências concluídas", bool(lista),
              f"{len(lista)} jogadores; {sum(1 for t in lista if t['valor'])} com valor; "
              f"{sum(1 for t in lista if t['oficial'])} confirmados pela PL")
     return lista
 
 
-def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wiki=None):
+def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wiki=None,
+                            soltas=None):
     """Transferências confirmadas pela fonte oficial.
 
     O `extrair_transferencias` decide "confirmada" por regex nos títulos da
@@ -825,7 +869,7 @@ def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wi
         if alvo and alvo.get("confirmada") and (w.get("valor") or 0) > (alvo.get("valor") or 0):
             alvo.update(valor=w["valor"], moeda=w["moeda"])
     return achados, transferencias_feitas(players, artigos, achados, desde,
-                                          valores_extra, wiki)
+                                          valores_extra, wiki, soltas)
 
 
 def fetch_feeds_clubes():
@@ -1405,11 +1449,12 @@ def main():
     desde = ((datetime.fromisoformat(primeira.replace("Z", "+00:00")) -
               timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
              if primeira else None)
+    wiki_transf, wiki_soltas = fetch_wikipedia_transferencias(
+        players, int(primeira[:4]) if primeira else 2026)
     transf_modelo, transf_feitas = fetch_pl_transferencias(
         players, extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
-        desde, fetch_valores_guardian(players),
-        fetch_wikipedia_transferencias(players, int(primeira[:4]) if primeira else 2026))
+        desde, fetch_valores_guardian(players), wiki_transf, wiki_soltas)
 
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -1254,7 +1254,16 @@ function minutosRecentes(pr) {
   return pr.ultimos.map((u) => u.minutos + "'").join(", ");
 }
 
-function porqueSai(x) {
+/**
+ * Porque é que este jogador sai, dita a verdade sobre a alternativa.
+ *
+ * A frase-tampão antiga dizia sempre "rende X pts por 90 min, abaixo da
+ * alternativa" — e chegou a aparecer com o Ødegaard a 4.9 contra um Scott a
+ * 4.4, ou seja a afirmar o contrário dos números que estavam ao lado. Quando o
+ * rendimento por 90 é parecido, o motivo real são quase sempre os **minutos**,
+ * e é isso que tem de estar escrito.
+ */
+function porqueSai(x, entra) {
   const est = estadoDe(x.p);
   if (STATUS_FORA.has(x.p.status)) {
     return "está " + est.rotulo.toLowerCase() + " e não pontua";
@@ -1279,7 +1288,27 @@ function porqueSai(x) {
   if (x.pr.xmin < 55) {
     return "só deve jogar cerca de " + Math.round(x.pr.xmin) + " min por jornada";
   }
-  return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min, abaixo da alternativa";
+  if (entra) {
+    const dPp90 = entra.pr.pp90 - x.pr.pp90;
+    const dMin = entra.pr.xmin - x.pr.xmin;
+    // Rendimento parecido (menos de 0.3 pts/90 de diferença) e minutos a
+    // separá-los: é a situação mais comum, e a que a frase antiga escondia.
+    if (Math.abs(dPp90) < 0.3 && dMin >= 5) {
+      return "rende o mesmo por 90 minutos (" + x.pr.pp90.toFixed(1) + " contra " +
+        entra.pr.pp90.toFixed(1) + "), mas espera-se que jogue menos: " +
+        Math.round(x.pr.xmin) + " min por jornada contra " + Math.round(entra.pr.xmin);
+    }
+    if (dPp90 > 0) {
+      return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min, contra " +
+        entra.pr.pp90.toFixed(1) + " da alternativa";
+    }
+    if (dMin >= 5) {
+      return "rende mais por 90 minutos (" + x.pr.pp90.toFixed(1) + " contra " +
+        entra.pr.pp90.toFixed(1) + "), mas deve jogar menos: " +
+        Math.round(x.pr.xmin) + " min contra " + Math.round(entra.pr.xmin);
+    }
+  }
+  return "rende " + x.pr.pp90.toFixed(1) + " pts por 90 min";
 }
 
 /** A pré-época pesa cada vez menos; passados 3 jogos deixa de valer a pena cita-la. */
@@ -1426,7 +1455,8 @@ function initSugestoes() {
         ? '<p class="aviso-sug">⚠ Recuperado, ' + esc(s.meu.p.web_name) + " projeta " +
           saudavel.toFixed(1) + " pts/J — só compensa se a ausência for longa.</p>"
         : "";
-      const explicacao = "<strong>" + esc(s.meu.p.web_name) + "</strong> " + porqueSai(s.meu) +
+      const explicacao = "<strong>" + esc(s.meu.p.web_name) + "</strong> " +
+        porqueSai(s.meu, s.livre) +
         ". <strong>" + esc(s.livre.p.web_name) + "</strong> " + porqueEntra(s.livre) +
         ". A troca vale mais <strong>" + s.ganho.toFixed(1) +
         " pontos por jornada</strong> (" + s.ganhoCal.toFixed(1) +
@@ -1447,7 +1477,7 @@ function initSugestoes() {
     $("sug-trocas").innerHTML = trocas.map((t) => {
       const ganhas = "Ganhas porque <strong>" + esc(t.deles.p.web_name) + "</strong> " +
         porqueEntra(t.deles) + ", enquanto <strong>" + esc(t.meu.p.web_name) + "</strong> " +
-        porqueSai(t.meu) + " — o teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) +
+        porqueSai(t.meu, t.deles) + " — o teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) +
         " pontos por jornada</strong>.";
       const aceita = t.tipo === "ambos"
         ? " Ele também tem interesse: o onze dele sobe " + t.ganhoDeles.toFixed(1) +
@@ -2826,8 +2856,8 @@ function transferenciasFiltradas() {
     if (soValor && t.tipo !== "valor") return false;
     if (!procura) return true;
     const p = jogadoresPorId[t.jogador] || {};
-    const alvo = semAcentos([p.web_name, p.first_name, p.second_name,
-      nomeClube(p.team), t.de, t.para, t.titulo].join(" "));
+    const alvo = semAcentos([p.web_name, p.first_name, p.second_name, t.nome,
+      t.jogador ? nomeClube(p.team) : "", t.de, t.para, t.titulo].join(" "));
     return alvo.indexOf(procura) >= 0;
   });
 }
@@ -2854,7 +2884,9 @@ function desenharTabelaTransferencias() {
     ? todas.length + " nesta janela de mercado" : "";
   $("transf-legenda").textContent = todas.length
     ? "Negócios desde a abertura do mercado, do mais recente para o mais antigo. " +
-      comValor + " dos " + todas.length + " têm valor: a tabela do mercado inglês na " +
+      comValor + " dos " + todas.length + " têm valor. Inclui negócios de jogadores que a " +
+      "FPL ainda não tem na base de dados (reforços acabados de fechar) e saídas da liga. " +
+      "A tabela do mercado inglês na " +
       "Wikipedia é a única fonte com a janela toda (os feeds de notícias só trazem " +
       "as últimas duas semanas). “Livre” e “n/d” vêm de lá tal e qual — não são " +
       "valores em falta. O distintivo PL marca os negócios que a Premier League " +
@@ -2863,17 +2895,23 @@ function desenharTabelaTransferencias() {
   $("nota-transf").hidden = lista.length > 0;
   $("tabela-transf").hidden = lista.length === 0;
 
+  const ROTULO_TIPO = { livre: "livre", nd: "n/d", emprestimo: "empréstimo" };
   corpo.innerHTML = lista.map((t) => {
     const p = jogadoresPorId[t.jogador];
-    if (!p) return "";
+    // Sem jogador da FPL, o nome vem da Wikipedia: ou é um reforço acabado de
+    // fechar que a FPL ainda não acrescentou, ou alguém que saiu da liga.
+    const nome = p ? p.web_name : (t.nome || "—");
+    const sub = p
+      ? (POSICOES[p.element_type] || "?") +
+        (t.saiu ? ' · <span class="estado bad">saiu da liga</span>' : "")
+      : '<span class="fora-fpl">fora da FPL</span>';
     const data = t.data ? fmtDataCurta.format(new Date(t.data)) : "—";
     const valor = t.tipo === "valor"
       ? '<span class="forte">' + esc(t.moeda) + t.valor.toFixed(t.valor < 10 ? 1 : 0) + "M</span>"
-      : t.tipo === "livre" ? '<span class="sub">livre</span>'
-      : t.tipo === "nd" ? '<span class="sub">n/d</span>' : "—";
+      : ROTULO_TIPO[t.tipo] ? '<span class="sub">' + ROTULO_TIPO[t.tipo] + "</span>" : "—";
     const rota = t.de || t.para
       ? esc(t.de || "?") + ' <span class="seta">→</span> ' + esc(t.para || "?")
-      : '<span class="sub">' + esc(nomeClube(p.team)) + "</span>";
+      : '<span class="sub">' + esc(p ? nomeClube(p.team) : "") + "</span>";
     const noticia = t.link
       ? '<span class="fonte-noticia">' + (t.oficial ? "PL" : "Sky") + "</span> " +
         '<a href="' + esc(t.link) + '" target="_blank" rel="noopener">' +
@@ -2883,11 +2921,9 @@ function desenharTabelaTransferencias() {
       '<td class="data">' + data + "</td>" +
       "<td>" + (t.link
           ? '<a href="' + esc(t.link) + '" target="_blank" rel="noopener" title="' +
-            esc(t.titulo) + '">' + esc(p.web_name) + "</a>"
-          : esc(p.web_name)) +
-        '<span class="sub">' + (POSICOES[p.element_type] || "?") +
-          (t.saiu ? ' · <span class="estado bad">saiu da liga</span>' : "") +
-        "</span></td>" +
+            esc(t.titulo) + '">' + esc(nome) + "</a>"
+          : esc(nome)) +
+        '<span class="sub">' + sub + "</span></td>" +
       '<td class="rota">' + rota + "</td>" +
       '<td class="num">' + valor + "</td>" +
       '<td class="col-noticia">' + noticia + "</td>" +

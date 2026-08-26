@@ -331,6 +331,46 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## O que faltava nas transferências, e a frase que se contradizia (2026-08-26)
+
+Dois reparos do utilizador, ambos certos.
+
+**"Uma transferência do City não aparece."** A tabela era indexada por jogadores da FPL, e
+descartava tudo o resto — **185 negócios com um clube da PL de um dos lados**, incluindo o
+Højlund para o Nápoles por £38M. São dois casos: reforços acabados de fechar que a FPL ainda
+não tem na base de dados, e saídas da liga. Passam a entrar com o nome da Wikipedia e o
+distintivo "fora da FPL"; `jogador` fica a `null` e o modelo ignora-os, que é o correto.
+De 128 para **313 transferências, 88 com valor**.
+
+*O caso concreto (Bouaddi, do Lille para o City, £86M) ainda assim não aparecia*: fechou às
+11:15 desse dia e nessa altura **não estava nem na FPL nem na Wikipedia**. Está nas notícias do
+Mercado, que vêm do live blog, e entra na tabela quando uma fonte estruturada o listar.
+
+**Duas tabelas, dois esquemas.** A página da Wikipedia tem a das transferências
+(Date · Player · Moving from · Moving to · Fee) e a dos **empréstimos**
+(Start date · End date · Name · Moving from · Moving to), sem coluna de valor. Ler pela posição
+punha a data no lugar do nome ("30 June 2027" como jogador). `WIKI_COLUNAS` mapeia pelo
+**cabeçalho**, e o rowspan passa a ser resolvido contando as células em falta à esquerda.
+94 empréstimos identificados como tal.
+
+**"Mandas trocar o Ødegaard pelo Scott, não faz sentido."** A sugestão em si é marginal (0.43
+contra um limiar de 0.4), mas **a frase estava errada**: dizia *"Ødegaard rende 4.9 pts por 90
+min, abaixo da alternativa"* com o Scott a **4.4** ao lado. Era uma frase-tampão que nunca olhava
+para os números. `porqueSai(x, entra)` passa a receber a alternativa e a dizer o motivo real:
+*"rende mais por 90 minutos (4.9 contra 4.4), mas deve jogar menos: 64 min contra 80"*.
+
+O motivo é mesmo esse: **por 90 minutos o modelo dá-lhes exatamente o mesmo** (4.59 os dois),
+com composições opostas — o Ødegaard em golos, assistências e bónus, o Scott em contribuição
+defensiva (1.19 contra 0.11). A diferença toda está nos minutos, e vem de a época passada ter
+sido de 34 titularidades para o Scott e 16 para o Ødegaard. **O modelo não distingue "faltou por
+lesão" de "não era titular"** — é o seu ponto cego aqui, e cada jornada em que o Ødegaard
+comece reduz o peso desse prior.
+
+**A contribuição defensiva foi validada contra a GW1**, já que dela dependia o caso do Scott:
+128 jogadores com 60+ minutos, previsto 18.5% contra 17.2% real, calibrado por faixa (5%→5%,
+28%→24%, 50%→57%) e com MAE 0.218 contra 0.285 de dar a média a todos. Uma jornada é pouco,
+mas a Poisson não está a mentir.
+
 ## Transfer Centre ao vivo do Sky (2026-08-26, página indicada pelo utilizador)
 
 `https://www.skysports.com/transfer-centre` — a mesma coisa que o live blog que o utilizador

@@ -314,6 +314,28 @@ def testa_wiki():
     verificar("valor não divulgado", fd.valor_wiki("Undisclosed")[2] == "nd")
     verificar("campo vazio não vira zero com valor", fd.valor_wiki("")[2] == "outro")
 
+    # A segunda tabela da página é de empréstimos e tem outro esquema: sem
+    # coluna de valor e com duas de data. Lida pela posição, o nome do jogador
+    # saía na coluna da data.
+    emprestimos = """
+    <table class="wikitable">
+    <tr><th>Start date</th><th>End date</th><th>Name</th>
+        <th>Moving from</th><th>Moving to</th></tr>
+    <tr><td>4 February 2026</td><td>30 June 2026</td><td>Tomas Kalinauskas</td>
+        <td>Burton Albion</td><td>Roda JC</td></tr>
+    </table>"""
+    emp = fd.parse_wiki_transferencias(emprestimos)
+    verificar("tabela de empréstimos: o nome vem da coluna certa",
+              emp and emp[0]["jogador"] == "Tomas Kalinauskas", emp and emp[0])
+    verificar("empréstimo fica marcado como tal",
+              emp and fd.valor_wiki(emp[0]["valor"])[2] == "emprestimo")
+    verificar("data do empréstimo é a de início",
+              emp and emp[0]["data"] == "4 February 2026")
+    verificar("tabela sem colunas reconhecíveis é ignorada",
+              fd.parse_wiki_transferencias(
+                  '<table class="wikitable"><tr><th>A</th><th>B</th></tr>'
+                  "<tr><td>1</td><td>2</td></tr></table>") == [])
+
 
 # ---------- retrato da época passada ----------
 
