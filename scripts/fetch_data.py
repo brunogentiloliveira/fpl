@@ -163,6 +163,79 @@ def ler_rss(url, limite=20):
     return itens
 
 
+# O Transfer Centre ao vivo. É a página que o utilizador indicou, e traz coisas
+# que o RSS não tem: as entradas minuto a minuto (9 dos 10 itens não estavam no
+# feed 12691) e o **corpo completo** de cada uma, que é onde os valores estão
+# escritos ("in a record-breaking £86m move from Lille").
+#
+# Duas decisões que a tornam robusta:
+#  - o endereço é `/transfer-centre`, que é estável e já traz o JSON-LD; o URL
+#    do live blog tem um id que o Sky roda (12476234 hoje, outro amanhã);
+#  - lê-se o `LiveBlogPosting` de schema.org, publicado de propósito para
+#    máquinas, em vez de raspar HTML que é montado por JavaScript.
+# O robots.txt permite `/transfer-centre` e o caminho dos live blogs; só veda
+# `/api/` e um caminho `live-blog-beta`.
+SKY_AO_VIVO = "https://www.skysports.com/transfer-centre"
+# Chega para apanhar o valor, que vem na primeira frase, sem arrastar o artigo
+# todo — quanto mais texto, mais nomes de outros jogadores a confundir a
+# atribuição do valor.
+LIVEBLOG_RESUMO = 400
+
+
+def _limpar_html(txt):
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", txt or "")).split())
+
+
+def liveblog_itens(doc):
+    """HTML da página -> entradas do live blog, no formato dos itens de RSS.
+
+    Lê o `LiveBlogPosting` de schema.org e não o HTML visível, que é montado
+    por JavaScript e não existe no que a página devolve."""
+    blog = None
+    for bloco in re.findall(
+            r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', doc, re.S):
+        try:
+            d = json.loads(bloco)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("@type") == "LiveBlogPosting":
+            blog = d
+            break
+    if not blog:
+        return []
+    itens = []
+    for e in blog.get("liveBlogUpdate") or []:
+        titulo = _limpar_html(e.get("headline"))
+        if not titulo:
+            continue
+        data = e.get("datePublished")
+        itens.append({
+            "titulo": titulo,
+            "link": e.get("url") or SKY_AO_VIVO,
+            "data": (data[:19] + "Z") if data else None,
+            "resumo": _limpar_html(e.get("articleBody"))[:LIVEBLOG_RESUMO],
+        })
+    return itens
+
+
+def fetch_sky_liveblog():
+    """Entradas do Transfer Centre ao vivo, no formato dos itens de RSS."""
+    try:
+        req = urllib.request.Request(SKY_AO_VIVO, headers={
+            "User-Agent": "Mozilla/5.0 (fpl-draft-dashboard)",
+            "Accept-Encoding": "gzip"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            bruto = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip":
+                bruto = gzip.decompress(bruto)
+        itens = liveblog_itens(bruto.decode("utf-8", "replace"))
+        registar("Sky · Transfer Centre ao vivo", bool(itens), f"{len(itens)} entradas")
+        return itens
+    except Exception as exc:
+        registar("Sky · Transfer Centre ao vivo", False, exc)
+        return []
+
+
 def fetch_noticias_mercado():
     """Feed de transferências da Sky. Nunca deve partir a recolha principal."""
     try:
@@ -202,6 +275,32 @@ def padroes_nome_split(p):
     outros = set(p["second_name"].split()) if p.get("second_name") else set()
     outros.discard(p["web_name"])
     return principal, _rx_nomes(outros)
+
+
+def casar_transferencia(texto, players):
+    """Um artigo de transferência é sobre **um** jogador: devolve-o, ou None.
+
+    A ordem importa. Primeiro o **nome completo** — é o que desambigua: o
+    título "Leeds sign England goalkeeper James Trafford" contém "james" e
+    "trafford", e só o Trafford tem os dois; o Reece James e o Daniel James
+    partilham o `web_name` "James" e apanhavam a notícia os dois. Só quando
+    ninguém bate pelo nome completo se recorre ao `web_name`, e aí exige-se
+    que seja um só: dois jogadores com o mesmo nome curto é ambíguo, e atribuir
+    a transferência aos dois é pior do que não a atribuir a nenhum."""
+    # Os padrões de nome são construídos sobre texto sem acentos: o texto tem
+    # de vir pelo mesmo caminho, senão "Gyokeres" nunca casa com "Gyökeres".
+    normalizado = sem_acentos(texto).lower()
+    alvo = set(normalizado.replace("-", " ").split())
+    completos = [p for p in players
+                 if _tokens_nome(f'{p["first_name"]} {p["second_name"]}') <= alvo]
+    if len(completos) == 1:
+        return completos[0]
+    if not completos:
+        padroes = [(p,) + padroes_nome_split(p) for p in players]
+        curtos = [p for p, pr, _ in padroes if pr and pr.search(normalizado)]
+        if len(curtos) == 1:
+            return curtos[0]
+    return None
 
 
 def _texto_html(bruto):
@@ -467,6 +566,31 @@ def valor_wiki(txt):
     return 0, "", "outro"
 
 
+# Palavras que não distinguem clube nenhum.
+_CLUBE_RUIDO = {"and", "fc", "afc", "the"}
+
+
+def _tokens_clube(nome):
+    return {t for t in re.sub(r"[^a-z0-9 ]", " ", sem_acentos(nome or "").lower()).split()
+            if t and t not in _CLUBE_RUIDO}
+
+
+def envolve_clube_pl(de, para):
+    """A transferência tem um clube da Premier League de um dos lados?
+
+    Serve para apanhar homónimos: há um Reece James no Rotherham, e a linha
+    "Rotherham United → Sheffield Wednesday" casava com o Reece James do
+    Chelsea porque o nome é literalmente o mesmo. Nome nenhum resolve isso —
+    o clube resolve. Compara-se com os nomes oficiais (os slugs de PL_CLUBES),
+    que é como a Wikipedia os escreve."""
+    alvos = [_tokens_clube(slug.replace("-", " ")) for slug in PL_CLUBES.values()]
+    for nome in (de, para):
+        t = _tokens_clube(nome)
+        if t and any(t <= a or a <= t for a in alvos):
+            return True
+    return False
+
+
 def _tokens_nome(txt):
     return {t for t in sem_acentos(txt or "").lower().replace("-", " ").split() if len(t) >= 3}
 
@@ -493,7 +617,14 @@ def fetch_wikipedia_transferencias(players, ano):
             continue  # a janela de inverno não existe até janeiro
         for r in linhas:
             alvo = _tokens_nome(r["jogador"])
-            if not alvo:
+            # Um nome de uma palavra só ("James") casa com meio plantel; a
+            # Wikipedia escreve sempre o nome completo, por isso exigir duas
+            # palavras não perde nada e evita o falso positivo.
+            if len(alvo) < 2:
+                continue
+            # Sem nenhum clube da PL nos dois lados, não é uma transferência
+            # desta liga por muito que o nome bata certo.
+            if not envolve_clube_pl(r["de"], r["para"]):
                 continue
             cands = [p for p in players
                      if _tokens_nome(f'{p["first_name"]} {p["second_name"]}') >= alvo]
@@ -605,13 +736,8 @@ def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=N
 
     for art in artigos:
         it = pl_item(art)
-        texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
-        candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
-        if not candidatos:
-            candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
-        if not candidatos or len(candidatos) > 2:  # ambíguo demais
-            continue
-        for p in candidatos:
+        achado = casar_transferencia(f'{it["titulo"]} {it["resumo"]}', players)
+        for p in ([achado] if achado else []):
             v = achados.get(str(p["id"])) or {}
             extra = (valores_extra or {}).get(str(p["id"])) or (None, None)
             juntar(p["id"], it["titulo"], it["link"], it["data"],
@@ -653,13 +779,15 @@ def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wi
     novas = 0
     for art in artigos:
         it = pl_item(art)
-        texto = sem_acentos(f'{it["titulo"]} {it["resumo"]}').lower()
-        candidatos = [p for p, pr, _ in padroes if pr and pr.search(texto)]
-        if not candidatos:
-            candidatos = [p for p, _, sec in padroes if sec and sec.search(texto)]
-        if not candidatos or len(candidatos) > 3:
+        # Só a janela desta época. O feed oficial pagina até 2025, e uma
+        # transferência de há 18 meses não é "mudou de clube agora": o
+        # `confirmada` isenta do castigo da pré-época e dá piso de minutos,
+        # e nada disso faz sentido para quem já lá joga há meia época.
+        if desde and (it["data"] or "") < desde:
             continue
-        for p in candidatos:
+        texto = f'{it["titulo"]} {it["resumo"]}'
+        achado = casar_transferencia(texto, players)
+        for p in ([achado] if achado else []):
             # A lista oficial traz entradas e **saídas**. Marcar uma saída como
             # transferência confirmada seria dizer ao modelo o contrário do que
             # aconteceu: o `confirmada` existe para isentar quem mudou de clube
@@ -1268,7 +1396,9 @@ def main():
     # hoje são os mais relevantes de todos.
     desde = game.get("current_event") or (next_ev["id"] if next_ev else 1)
     fixtures = fetch_fixtures(bootstrap, desde)
-    noticias_mercado = fetch_noticias_mercado()
+    noticias_mercado = sem_repetidos(sorted(
+        fetch_sky_liveblog() + fetch_noticias_mercado(),
+        key=lambda i: i.get("data") or "", reverse=True))
     # Janela desta época: 100 dias antes da primeira jornada. Sem isto vinham
     # dois anos de mercado, e o feed oficial vai até 2025.
     primeira = min((e.get("deadline_time") or "" for e in events), default="")

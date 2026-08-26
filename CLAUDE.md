@@ -331,6 +331,42 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Transfer Centre ao vivo do Sky (2026-08-26, página indicada pelo utilizador)
+
+`https://www.skysports.com/transfer-centre` — a mesma coisa que o live blog que o utilizador
+mandou, mas por um endereço **estável**: o URL do live blog leva um id que o Sky roda
+(`12476234` hoje), e `/transfer-centre` já traz o mesmo conteúdo. O `robots.txt` permite ambos;
+só veda `/api/` e um caminho `live-blog-beta`.
+
+- **A página é montada por JavaScript** — não há `<article>` nem `<time>` no HTML que ela
+  devolve. O conteúdo está no **JSON-LD `LiveBlogPosting`** de schema.org, publicado de propósito
+  para máquinas. `liveblog_itens()` lê de lá e devolve itens no formato dos de RSS.
+- **Porque vale a pena**: 9 dos 10 itens não estavam no feed 12691, e cada um traz o
+  **`articleBody` completo**, que é onde os valores aparecem escritos ("in a record-breaking £86m
+  move from Lille") — o RSS só dá 220 caracteres de resumo. O corpo é cortado a
+  `LIVEBLOG_RESUMO = 400`: chega para o valor, que vem na primeira frase, sem arrastar o artigo
+  todo e com ele nomes de outros jogadores.
+
+**Três erros meus que isto destapou**, todos de atribuição de transferências:
+
+- **Janela em falta no modelo.** Quando passei o feed oficial de 40 para 250 artigos (para o
+  separador), o corte de data ficou só na lista visível: **62 jogadores** estavam marcados com
+  `confirmada` por movimentos de há até 18 meses (o Jackson emprestado ao Bayern em setembro de
+  2025). O `confirmada` isenta do castigo da pré-época e dá piso de minutos — nada disso faz
+  sentido para quem já lá joga há meia época. `desde` passa a filtrar também as marcas do modelo.
+- **`web_name` partilhado.** "Leeds sign England goalkeeper James Trafford" era atribuída ao
+  **Reece James e ao Daniel James**, que têm ambos `web_name` "James". `casar_transferencia()`
+  passa a tentar primeiro o **nome completo** (só o Trafford tem "james" e "trafford") e só
+  recorre ao nome curto quando ninguém bate — exigindo aí que seja um só. Um artigo de
+  transferência é sobre um jogador: atribuí-lo a dois é pior do que não o atribuir.
+- **Homónimos entre ligas.** Há um Reece James no Rotherham, e a linha da Wikipedia
+  "Rotherham United → Sheffield Wednesday" casava com o do Chelsea. Nome nenhum resolve isso;
+  `envolve_clube_pl()` exige um clube da Premier League de um dos lados, comparando com os nomes
+  oficiais (os slugs de `PL_CLUBES`), que é como a Wikipedia os escreve.
+
+Um teste apanhou ainda que eu passava texto cru aos padrões de nome, que são construídos sobre
+texto sem acentos — "Gyokeres" nunca casaria com "Gyökeres".
+
 ## A jornada equipa a equipa (2026-08-24, pedido do utilizador)
 
 Tabela no topo do separador **Liga**, só no Draft: por gestor, os pontos já feitos, quantos

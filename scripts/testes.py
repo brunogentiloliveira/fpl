@@ -199,6 +199,83 @@ def testa_nomes_funcoes():
     verificar("o app.js tem funções para verificar", len(nomes) > 50)
 
 
+# ---------- cruzar transferências com jogadores ----------
+
+def testa_casar_transferencia():
+    print("Transferências: a quem pertencem")
+    jog = lambda i, w, pn, ap: {"id": i, "web_name": w, "first_name": pn, "second_name": ap}
+    # Três jogadores reais que colidem: dois com o web_name "James", e o
+    # Trafford, que é sobre quem a notícia realmente é.
+    players = [jog(1, "James", "Reece", "James"),
+               jog(2, "James", "Daniel", "James"),
+               jog(3, "Trafford", "James", "Trafford"),
+               jog(4, "Gyökeres", "Viktor", "Gyökeres")]
+    achado = fd.casar_transferencia(
+        "Leeds sign England goalkeeper James Trafford from Man City", players)
+    verificar("o nome completo desambigua entre homónimos",
+              achado and achado["id"] == 3, achado and achado["web_name"])
+    verificar("web_name partilhado por dois não atribui a nenhum",
+              fd.casar_transferencia("James joins on loan", players) is None)
+    verificar("web_name único ainda funciona",
+              (fd.casar_transferencia("Arsenal sign Gyokeres", players) or {}).get("id") == 4)
+    verificar("texto sem jogador nenhum devolve None",
+              fd.casar_transferencia("Board confirms new stadium plans", players) is None)
+
+
+def testa_clube_pl():
+    print("Transferências: envolvem a Premier League?")
+    verificar("saída para fora da liga conta (um lado é da PL)",
+              fd.envolve_clube_pl("Manchester City", "Al Qadsiah"))
+    verificar("entrada de fora da liga conta", fd.envolve_clube_pl("Lille", "Manchester City"))
+    verificar("nomes por extenso da Wikipedia são reconhecidos",
+              fd.envolve_clube_pl("Brighton & Hove Albion", "Derby County") and
+              fd.envolve_clube_pl("Nottingham Forest", "Excelsior") and
+              fd.envolve_clube_pl("Bournemouth", "Lorient"))
+    verificar("negócio entre dois clubes de fora é rejeitado",
+              not fd.envolve_clube_pl("Rotherham United", "Sheffield Wednesday"))
+    verificar("campos vazios não passam por engano",
+              not fd.envolve_clube_pl("", ""))
+
+
+# ---------- Transfer Centre ao vivo ----------
+
+def testa_liveblog():
+    print("Transfer Centre ao vivo")
+    doc = """
+    <html><head>
+    <script type="application/ld+json">{"@type":"WebSite","name":"Sky"}</script>
+    <script type="application/ld+json">{
+      "@type": "LiveBlogPosting",
+      "liveBlogUpdate": [
+        {"headline": "Man City complete &#x27;record&#x27; Bouaddi deal",
+         "articleBody": "<p>City have completed the signing in a <b>&#163;86m</b> move.</p>",
+         "datePublished": "2026-08-26T11:15:00+01:00",
+         "url": "https://www.skysports.com/x/1"},
+        {"headline": "", "articleBody": "sem titulo"},
+        {"headline": "Sem data nem url", "articleBody": "corpo"}
+      ]}</script>
+    </head></html>"""
+    itens = fd.liveblog_itens(doc)
+    verificar("ignora o JSON-LD que não é do live blog e lê o certo", len(itens) == 2)
+    verificar("entradas sem título não entram",
+              all(i["titulo"] for i in itens))
+    verificar("entidades HTML descodificadas no título",
+              itens[0]["titulo"] == "Man City complete 'record' Bouaddi deal")
+    verificar("corpo sem marcação e com o valor legível",
+              itens[0]["resumo"] == "City have completed the signing in a £86m move.",
+              itens[0]["resumo"])
+    verificar("data em ISO com Z", itens[0]["data"] == "2026-08-26T11:15:00Z")
+    verificar("sem data fica a None, sem rebentar", itens[1]["data"] is None)
+    verificar("sem url cai na página do Transfer Centre",
+              itens[1]["link"] == fd.SKY_AO_VIVO)
+    verificar("o corpo é cortado para não arrastar o artigo todo",
+              all(len(i["resumo"]) <= fd.LIVEBLOG_RESUMO for i in itens))
+    verificar("página sem LiveBlogPosting devolve lista vazia",
+              fd.liveblog_itens("<html></html>") == [])
+    verificar("JSON inválido não rebenta a recolha",
+              fd.liveblog_itens('<script type="application/ld+json">{isto nao</script>') == [])
+
+
 # ---------- mercado na Wikipedia ----------
 
 def testa_wiki():
@@ -294,6 +371,9 @@ def main():
     testa_live()
     testa_nomes_funcoes()
     testa_pl()
+    testa_casar_transferencia()
+    testa_clube_pl()
+    testa_liveblog()
     testa_wiki()
     testa_completar_historico()
     testa_ficheiros()
