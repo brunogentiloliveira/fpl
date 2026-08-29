@@ -3016,9 +3016,16 @@ async function main() {
   try {
     const modo = modoAtual();
     aplicarModo(modo);
-    const resp = await fetch(MODOS[modo], { cache: "no-store" });
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    D = await resp.json();
+    // A versão publicada como Artifact traz os dados embutidos (é um ficheiro
+    // único, sem servidor por trás); a versão local vai buscá-los ao disco.
+    if (window.__DADOS__) {
+      D = window.__DADOS__[modo];
+      if (!D) throw new Error("sem dados para o modo " + modo);
+    } else {
+      const resp = await fetch(MODOS[modo], { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      D = await resp.json();
+    }
   } catch (err) {
     $("atualizado").textContent =
       "Não foi possível carregar os dados. Tenta novamente mais tarde.";

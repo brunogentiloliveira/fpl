@@ -359,6 +359,22 @@ def testa_completar_historico():
               fd.completar_historico(saida, []) is saida)
 
 
+# ---------- ficheiro unico para publicar ----------
+
+def testa_artefacto():
+    print("Artefacto de ficheiro único")
+    # JSON dentro de <script>: fechar a tag no meio de uma string partia a
+    # página inteira, e o conteúdo vem de notícias que não controlo.
+    import artefacto
+    perigo = '{"t":"</script><b>ola</b>"}'
+    seguro = artefacto.json_seguro(perigo)
+    verificar("fecho de script escapado", "</script>" not in seguro, seguro)
+    verificar("continua a ser JSON válido",
+              json.loads(seguro.replace("<\/", "</"))["t"].startswith("</script>"))
+    verificar("comentário HTML escapado",
+              "<!--" not in artefacto.json_seguro('{"t":"<!-- x"}'))
+
+
 # ---------- ficheiros curados ----------
 
 def testa_ficheiros():
@@ -395,6 +411,7 @@ def main():
     testa_pl()
     testa_casar_transferencia()
     testa_clube_pl()
+    testa_artefacto()
     testa_liveblog()
     testa_wiki()
     testa_completar_historico()

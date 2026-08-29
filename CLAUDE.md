@@ -741,6 +741,26 @@ proposta, para a linha da tabela na análise de trocas e para o detalhe por joga
 clicando no nome da própria equipa na tabela de uma liga (o URL passa a `/entry/ID/event/N`),
 ou em `/api/me/` com sessão iniciada — a página "My Team" não o mostra.
 
+## Versão publicada, para usar fora de casa (2026-08-26, pedido do utilizador)
+
+O dashboard é servido pelo `servir.py` e só se vê na rede local — com o PC ligado. Para o ter
+fora de casa, `scripts/artefacto.py` junta tudo num **ficheiro HTML único** (CSS, JS e os dois
+`data.json` embutidos, 1.8 MB) que é publicado como Artifact e abre em qualquer lado, **mesmo
+com o PC desligado**.
+
+- O `app.js` usa `window.__DADOS__` quando existe e cai no `fetch` de `data/*.json` quando não —
+  a mesma base de código serve os dois casos, sem ramo separado.
+- O `<head>` é fornecido por quem publica, por isso o ficheiro sai só com o conteúdo do `<body>`
+  (mais o `<title>`). O `body` já pinta `background: var(--fundo)`, o que satisfaz o requisito
+  de um artifact de tema único.
+- `json_seguro()` escapa `</` e `<!--` dentro do JSON: o conteúdo vem de notícias que não
+  controlo, e um `</script>` no meio de uma string partia a página inteira. Há teste.
+- **É um retrato**, não é ao vivo: só muda quando se volta a publicar (`scripts/artefacto.py` e
+  republicar no mesmo URL). A tabela da jornada ao vivo fica congelada no momento da publicação,
+  que é a limitação que mais se nota.
+- Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
+  portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
