@@ -383,6 +383,48 @@ verificar("texto vazio não rebenta", semAcentos(null) === "");
     porqueSai(faz(4.9, 64)).indexOf("alternativa") < 0);
 })();
 
+/* --- Trocas de N por N --- */
+verificar("combinações de 1 são a própria lista",
+  combinacoes([1, 2, 3], 1).length === 3);
+verificar("combinações de 2 em 4 são 6", combinacoes([1, 2, 3, 4], 2).length === 6);
+verificar("combinações de 3 em 15 são 455",
+  combinacoes([...Array(15).keys()], 3).length === 455);
+verificar("não repete elementos dentro de uma combinação",
+  combinacoes([1, 2, 3, 4], 3).every((g) => new Set(g).size === 3));
+
+verificar("a assinatura de posições ignora a ordem",
+  assinaturaPosicoes([{ p: { element_type: 3 } }, { p: { element_type: 2 } }]) ===
+  assinaturaPosicoes([{ p: { element_type: 2 } }, { p: { element_type: 3 } }]));
+verificar("posições diferentes dão assinaturas diferentes",
+  assinaturaPosicoes([{ p: { element_type: 3 } }, { p: { element_type: 3 } }]) !==
+  assinaturaPosicoes([{ p: { element_type: 2 } }, { p: { element_type: 3 } }]));
+
+(function () {
+  const eu = D.entries[0];
+  const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
+  const trocas = sugestoesTrocas(meusX, eu);
+  verificar("nenhuma troca passa de " + MAX_TROCA + " jogadores",
+    trocas.every((t) => t.n <= MAX_TROCA && t.saem.length === t.n && t.entram.length === t.n));
+  verificar("dão-se e recebem-se sempre as mesmas posições",
+    trocas.every((t) => assinaturaPosicoes(t.saem) === assinaturaPosicoes(t.entram)));
+  verificar("o plantel continua com 15 jogadores depois da troca",
+    trocas.every((t) => meusX.length - t.saem.length + t.entram.length === meusX.length));
+  verificar("nenhuma troca proposta é má para mim",
+    trocas.every((t) => t.ganhoMeu >= GANHO_MIN_TROCA));
+  verificar("o adoçante entrega valor a sério, não centésimas",
+    trocas.filter((t) => t.tipo === "adocante")
+      .every((t) => t.entregue >= ADOCANTE_MIN), "algum adoçante abaixo do mínimo");
+  verificar("nenhum jogador aparece em duas propostas",
+    (() => {
+      const vistos = new Set();
+      return trocas.every((t) => t.saem.concat(t.entram).every((x) => {
+        if (vistos.has(x.p.id)) return false;
+        vistos.add(x.p.id);
+        return true;
+      }));
+    })());
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

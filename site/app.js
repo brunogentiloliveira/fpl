@@ -1160,47 +1160,132 @@ function sugestoesLivres(meusX) {
   return escolhidas;
 }
 
+// Até quantos jogadores de cada lado. O plantel tem de ficar sempre com 15
+// (2 GR / 5 DEF / 5 MED / 3 AV), por isso uma troca é sempre N-por-N e com o
+// **mesmo conjunto de posições** dos dois lados — dar 2 e receber 1 é ilegal.
+// Medido: 378 combinações a 1, 9 126 a 2 e 109 626 a 3, ~325 ms ao todo.
+const MAX_TROCA = 3;
+// Quanto é que uma troca maior tem de ganhar a mais para valer a pena propô-la:
+// mais jogadores é mais atrito e mais risco, e sem isto o 3-por-3 aparecia
+// sempre a repetir o 1-por-1 com dois enchimentos à volta.
+const MARGEM_TAMANHO = 0.15;
+// O adoçante tem de ser real. Sem isto saíam propostas a dizer "ele recebe
+// mais do que dá" com 9.9 contra 9.9 — quatro centésimas não convencem
+// ninguém a perder pontos no onze. Exige-se valor entregue a mais **e** que
+// ele seja proporcional ao que se lhe está a pedir: quem perde 2 pts/jornada
+// no onze não aceita por meio ponto de plantel.
+const ADOCANTE_MIN = 0.4;
+const ADOCANTE_QUOTA = 0.5;
+
+/** Todas as combinações de `n` elementos. */
+function combinacoes(lista, n) {
+  if (n === 1) return lista.map((x) => [x]);
+  const saida = [];
+  const passo = (inicio, atual) => {
+    if (atual.length === n) { saida.push(atual.slice()); return; }
+    for (let i = inicio; i < lista.length; i += 1) {
+      atual.push(lista[i]);
+      passo(i + 1, atual);
+      atual.pop();
+    }
+  };
+  passo(0, []);
+  return saida;
+}
+
+/** Posições de um grupo, ordenadas: só trocam grupos com a mesma assinatura. */
+function assinaturaPosicoes(grupo) {
+  return grupo.map((x) => x.p.element_type).sort().join("-");
+}
+
+function somaPpj(grupo) {
+  return grupo.reduce((t, x) => t + x.pr.ppj, 0);
+}
+
+/**
+ * Trocas propostas a cada gestor, de 1-por-1 até 3-por-3.
+ *
+ * **Porque é que passar de 1-por-1 muda o jogo**: com a mesma régua dos dois
+ * lados, uma troca 1-por-1 da mesma posição é praticamente soma zero — por
+ * isso o "ambos ganham" quase nunca disparava e quase tudo caía no cartaz. O
+ * que quebra a simetria é o **banco**: no Draft só o onze pontua, e um bom
+ * jogador parado no meu banco vale-me zero à margem mas pode valer muito no
+ * onze dele. Daí que um 2-por-2 possa ser genuinamente bom para os dois.
+ *
+ * Dois tipos ficam:
+ *  - `ambos`  — os dois onzes sobem. É o caso honesto.
+ *  - `adocante` — o meu onze sobe e ele **recebe mais valor bruto do que dá**,
+ *    mesmo que o onze dele não melhore. É a troca que se fecha juntando
+ *    qualidade a mais do meu lado; fica marcada como tal, porque quem ganha
+ *    sou eu.
+ */
 function sugestoesTrocas(meusX, euEntry) {
   const meuValor = valorXI(meusX);
+  const meuXI = new Set(melhorXI(meusX).map((x) => x.p.id));
   const propostas = [];
 
   D.entries.filter((e) => e.id !== euEntry.id).forEach((outro) => {
     const delesX = comProjecao(D.players.filter((p) => p.owner === outro.entry_id));
     if (delesX.length === 0) return;
     const delesValor = valorXI(delesX);
+    let melhorMenor = 0; // melhor ganho já conseguido com menos jogadores
 
-    meusX.forEach((meu) => {
-      delesX.forEach((deles) => {
-        // O plantel tem de continuar com 2 GR, 5 DEF, 5 MED e 3 AV: numa troca
-        // 1-por-1 os jogadores têm de ser da mesma posição.
-        if (deles.p.element_type !== meu.p.element_type) return;
-        const meuNovo = meusX.filter((x) => x.p.id !== meu.p.id).concat([deles]);
-        const delesNovo = delesX.filter((x) => x.p.id !== deles.p.id).concat([meu]);
-        const ganhoMeu = valorXI(meuNovo) - meuValor;
-        if (ganhoMeu < GANHO_MIN_TROCA) return;
-        const ganhoDeles = valorXI(delesNovo) - delesValor;
-        if (ganhoDeles >= GANHO_MIN_TROCA) {
-          // Ambos melhoram o onze: acontece quando as posições fortes diferem.
-          propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "ambos" });
-        } else if (pontosEpocaPassada(meu.p) > pontosEpocaPassada(deles.p)) {
-          // Soma zero na projeção, mas ele recebe o jogador com mais cartaz
-          // (pontos da época passada) — é assim que as trocas passam numa liga.
-          propostas.push({ outro, meu, deles, ganhoMeu, ganhoDeles, tipo: "cartaz" });
-        }
+    for (let n = 1; n <= MAX_TROCA; n += 1) {
+      const porAssinatura = {};
+      combinacoes(delesX, n).forEach((g) => {
+        const chave = assinaturaPosicoes(g);
+        (porAssinatura[chave] = porAssinatura[chave] || []).push(g);
       });
-    });
+
+      const desteN = [];
+      combinacoes(meusX, n).forEach((saem) => {
+        const alternativas = porAssinatura[assinaturaPosicoes(saem)];
+        if (!alternativas) return;
+        const idsSaem = new Set(saem.map((x) => x.p.id));
+        const meuBase = meusX.filter((x) => !idsSaem.has(x.p.id));
+        const dou = somaPpj(saem);
+
+        alternativas.forEach((entram) => {
+          const ganhoMeu = valorXI(meuBase.concat(entram)) - meuValor;
+          if (ganhoMeu < GANHO_MIN_TROCA) return;
+          // Um negócio mais pequeno já consegue isto: não vale o atrito.
+          if (ganhoMeu < melhorMenor + MARGEM_TAMANHO) return;
+
+          const idsEntram = new Set(entram.map((x) => x.p.id));
+          const delesNovo = delesX.filter((x) => !idsEntram.has(x.p.id)).concat(saem);
+          const ganhoDeles = valorXI(delesNovo) - delesValor;
+          const recebo = somaPpj(entram);
+          const entregue = dou - recebo;            // valor de plantel que lhe dou a mais
+          const pedido = Math.max(0, -ganhoDeles);  // o que ele perde no onze
+          const tipo = ganhoDeles >= GANHO_MIN_TROCA ? "ambos"
+            : (entregue >= ADOCANTE_MIN && entregue >= pedido * ADOCANTE_QUOTA)
+              ? "adocante" : null;
+          if (!tipo) return;
+          desteN.push({
+            outro, saem, entram, ganhoMeu, ganhoDeles, tipo, n,
+            dou, recebo, entregue, pedido,
+            // Quem sai sem fazer falta ao onze é o que adoça o negócio.
+            adocantes: saem.filter((x) => !meuXI.has(x.p.id)),
+          });
+        });
+      });
+
+      desteN.forEach((pr) => { melhorMenor = Math.max(melhorMenor, pr.ganhoMeu); });
+      propostas.push(...desteN);
+    }
   });
 
   // Win-win primeiro; dentro de cada tipo, o que me dá mais.
   propostas.sort((a, b) => b.ganhoMeu - a.ganhoMeu);
   propostas.sort((a, b) => (a.tipo === "ambos" ? 0 : 1) - (b.tipo === "ambos" ? 0 : 1));
+
+  // Cada jogador entra ou sai uma vez só, senão saem cinco variantes do mesmo.
   const usados = new Set();
   const escolhidas = [];
   for (const pr of propostas) {
-    const chave = pr.meu.p.id + "-" + pr.deles.p.id;
-    if (usados.has(pr.meu.p.id) || usados.has(pr.deles.p.id) || usados.has(chave)) continue;
-    usados.add(pr.meu.p.id);
-    usados.add(pr.deles.p.id);
+    const envolvidos = pr.saem.concat(pr.entram).map((x) => x.p.id);
+    if (envolvidos.some((id) => usados.has(id))) continue;
+    envolvidos.forEach((id) => usados.add(id));
     escolhidas.push(pr);
     if (escolhidas.length >= 5) break;
   }
@@ -1470,27 +1555,55 @@ function initSugestoes() {
   }
 
   // --- Trocas ---
-  const trocas = sugestoesTrocas(meusX, eu);
+  // Só existem no Draft; na clássica seriam 119 mil combinações para nada.
+  const trocas = ehClassica() ? [] : sugestoesTrocas(meusX, eu);
   if (trocas.length === 0) {
     $("nota-sug-trocas").hidden = false;
   } else {
     $("sug-trocas").innerHTML = trocas.map((t) => {
-      const ganhas = "Ganhas porque <strong>" + esc(t.deles.p.web_name) + "</strong> " +
-        porqueEntra(t.deles) + ", enquanto <strong>" + esc(t.meu.p.web_name) + "</strong> " +
-        porqueSai(t.meu, t.deles) + " — o teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) +
-        " pontos por jornada</strong>.";
+      const lista = (grupo) => grupo.map(etiquetaJogador).join("");
+      // "A, B e C", não "A e B e C".
+      const nomes = (grupo) => {
+        const n = grupo.map((x) => "<strong>" + esc(x.p.web_name) + "</strong>");
+        return n.length <= 1 ? (n[0] || "")
+          : n.slice(0, -1).join(", ") + " e " + n[n.length - 1];
+      };
+
+      // Numa troca de um só, o motivo do jogador é o que interessa; em várias,
+      // o que interessa é o balanço e quem é que lá vai a adoçar.
+      const ganhas = t.n === 1
+        ? "Ganhas porque " + nomes(t.entram) + " " + porqueEntra(t.entram[0]) +
+          ", enquanto " + nomes(t.saem) + " " + porqueSai(t.saem[0], t.entram[0]) +
+          " — o teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) + " pontos por jornada</strong>."
+        : "O teu onze sobe <strong>" + t.ganhoMeu.toFixed(1) + " pontos por jornada</strong>: " +
+          "entram " + nomes(t.entram) + " e saem " + nomes(t.saem) + "." +
+          (t.adocantes.length
+            ? " " + nomes(t.adocantes) + (t.adocantes.length === 1 ? " não entra" : " não entram") +
+              " no teu onze, por isso " + (t.adocantes.length === 1 ? "vai" : "vão") +
+              " no negócio sem te custar pontos."
+            : "");
+
+      const cartazMeu = t.saem.reduce((v, x) => v + pontosEpocaPassada(x.p), 0);
+      const cartazDele = t.entram.reduce((v, x) => v + pontosEpocaPassada(x.p), 0);
       const aceita = t.tipo === "ambos"
         ? " Ele também tem interesse: o onze dele sobe " + t.ganhoDeles.toFixed(1) +
-          " pontos, porque " + esc(t.meu.p.web_name) + " encaixa melhor no plantel dele."
-        : " Ele pode aceitar porque recebe o nome maior: " + esc(t.meu.p.web_name) + " fez " +
-          pontosEpocaPassada(t.meu.p) + " pontos na época passada e " + esc(t.deles.p.web_name) +
-          " fez " + pontosEpocaPassada(t.deles.p) + " — é o número que salta à vista, mesmo que a " +
-          "projeção para esta época diga o contrário.";
-      return "<li class=\"" + t.tipo + "\">" +
+          " pontos, porque " + nomes(t.saem) + " encaixa melhor no plantel dele."
+        : " Ele recebe mais do que dá — <strong>" + t.dou.toFixed(1) + "</strong> contra " +
+          t.recebo.toFixed(1) + " pts/jornada em valor de plantel" +
+          (cartazMeu > cartazDele
+            ? ", e ainda os nomes maiores (" + cartazMeu + " contra " + cartazDele +
+              " pontos na época passada)"
+            : "") +
+          ". O onze dele não melhora (" + t.ganhoDeles.toFixed(1) + "), por isso é a ti que " +
+          "esta troca serve: o argumento é a qualidade a mais que lhe dás.";
+
+      return '<li class="' + t.tipo + '">' +
         '<p class="alvo">Propor a <strong>' + esc(t.outro.entry_name) + "</strong> (" +
-          esc(t.outro.manager) + ")</p>" +
-        '<div class="troca-linha"><span class="sai">Dás</span> ' + etiquetaJogador(t.meu) + "</div>" +
-        '<div class="troca-linha"><span class="entra">Recebes</span> ' + etiquetaJogador(t.deles) + "</div>" +
+          esc(t.outro.manager) + ")" +
+          (t.n > 1 ? ' <span class="estado warn">' + t.n + "-por-" + t.n + "</span>" : "") +
+        "</p>" +
+        '<div class="troca-linha"><span class="sai">Dás</span> ' + lista(t.saem) + "</div>" +
+        '<div class="troca-linha"><span class="entra">Recebes</span> ' + lista(t.entram) + "</div>" +
         '<p class="porque">' + ganhas + aceita + "</p>" +
       "</li>";
     }).join("");

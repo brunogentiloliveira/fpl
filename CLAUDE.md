@@ -331,6 +331,40 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Trocas de N por N, e a descoberta de que não há win-win (2026-08-26)
+
+Reparo do utilizador: as sugestões eram sempre 1-por-1, e "nem sempre se convence um gestor sem
+acrescentar mais valor". Planeado primeiro, discutido, depois implementado até **3-por-3**.
+
+**A restrição que decide tudo**: `size: 15` com `2 GR / 5 DEF / 5 MED / 3 AV` em permanência.
+Logo **dar 2 e receber 1 é ilegal** — uma troca é sempre N-por-N e com o **mesmo multiconjunto
+de posições** dos dois lados. "Acrescentar valor" não é dar mais jogadores, é dar melhores.
+
+**Custo, medido antes de construir**: 378 combinações a 1, 9 126 a 2, **109 626 a 3** (a
+restrição de posições corta 11× o bruto de 1,24 M). A `valorXI` custa 1.4 µs, portanto o
+exaustivo leva **~200 ms**. Não foi preciso heurística nenhuma.
+
+**A hipótese que eu tinha escrito no plano estava errada.** Argumentei que o 2-por-2 seria
+positivo para os dois lados por causa do banco: um jogador parado no meu banco vale-me zero à
+margem e podia valer no onze dele. Testei as **119 130 combinações**: `ambos` dispara **zero
+vezes**. A razão é estrutural — com 7 gestores a deterem 15 de 600 jogadores, os cortes do onze
+ficam parecidos, e quem está no meu banco também não entra no onze dele. Em 61 057 combinações
+em que eu ganho, ele perde sempre.
+
+Consequência: **toda a troca realista nesta liga é "eu ganho, ele perde"**, e a única alavanca é
+o que se lhe entrega a mais. Fica o tipo `adocante`, e o `ambos` fica no código porque uma vaga
+de lesões pode criar a assimetria — só que hoje não existe.
+
+**O adoçante tem de ser a sério.** A primeira versão aceitava qualquer `dou > recebo` e produzia
+propostas a dizer "ele recebe mais do que dá" com **9.9 contra 9.9** — quatro centésimas para
+ele perder 2.35 pts/jornada no onze. Agora exige-se `entregue >= ADOCANTE_MIN` (0.4) **e**
+`entregue >= metade do que ele perde no onze`: quem perde 2 pontos não aceita por meio.
+
+Mais dois travões: `MARGEM_TAMANHO` (0.15) impede um 3-por-3 de aparecer quando um 1-por-1 já
+consegue o mesmo — sem isso saíam sempre os mesmos negócios com enchimento à volta —, e cada
+jogador só entra numa proposta, senão saíam cinco variantes do mesmo. As trocas não correm no
+modo clássico, onde seriam 119 mil combinações para nada.
+
 ## O que faltava nas transferências, e a frase que se contradizia (2026-08-26)
 
 Dois reparos do utilizador, ambos certos.
