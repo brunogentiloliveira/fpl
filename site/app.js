@@ -2070,6 +2070,144 @@ function desenharTransferencias(meusX) {
 }
 
 /** Chips: quanto valeria usá-los nesta jornada. */
+/**
+ * Jornadas futuras em que os meus clubes jogam duas vezes ou nenhuma.
+ *
+ * **A jornada a decorrer fica de fora de propósito**: as fixtures só guardam
+ * os jogos por disputar, por isso a meio de uma jornada os clubes que já
+ * jogaram parecem estar em branco. Foi o que a GW2 mostrou — 18 "em branco"
+ * que eram 18 jogos já realizados.
+ */
+function jornadasEspeciais(meusX) {
+  const fx = D.fixtures || {};
+  const atual = (D.game || {}).current_event || 0;
+  const meusClubes = [...new Set(meusX.map((x) => x.p.team))];
+  const porEvento = {};
+  Object.keys(fx).forEach((tid) => {
+    (fx[tid] || []).forEach((j) => {
+      if (!j.event || j.event <= atual) return;
+      const ev = (porEvento[j.event] = porEvento[j.event] || {});
+      ev[tid] = (ev[tid] || 0) + 1;
+    });
+  });
+  return Object.keys(porEvento).map(Number).sort((a, b) => a - b).map((ev) => {
+    const conta = porEvento[ev];
+    return {
+      evento: ev,
+      semJogo: meusClubes.filter((t) => !conta[String(t)]),
+      duplas: meusClubes.filter((t) => (conta[String(t)] || 0) > 1),
+    };
+  });
+}
+
+/* --- Planeador do wildcard --- */
+
+let wcFixos = [];
+
+function desenharPlaneadorWC(meusX) {
+  const alvo = $("wc-plantel");
+  if (!alvo) return;
+  const fixos = wcFixos.map((id) => jogadoresPorId[id]).filter(Boolean);
+  const comProj = comProjecao(fixos);
+
+  $("wc-fixos").innerHTML = comProj.length === 0
+    ? '<span class="sub">Sem escolhas tuas: o plantel abaixo é o que o modelo faria de raiz.</span>'
+    : comProj.map((x) => '<span class="chip">' +
+        '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
+        '<span class="chip-info">' + nomeClube(x.p.team) + " · " +
+          precoDe(x.p).toFixed(1) + "M</span>" +
+        '<button type="button" class="tirar" data-id="' + x.p.id +
+          '" aria-label="Tirar ' + esc(x.p.web_name) + '">×</button>' +
+      "</span>").join("");
+
+  const melhor = melhorPlantelPossivel(comProj);
+  $("wc-erro").hidden = !(melhor && melhor.erro);
+  if (melhor && melhor.erro) {
+    $("wc-erro").textContent = melhor.erro;
+    alvo.innerHTML = "";
+    $("wc-resumo").textContent = "";
+    return;
+  }
+  if (!melhor) {
+    alvo.innerHTML = '<p class="nota">Não consigo montar um plantel legal com essas escolhas.</p>';
+    return;
+  }
+
+  const meus = new Set(meusX.map((x) => x.p.id));
+  const mudam = melhor.escolhidos.filter((x) => !meus.has(x.p.id)).length;
+  const agora = meusX.length ? valorXI(meusX) : 0;
+  const sobe = melhor.pontos - agora;
+  $("wc-resumo").textContent = melhor.formacao + " · " + melhor.custo.toFixed(1) + "M de " +
+    (((D.regras || {}).squad || {}).total_spend / 10 || 100).toFixed(1) + "M";
+
+  const chip = (x, novo) => '<span class="chip' + (novo ? " chip-novo" : "") + '">' +
+    '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
+    '<span class="chip-info">' + nomeClube(x.p.team) + " · " +
+      precoDe(x.p).toFixed(1) + "M · " + x.pr.ppjCal.toFixed(1) + "</span></span>";
+
+  // Insistir em jogadores caros pode empurrar um deles para o banco: aí o
+  // dinheiro fica parado, e isso não se vê olhando só para o onze.
+  const noXI = new Set(melhor.xi.map((x) => x.p.id));
+  const presosNoBanco = comProj.filter((x) => !noXI.has(x.p.id));
+  const aviso = presosNoBanco.length
+    ? '<p class="aviso-sug">⚠ ' +
+      presosNoBanco.map((x) => esc(x.p.web_name) + " (" + precoDe(x.p).toFixed(1) + "M)")
+        .join(", ") +
+      (presosNoBanco.length === 1 ? " fica" : " ficam") + " no banco: com estas escolhas não " +
+      "sobra orçamento para " + (presosNoBanco.length === 1 ? "o pôr" : "os pôr") +
+      " no onze, e no banco não pontuam.</p>"
+    : "";
+
+  alvo.innerHTML = aviso +
+    '<p class="veredicto ' + (sobe > 0 ? "ok" : "") + '">' +
+      "Onze projeta <strong>" + melhor.pontos.toFixed(1) + " pts/jornada</strong>" +
+      (meusX.length
+        ? " — <strong>" + sinal(sobe) + "</strong> face ao teu de agora (" +
+          agora.toFixed(1) + "). São <strong>" + mudam + "</strong> jogadores diferentes."
+        : ".") +
+      " Sobram " + (((D.regras || {}).squad || {}).total_spend / 10 - melhor.custo).toFixed(1) +
+      "M." + "</p>" +
+    '<div class="linha-campo">' + melhor.xi.map((x) => chip(x, !meus.has(x.p.id))).join("") +
+    "</div>" +
+    '<p class="nota"><strong>Suplentes:</strong> ' +
+      melhor.banco.sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)
+        .map((x) => esc(x.p.web_name) + " (" + precoDe(x.p).toFixed(1) + "M)").join(" · ") +
+    "</p>";
+}
+
+function initPlaneadorWC(meusX) {
+  const form = $("form-wc");
+  if (!form) return;
+  const procura = $("wc-procura");
+  // Sugestões por nome, para não ser preciso acertar na escrita exata.
+  $("wc-sugestoes").innerHTML = D.players
+    .filter((p) => p.now_cost && !STATUS_FORA.has(p.status))
+    .map((p) => '<option value="' + esc(p.web_name) + " · " + nomeClube(p.team) + '">')
+    .join("");
+
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const alvo = semAcentos(procura.value.split("·")[0].trim());
+    if (!alvo) return;
+    const achado = D.players.find((p) => semAcentos(p.web_name) === alvo && p.now_cost) ||
+      D.players.find((p) => semAcentos(p.web_name).indexOf(alvo) >= 0 && p.now_cost);
+    if (achado && !wcFixos.includes(achado.id)) wcFixos.push(achado.id);
+    procura.value = "";
+    desenharPlaneadorWC(meusX);
+  });
+  $("wc-limpar").addEventListener("click", () => {
+    wcFixos = [];
+    desenharPlaneadorWC(meusX);
+  });
+  $("wc-fixos").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-id]");
+    if (!b) return;
+    wcFixos = wcFixos.filter((id) => id !== Number(b.dataset.id));
+    desenharPlaneadorWC(meusX);
+  });
+  desenharPlaneadorWC(meusX);
+}
+
 function desenharChips(meusX) {
   const equipa = minhaEquipaClassica();
   const custoChip = (D.classica || {}).custo_transferencia || 4;
@@ -2084,18 +2222,45 @@ function desenharChips(meusX) {
   const capitao = xi.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)[0];
   const valorBanco = banco.reduce((s, x) => s + x.pr.ppjCal, 0);
 
+  const especiais = jornadasEspeciais(meusX);
+  const comDuplas = especiais.filter((e) => e.duplas.length);
+  const ultimaConhecida = especiais.length ? especiais[especiais.length - 1].evento : "?";
+
   const explicar = (nome) => {
     if (nome === "bboost") {
-      return meusX.length
-        ? "O teu banco projeta " + valorBanco.toFixed(1) + " pts nesta jornada. Vale a pena " +
-          "guardar para uma jornada dupla, em que o banco rende bem mais."
-        : "Soma os pontos do banco. Guarda para uma jornada dupla.";
+      if (!meusX.length) return "Soma os pontos do banco. Guarda para uma jornada dupla.";
+      const proxima = especiais[0];
+      const bancoParado = proxima
+        ? banco.filter((x) => proxima.semJogo.includes(x.p.team)).length : 0;
+      if (comDuplas.length) {
+        return "<strong>Aponta à jornada " + comDuplas[0].evento + "</strong>, em que " +
+          comDuplas[0].duplas.length + " dos teus clubes jogam duas vezes — é aí que o " +
+          "banco rende a dobrar. Hoje ele projeta " + valorBanco.toFixed(1) + " pts.";
+      }
+      return "<strong>Guarda-o.</strong> O teu banco projeta " + valorBanco.toFixed(1) +
+        " pts" + (bancoParado ? " e " + bancoParado + " suplentes nem jogam na próxima" : "") +
+        ". Não há jornadas duplas no calendário conhecido (até à " + ultimaConhecida +
+        "), e é numa dupla que este chip vale o dobro.";
     }
     if (nome === "3xc") {
-      return capitao
-        ? "Com " + esc(capitao.p.web_name) + " renderia mais " + capitao.pr.ppjCal.toFixed(1) +
-          " pts do que a capitania normal (" + (capitao.pr.ppjCal * 3).toFixed(1) + " no total)."
-        : "Triplica o capitão: guarda para quem tenha jornada dupla e bom calendário.";
+      if (!capitao) {
+        return "Triplica o capitão: guarda para quem tenha jornada dupla e bom calendário.";
+      }
+      const dupla = comDuplas.find((e) => e.duplas.includes(capitao.p.team));
+      if (dupla) {
+        return "<strong>Aponta à jornada " + dupla.evento + "</strong>: o " +
+          esc(capitao.p.web_name) + " joga duas vezes, que é exatamente onde este chip " +
+          "vale o triplo do normal.";
+      }
+      const prox = (capitao.pr.jogos || [])[0];
+      const facil = prox && prox.difficulty <= 2;
+      return "<strong>" + (facil ? "Podes usá-lo já" : "Guarda-o") + ".</strong> O melhor " +
+        "capitão é o " + esc(capitao.p.web_name) + ", que renderia mais " +
+        capitao.pr.ppjCal.toFixed(1) + " pts do que com a braçadeira normal (" +
+        (capitao.pr.ppjCal * 3).toFixed(1) + " no total)" +
+        (prox ? ", contra o " + nomeClube(prox.opponent) + " (dificuldade " +
+          prox.difficulty + ")" : "") +
+        (facil ? "." : ". Sem jornada dupla à vista, vale mais esperar por uma.");
     }
     if (nome === "wildcard") {
       const w = analiseWildcard(meusX);
@@ -2130,8 +2295,24 @@ function desenharChips(meusX) {
         "vaga de lesões te obrigar.";
     }
     if (nome === "freehit") {
-      return "Plantel só por uma jornada, volta ao normal a seguir. Serve para jornadas " +
-        "em branco.";
+      const pior = especiais.slice().sort((a, b) => b.semJogo.length - a.semJogo.length)[0];
+      if (pior && pior.semJogo.length >= 4) {
+        return "<strong>Guarda-o para a jornada " + pior.evento + "</strong>: " +
+          pior.semJogo.length + " dos teus clubes não jogam (" +
+          pior.semJogo.map(nomeClube).join(", ") + "), e sem chip ficavas a fazer " +
+          "substituições a perder.";
+      }
+      if (comDuplas.length) {
+        return "<strong>Guarda-o.</strong> A jornada " + comDuplas[0].evento +
+          " tem duplas — um plantel montado só para ela pode render muito.";
+      }
+      const parados = pior ? pior.semJogo.length : 0;
+      return "<strong>Guarda-o.</strong> Serve para uma jornada em que metade do teu plantel " +
+        "não joga, e até à " + ultimaConhecida + " isso não acontece: " +
+        (parados === 0
+          ? "todos os teus clubes têm jogo em todas as jornadas conhecidas."
+          : "no pior caso ficam " + parados + (parados === 1 ? " clube teu parado" : " clubes teus parados") +
+            " (jornada " + pior.evento + "), o que se resolve com o banco.");
     }
     return "";
   };
@@ -2155,20 +2336,56 @@ function desenharChips(meusX) {
  * válida começa-se pelo plantel mais barato e vai-se fazendo a melhoria que dá
  * mais pontos por milhão gasto, até o dinheiro acabar.
  */
-function melhorPlantelPossivel() {
+const NO_PLANTEL = { 1: 2, 2: 5, 3: 5, 4: 3 };
+
+/**
+ * O plantel de 15 que mais pontos projeta dentro do orçamento.
+ *
+ * `fixos` são jogadores que têm de lá estar — é o que permite planear um
+ * wildcard à volta de quem queres ter. Ocupam vaga, contam para o limite de 3
+ * por clube e para o orçamento, e o resto é construído em volta deles.
+ */
+function melhorPlantelPossivel(fixos) {
   const squad = (D.regras || {}).squad || {};
   const orcamento = (squad.total_spend || 1000) / 10;
   const limiteClube = squad.team_limit || 3;
   const lim = limitesXI();
+  const presos = (fixos || []).slice();
+  const idsPresos = new Set(presos.map((x) => x.p.id));
 
   const aptos = comProjecao(D.players.filter((p) =>
     p.now_cost && !STATUS_FORA.has(p.status) && projecao(p).ppj > 0));
   const porPos = { 1: [], 2: [], 3: [], 4: [] };
-  aptos.forEach((x) => porPos[x.p.element_type].push(x));
+  aptos.forEach((x) => { if (!idsPresos.has(x.p.id)) porPos[x.p.element_type].push(x); });
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppjCal - a.pr.ppjCal));
-  if ([1, 2, 3, 4].some((pos) => porPos[pos].length < 5)) return null;
 
-  const NO_PLANTEL = { 1: 2, 2: 5, 3: 5, 4: 3 };
+  // Os fixos podem já não deixar plantel legal: posições a mais, clube a mais
+  // ou dinheiro a menos. Melhor dizer porquê do que devolver um plantel errado.
+  const contaFixos = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const clubesFixos = {};
+  presos.forEach((x) => {
+    contaFixos[x.p.element_type] += 1;
+    clubesFixos[x.p.team] = (clubesFixos[x.p.team] || 0) + 1;
+  });
+  const posCheia = [1, 2, 3, 4].find((pos) => contaFixos[pos] > NO_PLANTEL[pos]);
+  if (posCheia) {
+    return { erro: "Escolheste " + contaFixos[posCheia] + " " +
+      (POSICOES[posCheia] || "?") + " e o plantel só leva " + NO_PLANTEL[posCheia] + "." };
+  }
+  const clubeCheio = Object.keys(clubesFixos).find((t) => clubesFixos[t] > limiteClube);
+  if (clubeCheio) {
+    return { erro: "Escolheste " + clubesFixos[clubeCheio] + " jogadores do " +
+      nomeClube(Number(clubeCheio)) + " e o máximo é " + limiteClube + "." };
+  }
+  const custoFixos = presos.reduce((t, x) => t + precoDe(x.p), 0);
+  if (custoFixos > orcamento + 1e-9) {
+    return { erro: "Os jogadores escolhidos custam " + custoFixos.toFixed(1) +
+      "M e o orçamento é " + orcamento.toFixed(1) + "M." };
+  }
+  if ([1, 2, 3, 4].some((pos) => porPos[pos].length + contaFixos[pos] < NO_PLANTEL[pos])) {
+    return null;
+  }
+
   let melhor = null;
 
   for (let def = lim[2][0]; def <= lim[2][1]; def += 1) {
@@ -2177,14 +2394,15 @@ function melhorPlantelPossivel() {
       if (av < lim[4][0] || av > lim[4][1]) continue;
       const noXI = { 1: 1, 2: def, 3: med, 4: av };
 
-      // Base: os mais baratos que cumprem as regras, para haver margem.
-      const escolhidos = [];
+      // Base: os fixos primeiro, depois os mais baratos que cumprem as regras.
+      const escolhidos = presos.slice();
       const clubes = {};
+      presos.forEach((x) => { clubes[x.p.team] = (clubes[x.p.team] || 0) + 1; });
       const cabe = (x) => (clubes[x.p.team] || 0) < limiteClube;
       let ok = true;
       [1, 2, 3, 4].forEach((pos) => {
         const baratos = porPos[pos].slice().sort((a, b) => a.p.now_cost - b.p.now_cost);
-        let postos = 0;
+        let postos = contaFixos[pos];
         for (const x of baratos) {
           if (postos >= NO_PLANTEL[pos]) break;
           if (!cabe(x)) continue;
@@ -2202,6 +2420,7 @@ function melhorPlantelPossivel() {
       for (let passo = 0; passo < 60; passo += 1) {
         let melhorTroca = null;
         escolhidos.forEach((atual, i) => {
+          if (idsPresos.has(atual.p.id)) return; // escolhido por ti: não se troca
           const pos = atual.p.element_type;
           const naPos = escolhidos.filter((x) => x.p.element_type === pos)
             .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal);
@@ -2320,6 +2539,7 @@ function initClassica() {
   if (tituloLivres) tituloLivres.textContent = "Melhores opções do mercado";
   desenharCapitao(meusX);
   desenharTransferencias(meusX);
+  initPlaneadorWC(meusX);
   desenharChips(meusX);
 }
 

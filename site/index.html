@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=44">
+<link rel="stylesheet" href="styles.css?v=45">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -157,6 +157,21 @@
 
       <h3 class="sub-titulo">Transferências <span id="tr-resumo" class="sub-total"></span></h3>
       <div id="tr-lista"></div>
+
+      <h3 class="sub-titulo">Planear o wildcard <span id="wc-resumo" class="sub-total"></span></h3>
+      <p class="nota">Monta o melhor plantel possível dentro do orçamento. Escreve nomes que
+        queiras ter de certeza e o resto é construído à volta deles, respeitando os 100.0M,
+        os 2 GR / 5 DEF / 5 MED / 3 AV e o máximo de 3 por clube.</p>
+      <form class="filtros" id="form-wc" autocomplete="off">
+        <label class="visually-hidden" for="wc-procura">Jogador a incluir</label>
+        <input type="search" id="wc-procura" list="wc-sugestoes" placeholder="Quero ter…">
+        <datalist id="wc-sugestoes"></datalist>
+        <button type="submit" class="mostrar-mais">Incluir</button>
+        <button type="button" class="mostrar-mais" id="wc-limpar">Limpar</button>
+      </form>
+      <div class="linha-campo" id="wc-fixos"></div>
+      <p class="nota" id="wc-erro" hidden></p>
+      <div id="wc-plantel"></div>
 
       <h3 class="sub-titulo">Chips</h3>
       <p class="nota">Cada chip só se usa uma vez por metade da época. O do wildcard olha
@@ -329,7 +344,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=44"></script>
+<script src="app.js?v=45"></script>
 
 </body>
 </html>

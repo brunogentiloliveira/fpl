@@ -483,6 +483,38 @@ mesmo, e a causa principal foi **regressão minha da véspera**.
   ainda não era conhecido. Com plantel carregado não serve para nada e passou a ficar escondido
   (`#bloco-otimo`), em vez de aparecer com o título e o corpo vazio.
 
+## Os outros chips e o planeador do wildcard (2026-08-26, pedido do utilizador)
+
+**Os quatro chips passam a olhar para o plantel**, não só o wildcard. A base é
+`jornadasEspeciais()`, que conta jogos por clube em cada jornada futura e devolve, dos **meus**
+clubes, quais ficam em branco e quais jogam duas vezes.
+
+**A jornada a decorrer fica de fora de propósito.** As fixtures só guardam os jogos por
+disputar, por isso a meio de uma jornada os clubes que já jogaram parecem estar em branco — a
+GW2 aparecia com 18 "em branco" que eram 18 jogos já realizados. Foi o que me fez desconfiar dos
+dados e verificar contra a API antes de construir por cima.
+
+- **Free Hit**: aponta a jornada em que mais clubes meus ficam parados (≥ 4 justifica o chip).
+  Hoje nenhum fica, e diz isso em vez de um conselho genérico.
+- **Bench Boost**: aponta a primeira jornada dupla; sem duplas no calendário conhecido, diz o
+  que o banco projeta e porque é que esperar vale mais.
+- **Triple Captain**: se o melhor capitão tiver jornada dupla, recomenda-a; senão dá o nome, o
+  ganho e a dificuldade do próximo adversário, e recomenda usar só se for fácil.
+- Estado real do calendário em 2026-08-26: **nenhuma jornada dupla** até à 12 e a GW12 com 2
+  equipas em branco (nenhuma minha).
+
+**Planeador do wildcard**: `melhorPlantelPossivel(fixos)` passa a aceitar jogadores que têm de
+lá estar. Escreves nomes, e o plantel é construído à volta deles dentro dos 100.0M, do 2/5/5/3 e
+do máximo de 3 por clube. Os fixos ocupam vaga, contam para o clube e para o orçamento, e o
+ciclo de melhorias nunca lhes toca.
+
+- **Recusa com explicação** em vez de devolver um plantel errado: "Escolheste 3 GR e o plantel
+  só leva 2", "Escolheste 4 jogadores do MCI e o máximo é 3", ou o custo acima do orçamento.
+- **Avisa quando um fixo cai para o banco**, que é o custo escondido de insistir em três caros:
+  com Haaland + Saka + Isak, o Isak fica no banco a 9.0M — dinheiro parado que não pontua.
+- O número que interessa é a comparação: sem escolhas o onze ideal projeta 52.6 pts/jornada
+  contra os 46.0 do plantel atual; insistindo nos três caros cai para 49.9.
+
 ## Quando usar o wildcard (2026-08-24, pedido do utilizador)
 
 O chip deixou de ter um texto genérico e passa a olhar para o plantel. `analiseWildcard()`.

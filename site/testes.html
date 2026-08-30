@@ -26,6 +26,9 @@ function jog(id, nome, tipo, equipa, dono, extras) {
     element_type: tipo, team: equipa, owner: dono, draft_rank: id,
     status: "a", news: "", news_added: null, chance_of_playing_next_round: null,
     total_points: 100, minutes: 2700, starts: 30,
+    // Preço só existe no modo clássico, mas o planeador do wildcard precisa
+    // dele: 5.0M para toda a gente cabe nos 100.0M com folga.
+    now_cost: 50, selected_by_percent: "5.0",
   }, extras || {});
 }
 
@@ -423,6 +426,45 @@ verificar("posições diferentes dão assinaturas diferentes",
         return true;
       }));
     })());
+})();
+
+/* --- Planear o wildcard: plantel construído à volta de escolhas --- */
+(function () {
+  if (typeof melhorPlantelPossivel !== "function") return;
+  const guardado = D.regras.squad;
+  D.regras.squad = Object.assign({}, guardado, { total_spend: 1000, team_limit: 3 });
+  const comPreco = D.players.filter(function (p) { return p.now_cost; });
+  if (comPreco.length < 20) { D.regras.squad = guardado; return; }
+
+  const gr = D.players.filter(function (p) { return p.element_type === 1 && p.now_cost; });
+  if (gr.length >= 3) {
+    const tresGR = comProjecao(gr.slice(0, 3));
+    const r = melhorPlantelPossivel(tresGR);
+    verificar("três guarda-redes fixos são recusados com explicação",
+      r && r.erro && r.erro.indexOf("GR") >= 0, r && r.erro);
+  }
+
+  const doClube = D.players.filter(function (p) {
+    return p.team === D.players[0].team && p.now_cost; });
+  if (doClube.length >= 4) {
+    const r = melhorPlantelPossivel(comProjecao(doClube.slice(0, 4)));
+    verificar("quatro do mesmo clube são recusados",
+      r && r.erro && r.erro.indexOf("clube") >= 0 || (r && r.erro), r && r.erro);
+  }
+
+  const um = comProjecao([comPreco[0]]);
+  const r = melhorPlantelPossivel(um);
+  if (r && !r.erro) {
+    verificar("o jogador fixo entra mesmo no plantel",
+      r.escolhidos.some(function (x) { return x.p.id === um[0].p.id; }));
+    verificar("o plantel continua a ter 15 jogadores", r.escolhidos.length === 15);
+    verificar("e as posições certas", [1, 2, 3, 4].every(function (pos) {
+      return r.escolhidos.filter(function (x) { return x.p.element_type === pos; }).length
+        === NO_PLANTEL[pos];
+    }));
+    verificar("e não passa do orçamento", r.custo <= 100.0 + 1e-9);
+  }
+  D.regras.squad = guardado;
 })();
 
 verificar("nenhuma projeção é negativa",
