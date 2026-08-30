@@ -467,6 +467,29 @@ verificar("posições diferentes dão assinaturas diferentes",
   D.regras.squad = guardado;
 })();
 
+/* --- Quem saiu da liga não pontua nem aparece --- */
+(function () {
+  const alvo = D.players.find(function (x) { return x.owner == null && x.status === "a"; });
+  if (!alvo) return;
+  const guardado = D.saiu_da_liga;
+  D.saiu_da_liga = {};
+  const antes = projecao(alvo).ppj;
+  verificar("antes de sair, projeta alguma coisa", antes > 0);
+
+  // O caso real: a FPL demora a mudar o status, e o jogador continuava a
+  // aparecer nas sugestões — com piso de minutos, se a transferência foi cara.
+  D.saiu_da_liga = { [alvo.id]: "Ollie Watkins" };
+  verificar("quem saiu é dado como indisponível", indisponivel(alvo));
+  verificar("com o status ainda “a”", alvo.status === "a");
+  verificar("e a projeção vai a zero", projecao(alvo).ppj === 0);
+  verificar("o estado mostra que saiu", estadoDe(alvo).rotulo === "Saiu da liga");
+  verificar("não aparece entre os livres",
+    !comProjecao(D.players.filter(function (x) {
+      return x.owner == null && !indisponivel(x); }))
+      .some(function (x) { return x.p.id === alvo.id; }));
+  D.saiu_da_liga = guardado;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

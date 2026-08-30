@@ -41,7 +41,26 @@ function nomeDono(owner) {
   return e ? e.entry_name : "?";
 }
 
+/**
+ * Já não está na Premier League.
+ *
+ * A FPL demora a mudar o `status` de quem sai — o Watkins tinha transferência
+ * confirmada para o Al Hilal e continuava como "a", o que o fazia aparecer nas
+ * sugestões (e ainda com piso de minutos por a transferência ser cara). O
+ * Transfermarkt lista Entradas e Saídas por clube, e quem está nas saídas sem
+ * estar nas entradas foi-se mesmo embora.
+ */
+function saiuDaLiga(p) {
+  return Object.prototype.hasOwnProperty.call(D.saiu_da_liga || {}, String(p.id));
+}
+
+/** Fora de jogo por qualquer razão: lesão, castigo, ou já não estar na liga. */
+function indisponivel(p) {
+  return STATUS_FORA.has(p.status) || saiuDaLiga(p);
+}
+
 function estadoDe(p) {
+  if (saiuDaLiga(p)) return { rotulo: "Saiu da liga", sev: "bad" };
   const e = ESTADOS[p.status] || { rotulo: p.status, sev: "" };
   if (p.status === "d" && p.chance_of_playing_next_round != null) {
     return { rotulo: "Dúvida " + p.chance_of_playing_next_round + "%", sev: "warn" };
@@ -138,7 +157,7 @@ function pesoGravidade(p) {
   const f = ffsDe(p);
   if (f && f.estado === "fora") return -1;
   if (saiuDoClube(p)) return 2;
-  if (STATUS_FORA.has(p.status)) return 0;
+  if (indisponivel(p)) return 0;
   if (p.status === "d") return 1;
   return 3;
 }
@@ -232,7 +251,7 @@ function initEquipas() {
 
   $("cartoes-equipas").innerHTML = ordenadas.map((e) => {
     const plantel = D.players.filter((p) => p.owner === e.entry_id);
-    const fora = plantel.filter((p) => STATUS_FORA.has(p.status)).length;
+    const fora = plantel.filter(indisponivel).length;
     const duvidas = plantel.filter((p) => p.status === "d").length;
     const sou = eu && e.id === eu.id;
     const badges =
@@ -836,7 +855,7 @@ function projecao(p, ignorarAusencia) {
   // sinal nenhum — `pisoTransferencia(0)` devolveria 50 minutos a um reforço
   // de plantel qualquer. A confirmação sozinha continua a valer para a
   // pré-época (o onze do clube antigo não diz nada de quem mudou).
-  if (tr && tr.confirmada && tr.valor > 0 && jogosObs < 3 && !STATUS_FORA.has(p.status)) {
+  if (tr && tr.confirmada && tr.valor > 0 && jogosObs < 3 && !indisponivel(p)) {
     const piso = pisoTransferencia(tr.valor);
     if (piso > xmin) { bump = Math.round(piso - xmin); xmin = piso; }
   }
@@ -847,7 +866,7 @@ function projecao(p, ignorarAusencia) {
   // e um titular confirmado em campo ficava a valer menos do que quem ainda
   // não jogou.
   const pe = preEpocaDe(p);
-  if (pe && !STATUS_FORA.has(p.status)) {
+  if (pe && !indisponivel(p)) {
     const forca = (pe.confianca === "alta" ? 1 : 0.5) * (1 - peso);
     if (pe.estado === "titular") {
       const alvo = 72;
@@ -864,7 +883,7 @@ function projecao(p, ignorarAusencia) {
   const ffs = ffsDe(p);
   if (ignorarAusencia) {
     // Projeção "se estivesse apto", para comparar com o valor de agora.
-  } else if (STATUS_FORA.has(p.status) || (ffs && ffs.estado === "fora")) {
+  } else if (indisponivel(p) || (ffs && ffs.estado === "fora")) {
     xmin = 0;
   } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
     xmin *= p.chance_of_playing_next_round / 100;
@@ -876,7 +895,7 @@ function projecao(p, ignorarAusencia) {
   const calFator = fatorCalendario(jogos);
   const ppjCal = ppj * calFator;
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
-    !STATUS_FORA.has(p.status);
+    !indisponivel(p);
   return { pp90, xmin, ppj, ppjCal, calFator, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
     componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p) };
 }
@@ -967,7 +986,7 @@ function tabelaProjecao(linhas) {
 function desenharLivres() {
   const pos = $("proj-pos").value;
   const livres = D.players
-    .filter((p) => p.owner == null && !STATUS_FORA.has(p.status))
+    .filter((p) => p.owner == null && !indisponivel(p))
     .filter((p) => !pos || String(p.element_type) === pos)
     .map((p) => ({ p, pr: projecao(p) }))
     // Ordenados pela taxa já ajustada ao calendário: é o que muda com a janela.
@@ -1062,7 +1081,7 @@ function desenharProximosJogos(meusX) {
       .map((x) => {
         const est = estadoDe(x.p);
         const ffs = ffsDe(x.p);
-        const fora = STATUS_FORA.has(x.p.status) || (ffs && ffs.estado === "fora");
+        const fora = indisponivel(x.p) || (ffs && ffs.estado === "fora");
         return '<span class="chip">' +
           '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
           '<span class="chip-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
@@ -1131,7 +1150,7 @@ function ppjSaudavel(p) {
 }
 
 function sugestoesLivres(meusX) {
-  const livresX = comProjecao(D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status)));
+  const livresX = comProjecao(D.players.filter((p) => p.owner == null && !indisponivel(p)));
   const pares = [];
   meusX.forEach((meu) => {
     livresX
@@ -1350,7 +1369,7 @@ function minutosRecentes(pr) {
  */
 function porqueSai(x, entra) {
   const est = estadoDe(x.p);
-  if (STATUS_FORA.has(x.p.status)) {
+  if (indisponivel(x.p)) {
     return "está " + est.rotulo.toLowerCase() + " e não pontua";
   }
   if (x.pr.ffs && x.pr.ffs.estado === "fora") {
@@ -1597,7 +1616,20 @@ function initSugestoes() {
           ". O onze dele não melhora (" + t.ganhoDeles.toFixed(1) + "), por isso é a ti que " +
           "esta troca serve: o argumento é a qualidade a mais que lhe dás.";
 
-      return '<li class="' + t.tipo + '">' +
+      // Um jogador que não pode jogar ocupa uma das 15 vagas e não pontua: o
+      // onze melhora na mesma, mas ficas com menos cobertura. Uma dúvida de
+      // 75% não conta — esses jogam quase sempre; só abaixo de metade.
+      const problemas = t.entram.filter((x) => indisponivel(x.p) ||
+        (x.p.status === "d" && (x.p.chance_of_playing_next_round ?? 100) <= 50));
+      const alerta = problemas.length
+        ? '<p class="aviso-sug">⚠ ' + problemas.map((x) => esc(x.p.web_name) + " (" +
+            estadoDe(x.p).rotulo.toLowerCase() + ")").join(", ") +
+          (problemas.length === 1 ? " entra" : " entram") + " sem poder jogar: ocupa" +
+          (problemas.length === 1 ? "" : "m") + " vaga no plantel e não pontua" +
+          (problemas.length === 1 ? "" : "m") + ".</p>"
+        : "";
+
+      return '<li class="' + t.tipo + '">' + alerta +
         '<p class="alvo">Propor a <strong>' + esc(t.outro.entry_name) + "</strong> (" +
           esc(t.outro.manager) + ")" +
           (t.n > 1 ? ' <span class="estado warn">' + t.n + "-por-" + t.n + "</span>" : "") +
@@ -1893,7 +1925,7 @@ function desenharCapitao(meusX) {
   const equipa = minhaEquipaClassica();
   const universo = meusX.length
     ? meusX
-    : comProjecao(D.players.filter((p) => !STATUS_FORA.has(p.status)));
+    : comProjecao(D.players.filter((p) => !indisponivel(p)));
   const candidatos = universo.slice().sort((a, b) => b.pr.ppjCal - a.pr.ppjCal).slice(0, 5);
   if (candidatos.length === 0) return;
 
@@ -1941,7 +1973,7 @@ function melhoresTransferencias(meusX, maximo) {
   meusX.forEach((x) => { porClube[x.p.team] = (porClube[x.p.team] || 0) + 1; });
 
   const candidatos = comProjecao(D.players.filter((p) =>
-    !meusX.some((x) => x.p.id === p.id) && !STATUS_FORA.has(p.status) && p.now_cost));
+    !meusX.some((x) => x.p.id === p.id) && !indisponivel(p) && p.now_cost));
 
   const ideias = [];
   meusX.forEach((meu) => {
@@ -2015,7 +2047,7 @@ function desenharTransferencias(meusX) {
 
   if (!equipa || meusX.length === 0) {
     // Sem a equipa carregada: mostrar quem rende mais por milhão gasto.
-    const valor = comProjecao(D.players.filter((p) => !STATUS_FORA.has(p.status) && p.now_cost))
+    const valor = comProjecao(D.players.filter((p) => !indisponivel(p) && p.now_cost))
       .map((x) => ({ x, racio: x.pr.ppjCal / precoDe(x.p) }))
       .sort((a, b) => b.racio - a.racio)
       .slice(0, 12);
@@ -2181,7 +2213,7 @@ function initPlaneadorWC(meusX) {
   const procura = $("wc-procura");
   // Sugestões por nome, para não ser preciso acertar na escrita exata.
   $("wc-sugestoes").innerHTML = D.players
-    .filter((p) => p.now_cost && !STATUS_FORA.has(p.status))
+    .filter((p) => p.now_cost && !indisponivel(p))
     .map((p) => '<option value="' + esc(p.web_name) + " · " + nomeClube(p.team) + '">')
     .join("");
 
@@ -2354,7 +2386,7 @@ function melhorPlantelPossivel(fixos) {
   const idsPresos = new Set(presos.map((x) => x.p.id));
 
   const aptos = comProjecao(D.players.filter((p) =>
-    p.now_cost && !STATUS_FORA.has(p.status) && projecao(p).ppj > 0));
+    p.now_cost && !indisponivel(p) && projecao(p).ppj > 0));
   const porPos = { 1: [], 2: [], 3: [], 4: [] };
   aptos.forEach((x) => { if (!idsPresos.has(x.p.id)) porPos[x.p.element_type].push(x); });
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppjCal - a.pr.ppjCal));
@@ -2637,7 +2669,7 @@ function sinal(v) {
 
 /** Livres aproveitáveis, do melhor para o pior. */
 function livresDisponiveis() {
-  return comProjecao(D.players.filter((p) => p.owner == null && !STATUS_FORA.has(p.status)))
+  return comProjecao(D.players.filter((p) => p.owner == null && !indisponivel(p)))
     .sort((a, b) => b.pr.ppj - a.pr.ppj);
 }
 
@@ -2893,7 +2925,7 @@ function riscoJogador(p, mencionados) {
     nivel = 3;
     motivos.push("Fantasy Football Scout: “" + ffs.frase + "”");
   }
-  if (STATUS_FORA.has(p.status)) {
+  if (indisponivel(p)) {
     nivel = 3;
     motivos.push(est.rotulo + (p.news ? " — " + p.news : ""));
   } else if (p.status === "d") {
@@ -3184,9 +3216,11 @@ const fmtDataCurta = new Intl.DateTimeFormat("pt-PT", {
 function transferenciasFiltradas() {
   const todas = ((D.mercado || {}).transferencias_feitas || []);
   const procura = semAcentos(($("transf-procura") || {}).value || "").trim();
-  const soValor = ($("transf-so-valor") || {}).checked;
+  const todasElas = ($("transf-todas") || {}).checked;
   return todas.filter((t) => {
-    if (soValor && t.tipo !== "valor") return false;
+    // Por omissão fica o que interessa: jogadores da FPL e negócios com valor.
+    // O resto são 152 empréstimos de juniores a divisões inferiores.
+    if (!todasElas && !t.jogador && t.tipo !== "valor") return false;
     if (!procura) return true;
     const p = jogadoresPorId[t.jogador] || {};
     const alvo = semAcentos([p.web_name, p.first_name, p.second_name, t.nome,
@@ -3213,23 +3247,24 @@ function desenharTabelaTransferencias() {
   const todas = ((D.mercado || {}).transferencias_feitas || []);
   const comValor = todas.filter((t) => t.tipo === "valor").length;
 
+  const visiveis = transferenciasFiltradas().length;
   $("transf-total").textContent = todas.length
-    ? todas.length + " nesta janela de mercado" : "";
+    ? visiveis + " negócios · " + comValor + " com valor publicado" : "";
   $("transf-legenda").textContent = todas.length
-    ? "Negócios desde a abertura do mercado, do mais recente para o mais antigo. " +
-      comValor + " dos " + todas.length + " têm valor. Inclui negócios de jogadores que a " +
-      "FPL ainda não tem na base de dados (reforços acabados de fechar) e saídas da liga. " +
-      "A tabela do mercado inglês na " +
-      "Wikipedia é a única fonte com a janela toda (os feeds de notícias só trazem " +
-      "as últimas duas semanas). “Livre” e “n/d” vêm de lá tal e qual — não são " +
-      "valores em falta. O distintivo PL marca os negócios que a Premier League " +
-      "oficializou; “Sky” pode ainda ser um acordo por fechar."
+    ? "Do mais recente para o mais antigo, desde a abertura do mercado. “Livre”, “n/d” e " +
+      "“empréstimo” vêm da fonte tal e qual — não são valores em falta."
     : "";
   $("nota-transf").hidden = lista.length > 0;
   $("tabela-transf").hidden = lista.length === 0;
+  const mostrar = lista.slice(0, transfLimite);
+  const botao = $("transf-mais");
+  if (botao) {
+    botao.hidden = lista.length <= transfLimite;
+    botao.textContent = "Mostrar mais (" + (lista.length - transfLimite) + ")";
+  }
 
   const ROTULO_TIPO = { livre: "livre", nd: "n/d", emprestimo: "empréstimo" };
-  corpo.innerHTML = lista.map((t) => {
+  corpo.innerHTML = mostrar.map((t) => {
     const p = jogadoresPorId[t.jogador];
     // Sem jogador da FPL, o nome vem da Wikipedia: ou é um reforço acabado de
     // fechar que a FPL ainda não acrescentou, ou alguém que saiu da liga.
@@ -3264,11 +3299,24 @@ function desenharTabelaTransferencias() {
   }).join("");
 }
 
+const TRANSF_POR_PAGINA = 40;
+let transfLimite = TRANSF_POR_PAGINA;
+
 function initTransferencias() {
   const form = $("form-transf");
   if (!form) return;
-  form.addEventListener("input", desenharTabelaTransferencias);
+  form.addEventListener("input", () => {
+    transfLimite = TRANSF_POR_PAGINA; // filtro novo, contagem do zero
+    desenharTabelaTransferencias();
+  });
   form.addEventListener("submit", (ev) => ev.preventDefault());
+  const mais = $("transf-mais");
+  if (mais) {
+    mais.addEventListener("click", () => {
+      transfLimite += TRANSF_POR_PAGINA;
+      desenharTabelaTransferencias();
+    });
+  }
   desenharTabelaTransferencias();
 }
 

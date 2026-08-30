@@ -315,6 +315,7 @@ def main():
                 p["owner"] = minha["id"]
 
     feeds = fd.fetch_feeds_clubes()
+    saiu_da_liga = fd.fetch_transfermarkt(players)
     noticias = fd.fetch_noticias_mercado()
     meus = [p for p in players if p["owner"] is not None]
     clubes = sorted({(p["team"], nomes_clubes[p["team"]]) for p in meus}, key=lambda c: c[1])
@@ -365,8 +366,14 @@ def main():
         "preepoca": fd.fetch_preepoca(nomes_clubes, players),
         "bolaparada": bola_parada_da_api(bootstrap["elements"]),
         "ffs": fd.fetch_ffs(players, nomes_clubes),
-        "transferencias": fd.fetch_pl_transferencias(players, fd.extrair_transferencias(
-            {**feeds, "Transfer Centre": noticias}, players, nomes_clubes))[0],
+        "transferencias": fd.fetch_pl_transferencias(
+            players,
+            fd.extrair_transferencias(
+                {**feeds, "Transfer Centre": noticias}, players, nomes_clubes),
+            fora=saiu_da_liga)[0],
+        # As saídas da liga são as mesmas nos dois modos, mas os ids não: por
+        # isso o cruzamento é feito com os jogadores desta API.
+        "saiu_da_liga": saiu_da_liga,
         "conferencias": {"equipa": minha and minha["nome"],
                          "clubes": fd.fetch_conferencias(clubes, meus, feeds)},
         "mercado": {"noticias": noticias, "transacoes": []},

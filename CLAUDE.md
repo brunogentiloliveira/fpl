@@ -331,6 +331,39 @@ casa/fora e dificuldade). E há uma diferença entre as duas APIs que custou a a
   jogos por disputar continuam é **`/event/{ev}/live` → `fixtures`**, de onde são recuperados e
   juntos ao calendário (com dificuldade 3 por omissão, que esse endpoint não a traz).
 
+## Quem já saiu da liga, e a fonte que o diz (2026-08-30)
+
+Reparo do utilizador: as sugestões mandavam trocar o Gyökeres pelo **Watkins**, que ia sair da
+liga. Era pior do que parecia.
+
+O Watkins tinha transferência **confirmada pela Premier League** ("completes move to Al Hilal",
+£51M) mas o `status` na FPL ainda era `"a"` — a FPL demora a atualizá-lo. O guarda que eu tinha
+olhava para o status, não disparava, e como o valor era ≥50M ele ainda **ganhava piso de 75
+minutos**: um jogador que saiu da liga aparecia **promovido**.
+
+**Fonte nova, indicada pelo utilizador**: `transfermarkt.pt/premier-league/transfers/wettbewerb/GB1`
+(`robots.txt` com `Allow: /`). Lista, por clube, duas tabelas — **Entradas** (coluna Origem) e
+**Saídas** (coluna Destino) —, e a primeira célula do cabeçalho diz qual é. É a única fonte que
+dá a **direção do negócio** de forma inequívoca.
+
+- `fetch_transfermarkt()` cruza os nomes e devolve quem está nas **saídas e em nenhuma entrada**:
+  uma transferência entre dois clubes da liga aparece nas duas listas, por isso é a diferença que
+  identifica quem se foi embora. 273 entradas, 230 saídas, **27 jogadores fora da liga** — dois
+  deles ainda com `status "a"` na FPL.
+- Vai para `data.json → saiu_da_liga` (nos dois modos, com os ids de cada API).
+- No app.js, `indisponivel(p)` substitui `STATUS_FORA.has(p.status)` nos **11 sítios** onde
+  "fora" significa "não pontua": projeção 0, fora dos livres, fora do onze, fora das sugestões.
+  `estadoDe()` mostra "Saiu da liga".
+
+**As sugestões, revistas ao mesmo tempo**: passam a avisar quando um jogador que entra numa
+troca **não pode jogar** — ocupa uma das 15 vagas e não pontua. A primeira versão avisava também
+para dúvidas de 75% e disparava em 4 de 5 trocas; agora só abaixo de 50%, e passou a 1 em 5.
+
+**O separador das transferências ficou mais simples**, a pedido: das 349 linhas, **152 eram
+ruído** (empréstimos de juniores a divisões inferiores, tipo "Ben Broggio → Stevenage"). Por
+omissão mostram-se as 197 que interessam — jogadores da FPL ou negócios com valor —, com uma
+caixa para ver tudo. A legenda passou de quatro linhas a uma, e a tabela pagina de 40 em 40.
+
 ## Trocas de N por N, e a descoberta de que não há win-win (2026-08-26)
 
 Reparo do utilizador: as sugestões eram sempre 1-por-1, e "nem sempre se convence um gestor sem

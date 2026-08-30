@@ -678,6 +678,85 @@ def fetch_wikipedia_transferencias(players, ano):
     return porJogador, soltas
 
 
+# O Transfermarkt lista, por clube, as **Entradas** e as **Saídas** em tabelas
+# separadas — a direção do negócio, explícita, que é o que nenhuma das outras
+# fontes dá de forma inequívoca. O robots.txt permite tudo (`Allow: /`).
+#
+# Porque é que isto era preciso: o Watkins tinha transferência confirmada pela
+# Premier League ("completes move to Al Hilal", £51M) mas o `status` na FPL
+# ainda era "a". O guarda que eu tinha olhava para o status, não disparava, e o
+# valor alto ainda lhe dava piso de 75 minutos — ou seja, um jogador que saiu
+# da liga aparecia **promovido** nas sugestões.
+TRANSFERMARKT = "https://www.transfermarkt.pt/premier-league/transfers/wettbewerb/GB1"
+
+
+def transfermarkt_tabelas(doc):
+    """HTML da página -> (entradas, saídas) com os nomes tal como lá aparecem.
+
+    Cada clube tem duas tabelas e a **primeira célula do cabeçalho** diz qual é:
+    "Entradas" (coluna Origem) ou "Saídas" (coluna Destino)."""
+    entradas, saidas = [], []
+    for m in re.finditer(r"<table[^>]*>(.*?)</table>", doc, re.S):
+        linhas = re.findall(r"<tr[^>]*>(.*?)</tr>", m.group(1), re.S)
+        if not linhas:
+            continue
+        cab = [_texto_celula(c) for c in
+               re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linhas[0], re.S)]
+        cab = [c for c in cab if c]
+        if not cab:
+            continue
+        destino = sem_acentos(cab[0]).lower()
+        if destino not in ("entradas", "saidas"):
+            continue
+        alvo = entradas if destino == "entradas" else saidas
+        for linha in linhas[1:]:
+            cel = [_texto_celula(c) for c in
+                   re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linha, re.S)]
+            cel = [c for c in cel if c]
+            if cel:
+                alvo.append(cel[0])
+    return entradas, saidas
+
+
+def fetch_transfermarkt(players):
+    """Quem saiu da Premier League: está nas Saídas e em nenhuma Entrada.
+
+    Uma transferência entre dois clubes da liga aparece nas duas listas, por
+    isso a diferença é que identifica quem se foi mesmo embora."""
+    try:
+        req = urllib.request.Request(TRANSFERMARKT, headers={
+            "User-Agent": "Mozilla/5.0 (fpl-draft-dashboard)",
+            "Accept-Language": "pt-PT,pt;q=0.9",
+            "Accept-Encoding": "gzip"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            bruto = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip":
+                bruto = gzip.decompress(bruto)
+        entradas, saidas = transfermarkt_tabelas(bruto.decode("utf-8", "replace"))
+    except Exception as exc:
+        registar("Transfermarkt", False, exc)
+        return {}
+
+    def casar(nome):
+        alvo = _tokens_nome(nome)
+        if len(alvo) < 2:
+            return None
+        cands = [p for p in players
+                 if _tokens_nome(f'{p["first_name"]} {p["second_name"]}') >= alvo]
+        return cands[0] if len(cands) == 1 else None
+
+    ficaram = {p["id"] for p in (casar(n) for n in entradas) if p}
+    fora = {}
+    for nome in saidas:
+        p = casar(nome)
+        if p and p["id"] not in ficaram:
+            fora[str(p["id"])] = nome
+    registar("Transfermarkt", bool(entradas or saidas),
+             f"{len(entradas)} entradas, {len(saidas)} saídas; "
+             f"{len(fora)} jogadores fora da liga")
+    return fora
+
+
 # O Guardian tem um feed dedicado ao mercado, e é de longe o que mais valores
 # traz: 12 dos 20 itens contra 3 do Transfer Centre da Sky. O robots.txt não
 # bloqueia nada de futebol e um RSS existe para ser lido.
@@ -722,7 +801,7 @@ def fetch_valores_guardian(players):
 
 
 def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=None,
-                          wiki=None, soltas=None):
+                          wiki=None, soltas=None, fora=None):
     """Transferências concluídas, para o separador Transferências.
 
     Junta as duas fontes: os artigos oficiais da PL (que confirmam o negócio
@@ -761,7 +840,7 @@ def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=N
             "jogador": pid, "titulo": titulo, "link": link,
             "data": w.get("data") or data,
             "de": w.get("de") or "", "para": w.get("para") or "",
-            "saiu": p.get("status") in ("u", "n"),
+            "saiu": p.get("status") in ("u", "n") or str(pid) in (fora or {}),
             "valor": w.get("valor") or valor or 0,
             "moeda": w.get("moeda") or moeda or "",
             "tipo": w.get("tipo") or ("valor" if valor else "outro"),
@@ -806,7 +885,7 @@ def transferencias_feitas(players, artigos, achados, desde=None, valores_extra=N
 
 
 def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wiki=None,
-                            soltas=None):
+                            soltas=None, fora=None):
     """Transferências confirmadas pela fonte oficial.
 
     O `extrair_transferencias` decide "confirmada" por regex nos títulos da
@@ -838,7 +917,9 @@ def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wi
             # do castigo do onze de pré-época e para lhe dar o piso de minutos.
             # Quem já não está na liga tem status u/n e projeção zero de
             # qualquer forma (Reijnders para o Al Qadsiah, Digne para o PSG).
-            if p.get("status") in ("u", "n"):
+            # O status u/n apanha a maioria, mas chega tarde — a FPL demora a
+            # atualizá-lo. O Transfermarkt diz a direção no próprio dia.
+            if p.get("status") in ("u", "n") or str(p["id"]) in (fora or {}):
                 continue
             chave = str(p["id"])
             ant = achados.get(chave)
@@ -869,7 +950,7 @@ def fetch_pl_transferencias(players, achados, desde=None, valores_extra=None, wi
         if alvo and alvo.get("confirmada") and (w.get("valor") or 0) > (alvo.get("valor") or 0):
             alvo.update(valor=w["valor"], moeda=w["moeda"])
     return achados, transferencias_feitas(players, artigos, achados, desde,
-                                          valores_extra, wiki, soltas)
+                                          valores_extra, wiki, soltas, fora)
 
 
 def fetch_feeds_clubes():
@@ -1449,12 +1530,13 @@ def main():
     desde = ((datetime.fromisoformat(primeira.replace("Z", "+00:00")) -
               timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
              if primeira else None)
+    saiu_da_liga = fetch_transfermarkt(players)
     wiki_transf, wiki_soltas = fetch_wikipedia_transferencias(
         players, int(primeira[:4]) if primeira else 2026)
     transf_modelo, transf_feitas = fetch_pl_transferencias(
         players, extrair_transferencias(
             {**feeds, "Transfer Centre": noticias_mercado}, players, nomes_clubes),
-        desde, fetch_valores_guardian(players), wiki_transf, wiki_soltas)
+        desde, fetch_valores_guardian(players), wiki_transf, wiki_soltas, saiu_da_liga)
 
     data = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1503,6 +1585,8 @@ def main():
         "historico": completar_historico(
             snapshot_historico(players, anterior, game), players),
         "transferencias": transf_modelo,
+        # Quem já não está na liga, mesmo que a FPL ainda o dê como disponível.
+        "saiu_da_liga": saiu_da_liga,
         "conferencias": {
             "equipa": eu["entry_name"] if eu else None,
             "clubes": fetch_conferencias(clubes, meus, feeds),

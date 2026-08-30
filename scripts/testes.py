@@ -359,6 +359,44 @@ def testa_completar_historico():
               fd.completar_historico(saida, []) is saida)
 
 
+# ---------- Transfermarkt: quem saiu da liga ----------
+
+def testa_transfermarkt():
+    print("Transfermarkt (direção do negócio)")
+    # Cada clube tem duas tabelas e a primeira célula do cabeçalho diz qual é.
+    html = """
+    <table><tr><th>Entradas</th><th>Idade</th><th>Origem</th><th>Valor</th></tr>
+    <tr><td>Bruno Guimar&#227;es B. Guimar&#227;es</td><td>28</td><td>Newcastle</td>
+        <td>87,50 M &#8364;</td></tr></table>
+    <table><tr><th>Sa&#237;das</th><th>Idade</th><th>Destino</th><th>Valor</th></tr>
+    <tr><td>Ollie Watkins O. Watkins</td><td>30</td><td>Al Hilal</td>
+        <td>51,00 M &#8364;</td></tr>
+    <tr><td>Bruno Guimar&#227;es B. Guimar&#227;es</td><td>28</td><td>Arsenal</td>
+        <td>87,50 M &#8364;</td></tr></table>"""
+    entradas, saidas = fd.transfermarkt_tabelas(html)
+    verificar("separa entradas de saídas pelo cabeçalho",
+              len(entradas) == 1 and len(saidas) == 2, (entradas, saidas))
+    verificar("o cabeçalho não conta como jogador",
+              all("Idade" not in n for n in entradas + saidas))
+
+    players = [
+        {"id": 1, "first_name": "Ollie", "second_name": "Watkins", "web_name": "Watkins"},
+        {"id": 2, "first_name": "Bruno", "second_name": "Guimarães", "web_name": "Bruno G."},
+    ]
+    # O Guimarães está nas duas listas (mudou entre clubes da PL): fica.
+    # O Watkins só está nas saídas: foi-se embora.
+    def casar(nome):
+        alvo = fd._tokens_nome(nome)
+        c = [p for p in players
+             if fd._tokens_nome(f'{p["first_name"]} {p["second_name"]}') >= alvo]
+        return c[0] if len(c) == 1 else None
+    ficaram = {p["id"] for p in (casar(n) for n in entradas) if p}
+    fora = {p["id"] for p in (casar(n) for n in saidas) if p and p["id"] not in ficaram}
+    verificar("quem só está nas saídas conta como fora da liga", fora == {1}, fora)
+    verificar("quem muda entre clubes da liga não conta como fora", 2 not in fora)
+    verificar("página sem tabelas não rebenta", fd.transfermarkt_tabelas("<html/>") == ([], []))
+
+
 # ---------- ficheiro unico para publicar ----------
 
 def testa_artefacto():
@@ -411,6 +449,7 @@ def main():
     testa_pl()
     testa_casar_transferencia()
     testa_clube_pl()
+    testa_transfermarkt()
     testa_artefacto()
     testa_liveblog()
     testa_wiki()

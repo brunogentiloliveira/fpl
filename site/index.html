@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=45">
+<link rel="stylesheet" href="styles.css?v=47">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1420">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -306,7 +306,8 @@
     <form class="filtros" id="form-transf" autocomplete="off">
       <label class="visually-hidden" for="transf-procura">Procurar jogador ou clube</label>
       <input type="search" id="transf-procura" placeholder="Procurar jogador ou clube…">
-      <label class="caixa"><input type="checkbox" id="transf-so-valor"> Só com valor</label>
+      <label class="caixa"><input type="checkbox" id="transf-todas"> Incluir juniores e
+        empréstimos a divisões inferiores</label>
     </form>
     <table class="tabela tabela-proj" id="tabela-transf">
       <thead><tr>
@@ -315,6 +316,7 @@
       </tr></thead>
       <tbody></tbody>
     </table>
+    <button type="button" class="mostrar-mais" id="transf-mais" hidden>Mostrar mais</button>
     <p class="nota" id="nota-transf" hidden>Sem transferências para mostrar.</p>
   </section>
 
@@ -344,7 +346,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=45"></script>
+<script src="app.js?v=47"></script>
 
 </body>
 </html>
