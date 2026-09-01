@@ -860,6 +860,79 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## Agentes (`.claude/agents/`, 2026-09-01)
+
+Cinco, escolhidos pelo que correu mal neste projeto e não por uma lista genérica. Todos têm o
+contexto embutido, para não terem de reler as mil linhas deste ficheiro.
+
+| Agente | Para quê |
+|---|---|
+| **`verificador`** | Caça **falhas silenciosas** depois de uma recolha. É o de maior retorno: quase todos os bugs reais aqui pareciam funcionar (etiqueta desconhecida a devolver o feed geral, funções JS com o mesmo nome, tabela lida pela posição). |
+| **`sondador-de-fontes`** | Avalia uma fonte nova: permissão primeiro, depois o que devolve, depois **quanto acrescenta em números**. Aconteceu três vezes numa sessão. |
+| **`medidor`** | Testa uma hipótese do modelo contra dados. Existe para **contrariar intuições** — já o fez duas vezes (o BPS, e o win-win nas trocas que eu próprio tinha escrito no plano). |
+| **`revisor-modelo`** | Lacunas no back-end, cada uma com medição. Foi assim que apareceu a contribuição defensiva, o maior buraco que o modelo teve. |
+| **`revisor-interface`** | Front-end. **Os erros de interface aqui nunca foram visuais** — foram texto a contradizer os números ao lado ("rende 4.9, abaixo da alternativa" com 4.4 ao lado; "recebe mais do que dá" com 9.9 contra 9.9). |
+
+**Duas regras em todos**: toda a conclusão traz prova (medição ou caso concreto que falha), e
+lê-se primeiro a secção "Decidido, e porquê não" — senão cada revisão volta a propor o service
+worker e o BPS.
+
+**O que não é agente, de propósito**: a rotina antes do commit (dois conjuntos de testes, duas
+recolhas, consola, os dois modos) é determinística e já é script; e tudo o que um teste consegue
+afirmar deve ser teste — o `testa_nomes_funcoes` apanha a colisão de nomes em 50 ms, para
+sempre, sem arrancar do zero.
+
+## Decidido, e porquê não (consolidado)
+
+As decisões contra alguma coisa estavam espalhadas por mil linhas, e a consequência era
+previsível: cada revisão nova voltava a propô-las. Ficam aqui juntas. **Antes de sugerir
+qualquer uma destas, é preciso trazer prova nova** — dados que contradigam a medição original,
+não uma intuição.
+
+### Fontes postas de lado
+
+| Fonte | Porquê |
+|---|---|
+| **SofaScore** | 403 a pedidos automáticos, e o próprio robots.txt di-lo. |
+| **FlashScore** | Os termos proíbem extração de dados. |
+| **Google** (pesquisa) | Os termos proíbem pedidos automáticos e o robots.txt bloqueia `/search`. |
+| **TheSportsDB** | Tem os amigáveis mas **não a constituição das equipas** (confirmado em 8 clubes); 30 pedidos/min; não conhece o Nott'm Forest. |
+| **Fantasy Football Scout, para transferências** | É um site de *fantasy*: "transfers" ali são trocas de FPL e mudanças de preço. Os artigos de mercado real no sitemap são de 2008-2010. *(Continua a ser usado para team news, onde é bom.)* |
+| **BBC** | O feed de transferências tem 1 item; o de rumores, 1 valor em 24. |
+| **Corpo dos artigos da PL** | Vem **sempre vazio**, na listagem e no artigo individual. |
+| **`api.php` da Wikipedia** | O robots.txt bloqueia `/w/` e `/api/`. Usa-se `/wiki/<artigo>`, que é permitido. |
+
+### Ideias de modelo medidas e rejeitadas
+
+| Ideia | Medição |
+|---|---|
+| **BPS para prever o bónus** | 0.8% de ganho sobre dar a média a todos, contra 7.3% do bónus realizado; **misturar piora**. 575 pares época→época. |
+| **Modelar o limiar dos 60 minutos** | 0.048 pts/jornada de erro em 267 jogadores, **nenhum** acima de 0.25. `xmin` já é `P(joga) × minutos`, por isso o escalonamento linear está certo. |
+| **Janela de calendário de 3 jornadas** | 10% de amplitude inverte diferenças de qualidade; 10 jornadas matam o sinal (2.4%). Ficaram **5 com decaimento**. |
+| **Heurística para as trocas 3-por-3** | Desnecessária: 119 130 combinações em ~200 ms. O exaustivo chega. |
+| **Tabela de pontuação escrita à mão** | Deu **dois erros de facto** (golo de GR a 6 em vez de 10; castigo por golos sofridos em falta). Lê-se de `settings.scoring`. |
+
+*Nota sobre o win-win nas trocas*: medi zero em 119 130 combinações e escrevi que era estrutural.
+Dias depois, com os planteis mudados, passou a disparar. A conclusão certa é "é raro", não
+"é impossível" — o ramo `ambos` fica no código.
+
+### Infraestrutura
+
+- **GitHub Pages e Actions**: removidos. O utilizador quer o projeto só para si, a correr
+  localmente; o repo no GitHub é backup.
+- **Service worker**: tentado, não registava. Exige contexto seguro, e no telemóvel o acesso é
+  por IP em HTTP simples. Ficou de fora em vez de código morto.
+- **Abrir portas no router**: fora de questão — o `servir.py` não tem autenticação nenhuma. Para
+  acesso de fora: Artifact (retrato) ou VPN privada.
+
+### Interface
+
+- **Separador "Equipa"**: removido por duplicação — o plantel está em "Equipas" e os livres nas
+  Sugestões.
+- **Secção visível da pré-época**: removida a pedido; continua a alimentar o modelo.
+- **Coluna própria para "quem falta jogar"**: os nomes ficam por baixo do nome da equipa, porque
+  numa coluna desapareciam em ecrã estreito.
+
 ## Arquitetura
 
 - `scripts/fetch_data.py` — Python só com stdlib; `LEAGUE_ID` vem de variável de ambiente;
