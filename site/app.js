@@ -761,23 +761,74 @@ function fatorDificuldade(d) {
   return 1 + (3 - d) * 0.06; // adversário fácil (1) 1.12 … difícil (5) 0.88
 }
 
+/** Jogos das próximas `janela` **jornadas** (não os próximos `janela` jogos). */
+function jogosNaJanela(jogos, janela, primeiraJornada) {
+  if (!jogos.length) return [];
+  const primeiro = primeiraJornada != null
+    ? primeiraJornada : Math.min(...jogos.map((j) => j.event));
+  return jogos.filter((j) => j.event >= primeiro && j.event < primeiro + janela);
+}
+
 /**
- * Média ponderada da dificuldade dos próximos jogos, ~1.0.
+ * Média ponderada da dificuldade das próximas jornadas, ~1.0.
  *
  * É uma taxa e não um total: assim o número não cresce com a janela e continua
- * comparável aos pts/jornada. Jornadas duplas contam duas vezes (o jogador
- * joga duas vezes) e as jornadas em branco puxam para baixo, como devem.
+ * comparável aos pts/jornada.
+ *
+ * **Agrupa por jornada, não por jogo.** A versão anterior fazia a média sobre a
+ * lista de jogos, e o comentário dizia que as duplas contavam duas vezes e as
+ * jornadas em branco puxavam para baixo — não fazia nem uma coisa nem outra:
+ * uma dupla entrava como dois valores numa média (peso nenhum a mais) e uma
+ * jornada em branco simplesmente não aparecia na lista. Agora cada jornada
+ * contribui com a **soma** dos seus jogos, portanto uma dupla vale perto do
+ * dobro e uma em branco vale zero.
  */
-function fatorCalendario(jogos) {
-  if (jogos.length === 0) return 1;
+function fatorCalendario(jogos, janela, primeiraJornada) {
+  if (!jogos.length) return 1;
+  const n = janela || janelaAtual();
+  const porJornada = new Map();
+  jogos.forEach((j, i) => {
+    // Sem `event` cada jogo conta como a sua própria jornada: colapsá-los
+    // todos num só seria uma falha silenciosa, com o fator a disparar.
+    const ev = j.event == null ? -1000 + i : j.event;
+    porJornada.set(ev, (porJornada.get(ev) || 0) + fatorDificuldade(j.difficulty));
+  });
+  // A janela ancora na **próxima jornada da liga**, não no primeiro jogo deste
+  // jogador. Ancorar no jogo dele tornava invisível uma jornada em branco já a
+  // seguir: a janela dele começava mais tarde e ninguém pagava por isso.
+  const comEvento = [...porJornada.keys()].filter((e) => e > -1000);
+  const primeiro = comEvento.length && primeiraJornada != null
+    ? primeiraJornada : Math.min(...porJornada.keys());
   let soma = 0;
   let pesos = 0;
-  jogos.forEach((j, i) => {
+  for (let i = 0; i < n; i += 1) {
     const peso = Math.pow(DECAIMENTO, i);
-    soma += fatorDificuldade(j.difficulty) * peso;
+    soma += (porJornada.get(primeiro + i) || 0) * peso; // sem jogo = 0
     pesos += peso;
-  });
+  }
   return pesos > 0 ? soma / pesos : 1;
+}
+
+// Cinco amarelos valem um jogo de castigo, dez valem dois. A contagem é desta
+// época e vem da API. Não modelo a data-limite a partir da qual o primeiro
+// patamar deixa de contar — precisaria dela da API, e não vem.
+const AMARELOS_CASTIGO = 5;
+
+/**
+ * Probabilidade de falhar uma jornada por acumulação de amarelos.
+ *
+ * Só conta quando está **a um cartão** do castigo: aí, a probabilidade de o
+ * apanhar no próximo jogo é a taxa de amarelos dele aplicada aos minutos que
+ * se espera que jogue. Com dois ou mais cartões em falta a probabilidade cai
+ * muito e exigiria uma conta em dois passos que não se justifica.
+ */
+function riscoSuspensao(p, xmin) {
+  const amarelos = num(p.yellow_cards);
+  const minutos = num(p.minutes);
+  if (!amarelos || minutos < 90) return 0;
+  if (AMARELOS_CASTIGO - (amarelos % AMARELOS_CASTIGO) !== 1) return 0;
+  // Teto de 50%: com poucos minutos a taxa dispara e deixa de ser credível.
+  return Math.min(0.5, (amarelos / minutos) * xmin);
 }
 
 // Estatísticas que fazem sentido somar entre épocas — as que o modelo de pontos
@@ -888,11 +939,17 @@ function projecao(p, ignorarAusencia) {
   } else if (p.status === "d" && p.chance_of_playing_next_round != null) {
     xmin *= p.chance_of_playing_next_round / 100;
   }
+  // Acumulação de amarelos: entra depois do estado clínico, porque a taxa de
+  // cartões aplica-se aos minutos que ele de facto espera jogar.
+  if (!ignorarAusencia) xmin *= 1 - riscoSuspensao(p, xmin);
   xmin = Math.max(0, Math.min(90, xmin));
 
   const ppj = (pp90 * xmin) / 90;
-  const jogos = ((D.fixtures || {})[String(p.team)] || []).slice(0, janelaAtual());
-  const calFator = fatorCalendario(jogos);
+
+  const janela = janelaAtual();
+  const proxima = (D.next_event || {}).id;
+  const jogos = jogosNaJanela((D.fixtures || {})[String(p.team)] || [], janela, proxima);
+  const calFator = fatorCalendario(jogos, janela, proxima);
   const ppjCal = ppj * calFator;
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !indisponivel(p);

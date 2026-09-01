@@ -218,8 +218,10 @@ semJogos.team = 99;
 const prSem = projecao(semJogos);
 verificar("sem calendário, o ajuste é neutro", Math.abs(prSem.ppjCal - prSem.ppj) < 1e-9);
 verificar("decaimento faz a próxima jornada pesar mais",
-  fatorCalendario([{ difficulty: 1 }, { difficulty: 5 }]) >
-  fatorCalendario([{ difficulty: 5 }, { difficulty: 1 }]));
+  fatorCalendario([{ event: 5, difficulty: 1 }, { event: 6, difficulty: 5 }], 5) >
+  fatorCalendario([{ event: 5, difficulty: 5 }, { event: 6, difficulty: 1 }], 5));
+verificar("jogos sem jornada não colapsam numa só",
+  Math.abs(fatorCalendario([{ difficulty: 3 }, { difficulty: 3 }], 2) - 1) < 1e-9);
 
 /* --- Projeção nunca negativa --- */
 /* --- Contribuição defensiva: um limiar por jogo, não um total --- */
@@ -488,6 +490,71 @@ verificar("posições diferentes dão assinaturas diferentes",
       return x.owner == null && !indisponivel(x); }))
       .some(function (x) { return x.p.id === alvo.id; }));
   D.saiu_da_liga = guardado;
+})();
+
+/* --- Fase 1a: jornadas duplas e em branco no calendário --- */
+(function () {
+  const jogo = (ev, dif) => ({ event: ev, difficulty: dif, opponent: 2, is_home: true });
+  const neutro = [jogo(5, 3), jogo(6, 3), jogo(7, 3)];
+  verificar("uma jornada normal por semana dá fator neutro",
+    Math.abs(fatorCalendario(neutro, 3) - 1) < 1e-9, fatorCalendario(neutro, 3));
+
+  // O caso que a versão antiga não apanhava: dois jogos na MESMA jornada.
+  const comDupla = [jogo(5, 3), jogo(5, 3), jogo(6, 3), jogo(7, 3)];
+  const fDupla = fatorCalendario(comDupla, 3);
+  verificar("uma jornada dupla levanta o fator", fDupla > 1.2, fDupla.toFixed(3));
+  verificar("e vale quase o dobro nessa jornada", fDupla > 1.35 && fDupla < 1.5,
+    fDupla.toFixed(3));
+
+  // Jornada em branco: a 6 não existe.
+  const comBranca = [jogo(5, 3), jogo(7, 3)];
+  const fBranca = fatorCalendario(comBranca, 3);
+  verificar("uma jornada em branco baixa o fator", fBranca < 0.85, fBranca.toFixed(3));
+  // Com a janela ancorada na jornada 5, ficar em branco logo na 5 é pior do
+  // que ficar em branco na 7 — e antes isto era invisível, porque a janela
+  // começava no primeiro jogo do jogador.
+  verificar("ficar em branco já na próxima jornada é o pior caso",
+    fatorCalendario([jogo(6, 3), jogo(7, 3)], 3, 5) <
+    fatorCalendario([jogo(5, 3), jogo(6, 3)], 3, 5));
+  verificar("e a janela ancorada não deixa passar quem não joga já",
+    jogosNaJanela([jogo(9, 3)], 3, 5).length === 0);
+
+  verificar("a dificuldade continua a contar",
+    fatorCalendario([jogo(5, 1), jogo(6, 1), jogo(7, 1)], 3) >
+    fatorCalendario([jogo(5, 5), jogo(6, 5), jogo(7, 5)], 3));
+  verificar("sem jogos, o fator é neutro", fatorCalendario([], 5) === 1);
+
+  // A janela conta jornadas, não jogos: com uma dupla, 3 jornadas são 4 jogos.
+  verificar("a janela conta jornadas e não jogos",
+    jogosNaJanela(comDupla, 3).length === 4);
+  verificar("e corta o que fica para lá dela",
+    jogosNaJanela([jogo(5, 3), jogo(9, 3)], 3).length === 1);
+})();
+
+/* --- Fase 1b: suspensão por acumulação de amarelos --- */
+(function () {
+  const base = { yellow_cards: 0, minutes: 900 };
+  verificar("sem amarelos não há risco", riscoSuspensao(base, 80) === 0);
+  verificar("longe do castigo não há risco",
+    riscoSuspensao({ yellow_cards: 2, minutes: 900 }, 80) === 0);
+  const aUm = riscoSuspensao({ yellow_cards: 4, minutes: 900 }, 80);
+  verificar("a um cartão do castigo há risco", aUm > 0, aUm.toFixed(3));
+  verificar("e é a taxa de cartões aplicada aos minutos",
+    Math.abs(aUm - (4 / 900) * 80) < 1e-9);
+  verificar("o segundo patamar também conta (9 amarelos)",
+    riscoSuspensao({ yellow_cards: 9, minutes: 900 }, 80) > 0);
+  verificar("logo a seguir ao castigo o risco volta a zero",
+    riscoSuspensao({ yellow_cards: 5, minutes: 900 }, 80) === 0);
+  verificar("com poucos minutos não se extrapola sem teto",
+    riscoSuspensao({ yellow_cards: 4, minutes: 100 }, 80) <= 0.5);
+  verificar("quem ainda não jogou 90 minutos não é avaliado",
+    riscoSuspensao({ yellow_cards: 4, minutes: 60 }, 80) === 0);
+
+  // Não-regressão: ninguém no plantel real está a um cartão, portanto nada mexe.
+  const emRisco = D.players.filter(function (p) {
+    return riscoSuspensao(p, 80) > 0; });
+  verificar("o risco só se aplica a quem está mesmo a um cartão",
+    emRisco.every(function (p) { return (p.yellow_cards % 5) === 4; }));
 })();
 
 verificar("nenhuma projeção é negativa",

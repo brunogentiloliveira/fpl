@@ -860,6 +860,47 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## Fase 1 das melhorias: regras do jogo que faltavam (2026-09-01)
+
+Primeira fase do plano faseado. Duas correções de facto, sem afinação nenhuma — e **nenhuma
+muda um número hoje**, que é o resultado esperado: não há jornadas duplas nem em branco na
+janela atual (GW3–7) e ninguém tem mais de 2 amarelos. O valor é passarem a estar certas quando
+acontecerem.
+
+### Jornadas duplas e em branco no calendário
+
+O `fatorCalendario()` fazia a **média sobre a lista de jogos**, e o comentário por cima dizia
+que "jornadas duplas contam duas vezes e as em branco puxam para baixo". **Não fazia nem uma
+coisa nem outra**: uma dupla entrava como dois valores numa média (peso nenhum a mais) e uma
+jornada em branco simplesmente não aparecia na lista. Documentação a descrever comportamento
+que não existia.
+
+Agora agrupa **por jornada**: cada uma contribui com a **soma** dos seus jogos, portanto uma
+dupla vale perto do dobro e uma em branco vale zero.
+
+**E ao corrigir isto apareceu um segundo erro, mais subtil**: a janela ancorava no *primeiro
+jogo do jogador*, não na próxima jornada da liga. Um clube em branco já na jornada seguinte não
+era penalizado — a janela dele começava mais tarde e ninguém pagava por isso. Passa a ancorar em
+`next_event`.
+
+`jogosNaJanela()` passa a cortar por jornada e não por número de jogos: com uma dupla, três
+jornadas são quatro jogos.
+
+Guarda contra falha silenciosa: um jogo sem `event` conta como a sua própria jornada. Sem isso
+colapsariam todos num só e o fator disparava — foi o que um teste antigo apanhou, porque passava
+jogos sem `event`.
+
+### Suspensão por acumulação de amarelos
+
+Os `yellow_cards` serviam para tirar pontos mas **nunca para disponibilidade**. `riscoSuspensao()`
+corta os minutos esperados pela probabilidade de apanhar o cartão que suspende, e só conta quem
+está **a um cartão** do patamar (5 ou 10): com dois ou mais em falta a probabilidade cai muito e
+exigiria uma conta em dois passos que não se justifica. Teto de 50%, porque com poucos minutos a
+taxa dispara e deixa de ser credível.
+
+Limite assumido: não modelo a data a partir da qual o patamar dos 5 deixa de contar — a API não
+a dá.
+
 ## Agentes (`.claude/agents/`, 2026-09-01)
 
 Cinco, escolhidos pelo que correu mal neste projeto e não por uma lista genérica. Todos têm o
