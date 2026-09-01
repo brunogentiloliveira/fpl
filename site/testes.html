@@ -574,6 +574,24 @@ verificar("o peso do modelo esperado está no ótimo medido",
   verificar("e o realizado ainda pesa alguma coisa", PESO_ESPERADO < 1);
 })();
 
+/* --- Plantel público atrasado em relação à jornada seguinte --- */
+(function () {
+  if (typeof plantelDesatualizado !== "function") return;
+  const guardado = D.next_event;
+  D.next_event = { id: 3, deadline_time: "2026-09-04T17:30:00Z" };
+  verificar("escolhas da jornada anterior contam como atrasadas",
+    plantelDesatualizado({ jornada_picks: 2 }));
+  verificar("escolhas da própria jornada seguinte não",
+    !plantelDesatualizado({ jornada_picks: 3 }));
+  verificar("sem equipa não há aviso", !plantelDesatualizado(null));
+  verificar("sem jornada das escolhas não há aviso",
+    !plantelDesatualizado({ jornada_picks: null }));
+  D.next_event = undefined;
+  verificar("sem jornada seguinte não há aviso",
+    !plantelDesatualizado({ jornada_picks: 2 }));
+  D.next_event = guardado;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

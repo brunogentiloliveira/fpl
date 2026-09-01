@@ -2370,7 +2370,11 @@ function desenharChips(meusX) {
           esc(t.meu.p.web_name) + "→" + esc(t.entra.p.web_name)).join(", ") +
           (w.quantas > 3 ? ", …" : "") + ")" : "");
       if (w.usar) {
-        return "<strong>Usa nesta jornada.</strong> " + conta + ", e o teu onze sobe " +
+        // Com as escolhas públicas atrasadas, a API ainda não diz que chips
+        // foram gastos — mandar "usa" seria mandar usar de novo.
+        return (plantelDesatualizado(equipa)
+          ? "<strong>Se ainda não o usaste, é esta a jornada.</strong>"
+          : "<strong>Usa nesta jornada.</strong>") + " " + conta + ", e o teu onze sobe " +
           w.ganho.toFixed(1) + " pts por jornada. Feitas à mão custariam −" + w.penalizacao +
           " pts de penalização (tens " + w.livres + " transferência" +
           (w.livres === 1 ? "" : "s") + " livre" + (w.livres === 1 ? "" : "s") +
@@ -2413,12 +2417,19 @@ function desenharChips(meusX) {
     return "";
   };
 
-  $("chips-lista").innerHTML = disponiveis.length === 0
+  // A FPL só revela os chips gastos depois do deadline: enquanto as escolhas
+  // públicas forem de uma jornada anterior, esta lista pode incluir um chip
+  // que já foi usado.
+  const nota = plantelDesatualizado(equipa)
+    ? '<p class="nota">A FPL só revela os chips usados depois do deadline, por isso esta ' +
+      "lista pode incluir algum que já tenhas gasto na jornada a seguir.</p>"
+    : "";
+  $("chips-lista").innerHTML = nota + (disponiveis.length === 0
     ? '<p class="nota">Sem chips disponíveis nesta janela.</p>'
     : '<ul class="sugestoes">' + disponiveis.map((c) =>
         "<li><p class=\"alvo\"><strong>" + nomeChip(c.nome) + "</strong> " +
           "(jornadas " + c.inicio + " a " + c.fim + ")</p>" +
-          '<p class="porque">' + explicar(c.nome) + "</p></li>").join("") + "</ul>";
+          '<p class="porque">' + explicar(c.nome) + "</p></li>").join("") + "</ul>");
 }
 
 /* --- Melhor plantel possível dentro do orçamento (modo clássico) --- */
@@ -2618,9 +2629,43 @@ function contextoClassica(equipa) {
   $("sug-contexto").textContent = partes.join(" · ") + ".";
 }
 
+/**
+ * O plantel mostrado pode já não ser o teu.
+ *
+ * A FPL **não publica a equipa antes do deadline**: `/entry/{id}/event/{ev}/picks/`
+ * dá 404 para a jornada que ainda não fechou, e até os chips usados vêm a
+ * vazio. O que se mostra é sempre o plantel da última jornada com escolhas
+ * públicas — se entretanto fizeste transferências, ou gastaste o wildcard,
+ * nada disso aparece aqui até o deadline passar.
+ *
+ * Isto não se corrige com código (a API pública não o dá); corrige-se dizendo-o.
+ */
+/** As escolhas públicas são anteriores à próxima jornada? */
+function plantelDesatualizado(equipa) {
+  const proxima = (D.next_event || {}).id;
+  return !!(equipa && equipa.jornada_picks && proxima && equipa.jornada_picks < proxima);
+}
+
+function avisoPlantelDesatualizado(equipa) {
+  const alvo = $("aviso-plantel");
+  if (!alvo) return;
+  const proxima = (D.next_event || {}).id;
+  const daJornada = equipa && equipa.jornada_picks;
+  alvo.hidden = !(equipa && daJornada && proxima && daJornada < proxima);
+  if (alvo.hidden) return;
+  const dl = (D.next_event || {}).deadline_time;
+  alvo.textContent =
+    "O plantel abaixo é o da jornada " + daJornada + ", a última que a FPL publica. " +
+    "Transferências e chips que tenhas feito para a jornada " + proxima +
+    " — o wildcard incluído — só ficam visíveis depois do deadline" +
+    (dl ? " (" + fmtDataHora.format(new Date(dl)) + ")" : "") +
+    ". Até lá, o capitão, as transferências e os chips sugeridos referem-se ao plantel antigo.";
+}
+
 function initClassica() {
   if (!ehClassica()) return;
   const equipa = minhaEquipaClassica();
+  avisoPlantelDesatualizado(equipa);
   const meusIds = new Set((equipa && equipa.picks || []).map((x) => x.id));
   const meusX = comProjecao(D.players.filter((p) => meusIds.has(p.id)));
   contextoClassica(equipa);

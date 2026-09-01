@@ -860,6 +860,29 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## O plantel da clássica não é o teu, e a API não o dá (2026-09-04)
+
+Reparo do utilizador: "a equipa apresentada não é a minha atual, usei a wildcard".
+
+**Não é bug do código, é limite da API pública** — mas era falha da interface. A FPL **não
+publica a equipa antes do deadline**: `/entry/{id}/event/{ev}/picks/` dá **404** para a jornada
+que ainda não fechou, e `chips` vem **vazio** mesmo depois de o wildcard ter sido jogado. O
+`fetch_minha_equipa` recua até à última jornada com escolhas públicas — a GW2, de antes do
+wildcard — e fazia-o **em silêncio**.
+
+Pior do que mostrar o plantel antigo: a secção dos Chips dizia **"Usa nesta jornada"** de um
+wildcard já gasto. Não era informação desatualizada, era um conselho errado.
+
+- `plantelDesatualizado()` compara `jornada_picks` com `next_event`. O dado já era guardado e o
+  app.js nunca o usava.
+- Faixa no topo do bloco da clássica a dizer de que jornada é o plantel, quando o deadline
+  seguinte é, e que transferências e chips feitos para a jornada seguinte ainda não aparecem.
+- O veredicto do wildcard passa de "Usa nesta jornada" para **"Se ainda não o usaste, é esta a
+  jornada"**, e a lista de chips avisa que pode incluir algum já gasto.
+
+Não há forma de contornar sem autenticação (`/api/my-team/{id}/` exige sessão iniciada), e isso
+está fora de questão. A correção é dizer o que se sabe e o que não se sabe.
+
 ## Historial de lesões: medido e rejeitado (2026-09-01)
 
 Página indicada pelo utilizador:
