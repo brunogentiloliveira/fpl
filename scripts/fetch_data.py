@@ -186,6 +186,20 @@ def _limpar_html(txt):
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", txt or "")).split())
 
 
+# Muitas entradas do live blog começam por uma linha de byline ("Latest from
+# Sky Sports News' Anthony Joseph: Celtic have completed a deal...") que nada
+# tem a ver com o negócio noticiado. Sem a cortar, o nome do jornalista casa
+# com o web_name de outro jogador — caso real: "Anthony Joseph" apanhava o
+# Jaidon Anthony (web_name "Anthony") na mesma notícia do Van den Berg, que
+# era o jogador certo, e `extrair_transferencias` atribuía a transferência
+# aos dois por não haver ambiguidade a mais de 3 candidatos.
+RE_BYLINE = re.compile(r"^latest from sky sports[^:]*:\s*", re.I)
+
+
+def _sem_byline(txt):
+    return RE_BYLINE.sub("", txt, count=1)
+
+
 def liveblog_itens(doc):
     """HTML da página -> entradas do live blog, no formato dos itens de RSS.
 
@@ -213,7 +227,7 @@ def liveblog_itens(doc):
             "titulo": titulo,
             "link": e.get("url") or SKY_AO_VIVO,
             "data": (data[:19] + "Z") if data else None,
-            "resumo": _limpar_html(e.get("articleBody"))[:LIVEBLOG_RESUMO],
+            "resumo": _sem_byline(_limpar_html(e.get("articleBody")))[:LIVEBLOG_RESUMO],
         })
     return itens
 
@@ -313,7 +327,15 @@ def fetch_ffs(players, nomes_clubes):
     O artigo da jornada traz um resumo em lista, com o clube em negrito e os
     jogadores a seguir. Isso permite cruzar nomes **dentro do clube certo**,
     que é o que evita falsos positivos. Se o formato mudar, devolve vazio e o
-    resto da recolha segue na mesma."""
+    resto da recolha segue na mesma.
+
+    Nem todo artigo com "team news" no título é esse resumo: em jornadas com
+    jogos espalhados o FFS também publica antevisões por jogo só ("Man Utd v
+    Ipswich team news: Rashford starts"), em prosa, sem nenhum `<li>`. Um
+    artigo assim ser o primeiro do feed dava "0 jogadores classificados" com
+    `ok: True` — indistinguível de uma jornada sem novidades. Percorrem-se os
+    candidatos até um que tenha pelo menos um `<li>` reconhecível; sem nenhum,
+    fica registado como falha."""
     saida = {"feed": [], "artigo": None, "jogadores": {}}
     try:
         saida["feed"] = [
@@ -324,73 +346,85 @@ def fetch_ffs(players, nomes_clubes):
         registar("Fantasy Football Scout", False, exc)
         return saida
 
-    artigo = next((i for i in saida["feed"] if "team news" in i["titulo"].lower()), None)
-    if not artigo:
-        return saida
-    try:
-        req = urllib.request.Request(artigo["link"], headers={"User-Agent": "fpl-draft-dashboard"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            pagina = resp.read().decode("utf-8", "ignore")
-    except Exception as exc:
-        print(f"Aviso: artigo de team news do FFS falhou ({exc}).", file=sys.stderr)
-        return saida
-
-    corpo = re.search(r'<section class="entry-content">(.*?)<div class="entry-links"',
-                      pagina, re.S)
-    if not corpo:
-        print("Aviso: corpo do artigo do FFS não reconhecido.", file=sys.stderr)
+    candidatos_artigo = [i for i in saida["feed"] if "team news" in i["titulo"].lower()]
+    if not candidatos_artigo:
+        registar("Fantasy Football Scout", False, "nenhum artigo de team news no feed")
         return saida
 
     por_clube = {}
     for p in players:
         por_clube.setdefault(nomes_clubes.get(p["team"]), []).append(p)
 
-    saida["artigo"] = {k: artigo[k] for k in ("titulo", "link", "data")}
-    for li in re.findall(r"<li>(.*?)</li>", corpo.group(1), re.S):
-        m = re.match(r"\s*<strong>(.*?)</strong>\s*:?(.*)", li, re.S)
-        if not m:
-            continue
-        clube = _texto_html(m.group(1))
-        texto = _texto_html(m.group(2))
-        candidatos = por_clube.get(FFS_CLUBES.get(clube, clube))
-        if not candidatos or not texto:
-            continue
-
-        marcas = sorted(
-            (mm.start(), estado)
-            for estado, rx in FFS_ESTADOS for mm in rx.finditer(texto)
-            if not FFS_NEGACAO.search(texto[:mm.start()])
-        )
-        if not marcas:
+    formato_errado = 0
+    for artigo in candidatos_artigo:
+        try:
+            req = urllib.request.Request(artigo["link"], headers={"User-Agent": "fpl-draft-dashboard"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                pagina = resp.read().decode("utf-8", "ignore")
+        except Exception as exc:
+            print(f"Aviso: artigo de team news do FFS falhou ({exc}).", file=sys.stderr)
             continue
 
-        normalizado = sem_acentos(texto).lower()
-        achados = {}
-        for p in candidatos:
-            rx = padrao_nome(p)
-            achado = rx.search(normalizado) if rx else None
-            if not achado:
+        corpo = re.search(r'<section class="entry-content">(.*?)<div class="entry-links"',
+                          pagina, re.S)
+        itens_li = re.findall(r"<li>(.*?)</li>", corpo.group(1), re.S) if corpo else []
+        if not itens_li:
+            # Antevisão de um jogo só, ou formato irreconhecível: tenta o
+            # próximo candidato em vez de ficar por aqui.
+            formato_errado += 1
+            continue
+
+        saida["artigo"] = {k: artigo[k] for k in ("titulo", "link", "data")}
+        for li in itens_li:
+            m = re.match(r"\s*<strong>(.*?)</strong>\s*:?(.*)", li, re.S)
+            if not m:
                 continue
-            # Só conta a palavra-chave que vem DEPOIS do nome ("Porro ... out");
-            # sem nenhuma a seguir, não se classifica (melhor do que adivinhar).
-            seguintes = [e for pos, e in marcas if pos >= achado.start()]
-            if seguintes:
-                achados.setdefault(achado.start(), []).append((p, seguintes[0]))
+            clube = _texto_html(m.group(1))
+            texto = _texto_html(m.group(2))
+            candidatos = por_clube.get(FFS_CLUBES.get(clube, clube))
+            if not candidatos or not texto:
+                continue
 
-        for pos, lista in achados.items():
-            if len(lista) > 1:
-                # Dois jogadores do mesmo clube no mesmo sítio do texto (apelidos
-                # partilhados): fica o que bate pelo web_name, senão nenhum.
-                lista = [(p, e) for p, e in lista
-                         if _tokens(p["web_name"]) & _tokens(normalizado[pos:pos + 40])]
-                if len(lista) != 1:
+            marcas = sorted(
+                (mm.start(), estado)
+                for estado, rx in FFS_ESTADOS for mm in rx.finditer(texto)
+                if not FFS_NEGACAO.search(texto[:mm.start()])
+            )
+            if not marcas:
+                continue
+
+            normalizado = sem_acentos(texto).lower()
+            achados = {}
+            for p in candidatos:
+                rx = padrao_nome(p)
+                achado = rx.search(normalizado) if rx else None
+                if not achado:
                     continue
-            p, estado = lista[0]
-            saida["jogadores"][str(p["id"])] = {
-                "estado": estado, "frase": texto, "clube": clube,
-            }
-    registar("Fantasy Football Scout", True,
-             f"{len(saida['jogadores'])} jogadores classificados")
+                # Só conta a palavra-chave que vem DEPOIS do nome ("Porro ... out");
+                # sem nenhuma a seguir, não se classifica (melhor do que adivinhar).
+                seguintes = [e for pos, e in marcas if pos >= achado.start()]
+                if seguintes:
+                    achados.setdefault(achado.start(), []).append((p, seguintes[0]))
+
+            for pos, lista in achados.items():
+                if len(lista) > 1:
+                    # Dois jogadores do mesmo clube no mesmo sítio do texto (apelidos
+                    # partilhados): fica o que bate pelo web_name, senão nenhum.
+                    lista = [(p, e) for p, e in lista
+                             if _tokens(p["web_name"]) & _tokens(normalizado[pos:pos + 40])]
+                    if len(lista) != 1:
+                        continue
+                p, estado = lista[0]
+                saida["jogadores"][str(p["id"])] = {
+                    "estado": estado, "frase": texto, "clube": clube,
+                }
+        registar("Fantasy Football Scout", True,
+                 f"{len(saida['jogadores'])} jogadores classificados")
+        return saida
+
+    registar("Fantasy Football Scout", False,
+             f"{formato_errado} artigo(s) de team news no formato errado "
+             "(antevisão por jogo, sem lista de resumo)")
     return saida
 
 
@@ -690,6 +724,19 @@ def fetch_wikipedia_transferencias(players, ano):
 TRANSFERMARKT = "https://www.transfermarkt.pt/premier-league/transfers/wettbewerb/GB1"
 
 
+# Um jogador "sai" para a equipa de reservas/sub do **próprio clube** (fim de
+# empréstimo, ou uma promoção/despromoção administrativa) — não é uma
+# transferência. A página escreve isto como sufixo do nome do clube de
+# destino ("Liverpool S21", "Man Utd S21", "Man City U21"). Não é por clube
+# específico: o padrão vale para qualquer um dos 20, e a página tem 18 destas
+# linhas na tabela de Saídas.
+_RESERVA_RX = re.compile(r"\b(s21|u21|u23|u18|ii)$", re.I)
+
+
+def _equipa_reserva(celulas):
+    return any(_RESERVA_RX.search(sem_acentos(c)) for c in celulas)
+
+
 def transfermarkt_tabelas(doc):
     """HTML da página -> (entradas, saídas) com os nomes tal como lá aparecem.
 
@@ -713,8 +760,11 @@ def transfermarkt_tabelas(doc):
             cel = [_texto_celula(c) for c in
                    re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", linha, re.S)]
             cel = [c for c in cel if c]
-            if cel:
-                alvo.append(cel[0])
+            if not cel:
+                continue
+            if destino == "saidas" and _equipa_reserva(cel):
+                continue
+            alvo.append(cel[0])
     return entradas, saidas
 
 
