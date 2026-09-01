@@ -533,7 +533,14 @@ function pontosContribuicaoDefensiva(pos, dc90) {
 // As estatísticas subjacentes preveem melhor o futuro; os pontos reais apanham
 // o que o modelo não tem (penáltis defendidos fora de época, sequências de bónus,
 // o que quer que a Poisson das defensivas não capte).
-const PESO_ESPERADO = 0.5;
+//
+// **Medido** (Fase 2, 2026-09-01): 397 pares época→época seguinte com 900+
+// minutos dos dois lados, validação repetida em 200 divisões. O ótimo está em
+// 0.7–0.8 e o antigo 0.5 ficava 1.5% pior; num subconjunto limpo (só épocas em
+// que a contribuição defensiva já existia) dá o mesmo. Por posição o modelo
+// esperado ganha em defesas, médios e avançados. Fica em 0.7, o extremo
+// conservador do ótimo: guarda 30% para o que o modelo não vê.
+const PESO_ESPERADO = 0.7;
 
 function num(v) {
   const n = parseFloat(v);

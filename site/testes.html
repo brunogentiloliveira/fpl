@@ -557,6 +557,23 @@ verificar("posições diferentes dão assinaturas diferentes",
     emRisco.every(function (p) { return (p.yellow_cards % 5) === 4; }));
 })();
 
+/* --- Fase 2: o peso entre esperado e realizado --- */
+verificar("o peso do modelo esperado está no ótimo medido",
+  PESO_ESPERADO === 0.7, "PESO_ESPERADO=" + PESO_ESPERADO);
+(function () {
+  // Com o peso a favor do esperado, dois jogadores com os mesmos pontos mas
+  // xG diferente têm de se separar mais do que se separavam a 50/50.
+  const base = D.players.find(function (x) { return x.element_type === 4; });
+  const h = historicoDe(base);
+  const bom = Object.assign({}, h, { expected_goals: "12.0" });
+  const mau = Object.assign({}, h, { expected_goals: "1.0" });
+  const separa = taxaBase(base, bom) - taxaBase(base, mau);
+  const c = componentesPP90(base, bom).total - componentesPP90(base, mau).total;
+  verificar("a diferença de xG passa quase toda para a taxa",
+    Math.abs(separa - PESO_ESPERADO * c) < 1e-6, separa.toFixed(3));
+  verificar("e o realizado ainda pesa alguma coisa", PESO_ESPERADO < 1);
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

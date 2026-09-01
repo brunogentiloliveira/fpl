@@ -860,6 +860,64 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## Fase 2 das melhorias: medir as constantes (2026-09-01)
+
+Fase de **medição**, não de alteração — o resultado podia perfeitamente ser "fica como está", e
+para metade foi. Base: `history_past` de 387 jogadores (épocas completas desde 2008/09),
+`componentesPP90()` reimplementado em Python, validação repetida em 200 divisões metade/metade.
+
+### `PESO_ESPERADO`: 0.5 → **0.7**
+
+A constante mais influente do modelo e a única grande que nunca tinha sido medida.
+
+| peso | MAE | ganho sobre dar a média a todos |
+|---|---|---|
+| 0.0 (só realizado) | 0.725 | 20.7% |
+| **0.5** (o antigo) | 0.682 | 25.4% |
+| **0.7** | **0.672** | **25.9%** |
+| 0.8 | 0.673 | 26.4% |
+| 1.0 (só esperado) | 0.688 | 24.2% |
+
+O ótimo é um planalto entre 0.7 e 0.8, e o 0.5 fica 1.5% pior. Não é ruído: na comparação
+**emparelhada** (mesmo conjunto de teste), 0.8 ganha ao 0.5 em **190 de 200 divisões**. Por
+posição o modelo esperado ganha em defesas, médios e avançados (os guarda-redes têm 3 pares, não
+dá para dizer). Num subconjunto limpo — só pares em que a contribuição defensiva já existia — dá
+o mesmo. Ficou em **0.7**, o extremo conservador: guarda 30% para o que o modelo não vê.
+
+Efeito real: 465 jogadores mexem, 0.284 pts/90 de variação média. Os maiores movimentos são de
+quem tem poucos minutos, onde a taxa de pontos realizada é ruidosa — é a direção pretendida.
+
+### `MIN_PRIOR`: fica em **900**, e agora está provado
+
+Medido **na forma que o código usa** — encolher para a época anterior *do próprio jogador*, não
+para a média da população:
+
+| estatística | k ótimo | ganho sobre k=900 |
+|---|---|---|
+| xG | 900 | 0.0% |
+| xA | 900 | 0.0% |
+| xGC | 1300 | 0.1% |
+| bónus | 1800 | 0.4% |
+| pontos totais | 1800 | 0.2% |
+
+Nada justifica mexer. A hipótese de que "o xG estabiliza mais depressa e precisa de menos
+encolhimento" **não se confirma** quando o prior é o próprio jogador.
+
+### Um resultado que era um artefacto, e como o apanhei
+
+A primeira medição (encolhimento para a **média da população**) dava a contribuição defensiva
+com k ótimo de 0/90 e ganhos de 8–18%. Parecia uma descoberta: "a contribuição defensiva é um
+papel e não precisa de encolhimento".
+
+**Era falso.** O que me fez desconfiar foi a correlação entre épocas: 0.38 entre t e t+1, mas
+**0.00** entre t-1 e t. Duas amostras consecutivas não se comportam assim. Verifiquei: o campo
+`defensive_contribution` **só existe a partir de 2024/25** — antes é zero para toda a gente. O
+"prior" dos meus trios era uma época em que o dado não existia, e encolher para zeros destrói
+qualquer estimativa. Os 17.9% mediam isso.
+
+Conclusão honesta: **o encolhimento da contribuição defensiva não é mensurável hoje**. Só haverá
+trios válidos quando a época 2026/27 fechar.
+
 ## Fase 1 das melhorias: regras do jogo que faltavam (2026-09-01)
 
 Primeira fase do plano faseado. Duas correções de facto, sem afinação nenhuma — e **nenhuma
