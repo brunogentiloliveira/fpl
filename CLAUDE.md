@@ -860,6 +860,48 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## Historial de lesões: medido e rejeitado (2026-09-01)
+
+Página indicada pelo utilizador:
+`transfermarkt.pt/<jogador>/verletzungen/spieler/<id>` — tabela com Época · Lesão · de · até ·
+Dias · Jogos perdidos. Atacava a lacuna que eu próprio apontei como a maior: **o modelo não
+distingue "faltou por lesão" de "não era titular"**.
+
+O caso é real. O Ødegaard perdeu **30 jogos em 7 lesões** em 25/26; as 16 titularidades dele em
+38 são explicadas por lesão, não por ser jogador de plantel. (Cuidado na comparação: o
+Transfermarkt conta todas as competições, a FPL só as 38 da liga.)
+
+**Recolha**: os ids saem dos planteis (`/<clube>/startseite/verein/<id>`) — 20 pedidos dão ~6000
+jogadores; 246 dos meus cruzaram sem ambiguidade, 91 ficaram ambíguos. Deu **623 pares
+época→seguinte** com historial.
+
+**A tensão que só os dados resolvem**: saber que faltou por lesão sugere que rende mais quando
+apto, mas sete lesões numa época sugerem que volta a faltar. Medição fora da amostra, 300
+divisões:
+
+| Previsor dos minutos da época seguinte | MAE | Ganho |
+|---|---|---|
+| **minutos da época passada (o atual)** | **682** | — |
+| + dias de lesão (linear) | 689 | −1.0% |
+| minutos por dia disponível | 724 | −6.1% |
+| + marca de "época perdida" (90+ dias) | 686 | **+0.1%**, ganha em 187/300 |
+
+**Nada compensa.** O coeficiente linear dos dias é negativo (−0.47 min por dia lesionado): quem
+se lesionou joga *menos* a seguir, não mais.
+
+**A armadilha que quase me enganou**: por faixas, quem perdeu 90+ dias passa de 1024 para 1534
+minutos — **+48%**, o que parece confirmar a intuição em cheio. Mas quando se põe a marca no
+modelo o ganho é 0.1%. Os 48% eram **regressão à média**: minutos baixos já codificam "esteve
+lesionado", e a regressão sobre os minutos já prevê a recuperação. A lesão explícita não
+acrescenta informação — só a repete.
+
+Contexto para calibrar: o MAE é de ~680 minutos numa época. **Prever minutos é intrinsecamente
+ruidoso**, e nenhuma destas variantes muda isso.
+
+Fica **não integrado**. Nota: o historial continua a ter valor *informativo* para o ecrã ("perdeu
+30 jogos por lesão na época passada") — o que não tem é valor preditivo, e por isso não entra no
+modelo.
+
 ## Recolha para a Fase 5: emparelhamentos e estado clínico (2026-09-01)
 
 Ao perguntar "que dados faltam para a Fase 5", a resposta foi que **a maior parte não é esperar
