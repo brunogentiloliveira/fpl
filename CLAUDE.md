@@ -860,6 +860,47 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## zerozero.pt: mapeado e validado, **por ligar** (2026-09-01)
+
+Fonte indicada pelo utilizador para a lacuna da **rotação por competição europeia**. Recolhido e
+validado, mas **deliberadamente não ligado ao modelo** — ver "o que falta" no fim.
+
+`robots.txt` só bloqueia `zzmap_v3.php`. O mapa dos 20 clubes está em `scripts/zerozero.json`.
+
+**A época certa é `epoca_id=156`** (2026/27). A 155 é 2025/26 e tem outros promovidos —
+comparei os planteis e três clubes desta liga (Coventry, Hull, Ipswich) não existem lá.
+
+**Validação semântica, não "a página respondeu"**: para cada slug contei quantos jogadores do
+plantel desse clube (segundo a FPL) aparecem na página, e exigi ser o clube mais representado
+com folga. 20/20, pior caso o Fulham com 18 contra 3.
+
+Três armadilhas, todas do mesmo feitio das que já apanhei noutras fontes:
+
+- **Slugs que redirecionam em silêncio.** `/equipa/brentford` devolve **200** e 266 KB — mas é a
+  lista geral de equipas. A forma canónica leva id: `/equipa/brentford/2600`, `sunderland/91`,
+  `aston-villa/76`, `hull-city/5096`, `coventry-city/2584`.
+- **Palavras banais a casar clubes errados.** "Coventry **City**" com "Manchester **City**". A
+  lista de exclusão tem de levar *city*, *united*, *town*, *albion*.
+- **`PE` é "Pré-Época"**, não uma prova europeia. Contá-la teria triplicado a lista de clubes
+  em competições europeias.
+
+**Quem joga na Europa em 2026/27**: Champions League — Arsenal, Aston Villa, Liverpool, Man City,
+Man Utd; Conference League (qualificação) — Brighton; Supertaça Europeia — Aston Villa. Seis dos
+vinte. *Não aparece Europa League em clube nenhum*, o que é invulgar e não consegui confirmar.
+
+**O calendário parseia limpo** (`/edicao/<prova>/<id>/calendario`: data ISO, hora e os dois
+clubes por linha). Cruzado com as jornadas: GW4, GW7 e GW8 têm cinco clubes desta liga a chegar
+ao fim de semana com jogo europeu a meio da semana; as outras não têm nenhum.
+
+**O que falta, e porque é que não liguei nada**: tenho *quem* e *quando*, falta *quanto custa em
+minutos*. Um treinador roda três jogadores, outro nenhum — aplicar um corte agora seria inventar
+um número. É mensurável com o que já guardo (minutos por jogador e por jornada): quando houver
+jornadas suficientes a seguir a jogos europeus, mede-se a diferença real por clube. Mesma
+disciplina do limiar dos 60 minutos, que medi e concluí não compensar.
+
+Limitações da recolha em si: só apanhei 14 jogos até 21 de outubro (a página de calendário não
+traz a fase de liga toda — é preciso paginar), e só a Champions.
+
 ## Fase 2 das melhorias: medir as constantes (2026-09-01)
 
 Fase de **medição**, não de alteração — o resultado podia perfeitamente ser "fica como está", e

@@ -1,0 +1,186 @@
+{
+ "Brentford": {
+  "caminho": "/equipa/brentford/2600",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ },
+ "Man Utd": {
+  "caminho": "/equipa/manchester-united",
+  "competicoes": [
+   "Premier League",
+   "PL",
+   "UCL",
+   "PE"
+  ]
+ },
+ "Chelsea": {
+  "caminho": "/equipa/chelsea",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "PL",
+   "LC"
+  ]
+ },
+ "Liverpool": {
+  "caminho": "/equipa/liverpool",
+  "competicoes": [
+   "Premier League",
+   "PL",
+   "UCL",
+   "PE"
+  ]
+ },
+ "Bournemouth": {
+  "caminho": "/equipa/bournemouth/4929",
+  "competicoes": [
+   "Premier League",
+   "PL",
+   "LC",
+   "PE"
+  ]
+ },
+ "Brighton": {
+  "caminho": "/equipa/brighton-hove-albion",
+  "competicoes": [
+   "UEFA Conference League (Qual.)",
+   "Premier League",
+   "LC",
+   "PL",
+   "QUEC"
+  ]
+ },
+ "Sunderland": {
+  "caminho": "/equipa/sunderland/91",
+  "competicoes": [
+   "Premier League",
+   "PL",
+   "LC",
+   "PE"
+  ]
+ },
+ "Man City": {
+  "caminho": "/equipa/manchester-city",
+  "competicoes": [
+   "Premier League",
+   "The FA Community Shield",
+   "PL",
+   "UCL",
+   "CS"
+  ]
+ },
+ "Crystal Palace": {
+  "caminho": "/equipa/crystal-palace",
+  "competicoes": [
+   "Premier League",
+   "PL",
+   "LC",
+   "PE"
+  ]
+ },
+ "Leeds": {
+  "caminho": "/equipa/leeds-united/84",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "PL",
+   "LC"
+  ]
+ },
+ "Ipswich Town": {
+  "caminho": "/equipa/ipswich-town/2586",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ },
+ "Newcastle": {
+  "caminho": "/equipa/newcastle",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "PL",
+   "LC"
+  ]
+ },
+ "Nott'm Forest": {
+  "caminho": "/equipa/nottingham-forest/2579",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "PL",
+   "LC"
+  ]
+ },
+ "Hull City": {
+  "caminho": "/equipa/hull-city/5096",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "PL",
+   "LC"
+  ]
+ },
+ "Spurs": {
+  "caminho": "/equipa/tottenham",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ },
+ "Everton": {
+  "caminho": "/equipa/everton/82",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ },
+ "Aston Villa": {
+  "caminho": "/equipa/aston-villa/76",
+  "competicoes": [
+   "UEFA Super Cup",
+   "Premier League",
+   "PL",
+   "UCL",
+   "PE"
+  ]
+ },
+ "Arsenal": {
+  "caminho": "/equipa/arsenal",
+  "competicoes": [
+   "Premier League",
+   "The FA Community Shield",
+   "PL",
+   "UCL",
+   "CS"
+  ]
+ },
+ "Coventry City": {
+  "caminho": "/equipa/coventry-city/2584",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ },
+ "Fulham": {
+  "caminho": "/equipa/fulham/83",
+  "competicoes": [
+   "Premier League",
+   "EFL League Cup",
+   "LC",
+   "PL"
+  ]
+ }
+}
