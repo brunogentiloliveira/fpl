@@ -121,7 +121,7 @@ def bola_parada_da_api(players):
     return saida
 
 
-def fetch_jornadas(atual, anterior, fixtures):
+def fetch_jornadas(atual, anterior, fixtures, bootstrap=None):
     """Minutos e pontos por jornada, como no Draft (o formato é o mesmo).
 
     `equipas` guarda só quem já **terminou** o jogo dessa jornada: sem isso,
@@ -139,7 +139,10 @@ def fetch_jornadas(atual, anterior, fixtures):
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        if fd.jornada_em_cache(guardada):
+        # A jornada a decorrer volta a ser pedida enquanto não tiver o estado
+        # clínico: é a única altura em que ele é legítimo de gravar.
+        semEstado = ev == int(atual) and not (guardada or {}).get("estados")
+        if fd.jornada_em_cache(guardada) and not semEstado:
             saida[chave] = guardada
             continue
         try:
@@ -163,6 +166,13 @@ def fetch_jornadas(atual, anterior, fixtures):
         saida[chave] = {
             "finalizada": bool(jogos) and all(j.get("finished") for j in jogos),
             "equipas": equipas,
+            "jogos": [[j.get("team_h"), j.get("team_a"),
+                       j.get("team_h_score"), j.get("team_a_score")]
+                      for j in jogos if jogado(j)],
+            # Só para a jornada a decorrer: ver a nota no fetch_data.
+            **({"estados": fd.estados_da_jornada(bootstrap or {})} if ev == int(atual)
+               else ({"estados": guardada["estados"]}
+                     if guardada and guardada.get("estados") else {})),
             "stats": stats,
         }
     if saida:
@@ -360,7 +370,7 @@ def main():
         "players": players,
         # A jornada a decorrer entra: os jogos que faltam hoje são os que interessam.
         "fixtures": calendario_por_clube(fixtures, atual or (proximo and proximo["id"]) or 1),
-        "jornadas": fetch_jornadas(atual, anterior, fixtures),
+        "jornadas": fetch_jornadas(atual, anterior, fixtures, bootstrap),
         "historico": fd.completar_historico(
             fd.snapshot_historico(players, anterior, game), players),
         "preepoca": fd.fetch_preepoca(nomes_clubes, players),

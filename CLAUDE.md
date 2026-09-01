@@ -860,6 +860,49 @@ com o PC desligado**.
 - Alternativa para dados ao vivo fora de casa: uma VPN privada (Tailscale) até ao PC. Abrir
   portas no router está fora de questão — o `servir.py` não tem autenticação nenhuma.
 
+## Recolha para a Fase 5: emparelhamentos e estado clínico (2026-09-01)
+
+Ao perguntar "que dados faltam para a Fase 5", a resposta foi que **a maior parte não é esperar
+por dados novos — é começar a guardar o que já passa à frente e se deita fora**. Duas adições,
+ambas só recolha: **o modelo não lhes toca**.
+
+### Emparelhamentos e resultado por jornada (`jornadas[ev].jogos`)
+
+`[[casa, fora, golos_casa, golos_fora], …]` só dos jogos já realizados. Já se lia o
+`/event/{ev}/live → fixtures` para saber que equipas jogaram e deitava-se o resto fora.
+
+Destranca duas coisas hoje impossíveis: o **bónus como lugar no top-3 daquele jogo** (o BPS já
+era guardado, faltava saber quem estava no mesmo jogo — e o bónus é um lugar, não uma taxa) e a
+**baliza a zero por equipa**, que é o mesmo acontecimento para todos os defesas do clube, o que
+permite medir a correlação entre eles.
+
+**É recuperável no passado**, por isso o guarda da cache passa a exigi-lo e as jornadas antigas
+foram refeitas.
+
+### Estado clínico por jornada (`jornadas[ev].estados`)
+
+`{id: [status, chance, news_added]}`, e **só de quem não está simplesmente apto** — quem não
+aparece estava disponível, e isso poupa nove décimos das linhas. 138 jogadores na GW2.
+
+Serve a maior lacuna do modelo: hoje ele **não distingue "faltou por lesão" de "não era
+titular"** (o caso Ødegaard/Scott). Com isto, a pergunta deixa de ser um padrão a inferir de
+meia época de ausências e passa a ser um facto registado. O `news_added` fica guardado de
+propósito: a recolha corre dias depois do jogo, e sem a data da marcação não se saberia se a
+lesão é anterior ou posterior à jornada.
+
+**Ao contrário dos emparelhamentos, não é recuperável**: refazer uma jornada antiga gravaria o
+estado de *hoje* numa semana em que ele era outro. Foi o que aconteceu à primeira tentativa —
+o guarda novo obrigou a refazer a GW1 e ela apanhou os 138 lesionados de hoje como se fossem os
+dela. Corrigido: **só se grava para a jornada a decorrer**, e as anteriores ficam sem ele.
+A GW1 fica sem estado clínico para sempre, e é o correto.
+
+Detalhe da interação com a cache: uma jornada que seja a atual **e** já esteja finalizada era
+curto-circuitada antes de chegar a gravar o estado. Passa a ser repedida enquanto não o tiver.
+
+**Quando é que a Fase 5 começa a poder ser medida**: lesão contra rotação, ~5 jornadas
+(portanto GW7); rotação europeia, 3 a 4 jornadas a seguir a jogos europeus (GW4, 7 e 8 são as
+primeiras — finais de outubro); bónus por lugar, assim que houver jornadas suficientes.
+
 ## zerozero.pt: mapeado e validado, **por ligar** (2026-09-01)
 
 Fonte indicada pelo utilizador para a lacuna da **rotação por competição europeia**. Recolhido e

@@ -139,9 +139,29 @@ def testa_live():
     verificar("campos em falta ficam a zero, não rebentam",
               fd.linha_jornada({"minutes": 5}) == [5, 0, 0, 0.0, 0.0, 0.0])
 
+    # Estado clínico: só quem não está simplesmente apto, para poupar linhas.
+    bs = {"elements": [
+        {"id": 1, "status": "a", "chance_of_playing_next_round": None, "news_added": None},
+        {"id": 2, "status": "a", "chance_of_playing_next_round": 100, "news_added": None},
+        {"id": 3, "status": "i", "chance_of_playing_next_round": 0,
+         "news_added": "2026-08-15T20:00:06Z"},
+        {"id": 4, "status": "d", "chance_of_playing_next_round": 75, "news_added": "x"},
+    ]}
+    est = fd.estados_da_jornada(bs)
+    verificar("quem está apto não ocupa espaço", "1" not in est and "2" not in est)
+    verificar("lesionados e dúvidas ficam registados", set(est) == {"3", "4"}, sorted(est))
+    verificar("guarda estado, hipótese e desde quando",
+              est["3"] == ["i", 0, "2026-08-15T20:00:06Z"], est["3"])
+    verificar("bootstrap vazio não rebenta", fd.estados_da_jornada({}) == {})
+
     # Jornadas guardadas antes destes campos não podem ficar presas na cache.
-    antiga = {"finalizada": True, "equipas": [1, 2], "stats": {"3": [90, 6]}}
-    nova = {"finalizada": True, "equipas": [1, 2], "stats": {"3": [90, 6, 28, 0.3, 0.1, 1.2]}}
+    JOGOS = [[1, 2, 1, 0]]
+    antiga = {"finalizada": True, "equipas": [1, 2], "jogos": JOGOS,
+              "stats": {"3": [90, 6]}}
+    nova = {"finalizada": True, "equipas": [1, 2], "jogos": JOGOS,
+            "stats": {"3": [90, 6, 28, 0.3, 0.1, 1.2]}}
+    verificar("sem os emparelhamentos, a jornada é repedida",
+              not fd.jornada_em_cache({k: v for k, v in nova.items() if k != "jogos"}))
     verificar("cache antiga (só min/pts) é repedida", not fd.jornada_em_cache(antiga))
     verificar("cache completa é reaproveitada", fd.jornada_em_cache(nova))
     verificar("jornada por terminar nunca vai a cache",

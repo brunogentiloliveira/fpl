@@ -1221,11 +1221,18 @@ def linha_jornada(s):
 def jornada_em_cache(guardada):
     """Entrada de cache reaproveitável, em vez de voltar a pedir a jornada.
 
-    Exige três coisas: estar terminada, ter as equipas registadas (sem elas a
-    entrada vem de uma versão com um erro antigo) e ter os campos todos — as
-    jornadas recolhidas antes do BPS/xG só têm minutos e pontos, e não vale a
-    pena perdê-los para sempre por estarem em cache."""
+    Exige quatro coisas: estar terminada, ter as equipas registadas (sem elas a
+    entrada vem de uma versão com um erro antigo), ter os campos todos — as
+    jornadas recolhidas antes do BPS/xG só têm minutos e pontos — e ter os
+    **jogos** (quem defrontou quem e o resultado).
+
+    Note-se que **não** se exige `estados`: o estado clínico é recuperável
+    apenas no presente, e refazer uma jornada antiga gravaria o estado de hoje
+    em vez do de então. As jornadas anteriores a esta recolha ficam sem ele, e
+    é o correto."""
     if not (guardada and guardada.get("finalizada") and guardada.get("equipas")):
+        return False
+    if not guardada.get("jogos"):
         return False
     primeira = next(iter((guardada.get("stats") or {}).values()), None)
     return primeira is None or len(primeira) >= len(JORNADA_CAMPOS)
@@ -1264,7 +1271,31 @@ def fetch_picks_jornada(entries, game):
     return {"evento": ev, "equipas": equipas} if equipas else {}
 
 
-def fetch_jornadas(game, anterior):
+def estados_da_jornada(bootstrap):
+    """Estado clínico no momento da recolha: {id: [status, chance, news_added]}.
+
+    Guarda-se **só quem não está simplesmente disponível** — quem não aparece
+    estava apto, e isso poupa nove décimos das linhas.
+
+    Para que serve: hoje o modelo não distingue "faltou por lesão" de "não era
+    titular", e essa é a maior lacuna dele (o caso Ødegaard/Scott). Com o estado
+    registado jornada a jornada, a pergunta deixa de ser um padrão a inferir de
+    meia época de ausências e passa a ser um facto: esteve fora **estando
+    assinalado**, ou estando apto?
+
+    O `news_added` fica guardado de propósito: a recolha corre dias depois do
+    jogo, e sem a data da marcação não se saberia se a lesão é anterior ou
+    posterior à jornada."""
+    estados = {}
+    for e in bootstrap.get("elements") or []:
+        chance = e.get("chance_of_playing_next_round")
+        if e.get("status") == "a" and chance in (None, 100):
+            continue
+        estados[str(e["id"])] = [e.get("status"), chance, e.get("news_added")]
+    return estados
+
+
+def fetch_jornadas(game, anterior, bootstrap):
     """Minutos e pontos de cada jogador em cada jornada já disputada.
 
     É esta a resposta a "quem jogou e quem ficou de fora": vem da própria API
@@ -1278,7 +1309,10 @@ def fetch_jornadas(game, anterior):
     for ev in range(1, int(atual) + 1):
         chave = str(ev)
         guardada = cache.get(chave)
-        if jornada_em_cache(guardada):
+        # A jornada a decorrer volta a ser pedida enquanto não tiver o estado
+        # clínico: é a única altura em que ele é legítimo de gravar.
+        semEstado = ev == int(atual) and not (guardada or {}).get("estados")
+        if jornada_em_cache(guardada) and not semEstado:
             saida[chave] = guardada
             continue
         try:
@@ -1306,6 +1340,21 @@ def fetch_jornadas(game, anterior):
         saida[chave] = {
             "finalizada": bool(jogos) and all(j.get("finished") for j in jogos),
             "equipas": equipas,
+            # Quem defrontou quem e como acabou. Destranca duas coisas que hoje
+            # não são calculáveis: o bónus como **lugar no top-3 daquele jogo**
+            # (o BPS já é guardado, faltava saber quem estava no mesmo jogo) e a
+            # baliza a zero por equipa, que é o mesmo acontecimento para todos
+            # os defesas do clube.
+            "jogos": [[j.get("team_h"), j.get("team_a"),
+                       j.get("team_h_score"), j.get("team_a_score")]
+                      for j in jogos if jogado(j)],
+            # **Só para a jornada a decorrer.** O estado clínico não é
+            # recuperável no passado: gravá-lo numa jornada antiga seria
+            # carimbar o estado de hoje numa semana em que ele era outro. As
+            # jornadas anteriores a esta recolha ficam sem ele, e é o correto.
+            **({"estados": estados_da_jornada(bootstrap)} if ev == atual
+               else ({"estados": guardada["estados"]}
+                     if guardada and guardada.get("estados") else {})),
             "stats": stats,
         }
     if saida:
@@ -1627,7 +1676,7 @@ def main():
                   for t in bootstrap["teams"]},
         "players": players,
         "fixtures": fixtures,
-        "jornadas": fetch_jornadas(game, anterior),
+        "jornadas": fetch_jornadas(game, anterior, bootstrap),
         "picks_jornada": fetch_picks_jornada(details["league_entries"], game),
         "preepoca": fetch_preepoca(nomes_clubes, players),
         "ffs": fetch_ffs(players, nomes_clubes),
