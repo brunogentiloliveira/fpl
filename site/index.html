@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=50">
+<link rel="stylesheet" href="styles.css?v=51">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#12171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -156,6 +156,28 @@
 
     <div data-modo="classica" hidden>
       <p class="aviso-jornada" id="aviso-plantel" hidden></p>
+      <details id="bloco-meu-plantel">
+        <summary>O meu plantel <span id="meu-estado" class="sub-total"></span></summary>
+        <p class="nota">A FPL só publica a equipa depois do deadline, por isso as
+          transferências e o wildcard desta jornada ainda não aparecem aqui. Escreve os teus
+          15 e todas as sugestões — onze, capitão, transferências e chips — passam a ser
+          sobre eles. Fica guardado neste dispositivo e desaparece sozinho quando a FPL
+          publicar a jornada.</p>
+        <form class="filtros" id="form-meu" autocomplete="off">
+          <label class="visually-hidden" for="meu-procura">Jogador que tenho</label>
+          <input type="search" id="meu-procura" list="meu-sugestoes" placeholder="Tenho o…">
+          <datalist id="meu-sugestoes"></datalist>
+          <div class="filtros-botoes">
+            <button type="submit" class="mostrar-mais">Juntar</button>
+            <button type="button" class="mostrar-mais" id="meu-copiar">Partir do da FPL</button>
+            <button type="button" class="mostrar-mais" id="meu-repor">Repor o da FPL</button>
+            <label class="check" for="meu-banco">No banco
+              <input type="number" id="meu-banco" step="0.1" min="0" placeholder="0.0">M</label>
+          </div>
+        </form>
+        <div class="linha-campo" id="meu-lista"></div>
+        <p class="nota" id="meu-falta"></p>
+      </details>
       <h3 class="sub-titulo">Capitão <span id="cap-resumo" class="sub-total"></span></h3>
       <p class="nota">O capitão pontua a dobrar — é a decisão de maior impacto da jornada.</p>
       <div id="cap-lista"></div>
@@ -351,7 +373,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=50"></script>
+<script src="app.js?v=51"></script>
 
 </body>
 </html>

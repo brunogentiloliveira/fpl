@@ -592,6 +592,73 @@ verificar("o peso do modelo esperado está no ótimo medido",
   D.next_event = guardado;
 })();
 
+/* --- O plantel indicado à mão, que a API não publica antes do deadline --- */
+(function () {
+  if (typeof validarPlantel !== "function") return;
+  const quinze = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  const limite = D.regras.squad.team_limit;
+
+  D.regras.squad.team_limit = 5; // os sintéticos têm 4 do mesmo clube
+  verificar("2/5/5/3 completo é um plantel válido", validarPlantel(quinze).ok);
+  verificar("plantel vazio não vale", !validarPlantel([]).ok);
+  verificar("a meio diz o que falta, por posição",
+    validarPlantel([1, 2, 3, 4, 5]).falta.join() === "2 DEF,5 MED,3 AV");
+  verificar("posição a mais é erro, não falta",
+    /GR/.test(validarPlantel(quinze.concat(101)).erro || ""));
+
+  D.regras.squad.team_limit = 3;
+  verificar("mais de 3 do mesmo clube é erro",
+    /clube|CLU|\d+ do /.test(validarPlantel(quinze).erro || ""));
+  D.regras.squad.team_limit = limite;
+
+  // --- Substituição do plantel oficial ---
+  const guardadoC = D.classica, guardadoM = D.modo, guardadoP = meuPlantel;
+  D.modo = "classica";
+  D.classica = { equipa: { id: 100, jornada_picks: 2, banco: 0.5, picks: [{ id: 101 }] } };
+
+  meuPlantel = null;
+  verificar("sem plantel meu, vale o que a FPL publica",
+    minhaEquipaClassica().picks.length === 1 && !minhaEquipaClassica().manual);
+
+  D.regras.squad.team_limit = 5;
+  meuPlantel = { ids: [1, 2, 3, 4, 5], banco: 1.5, jornada: 3 };
+  verificar("plantel incompleto não substitui o oficial",
+    !minhaEquipaClassica().manual);
+
+  meuPlantel = { ids: quinze, banco: 1.5, jornada: 3 };
+  const eq = minhaEquipaClassica();
+  verificar("plantel completo substitui o oficial", eq.manual && eq.picks.length === 15);
+  verificar("o banco indicado sobrepõe-se ao da API", eq.banco === 1.5);
+  verificar("o capitão da jornada passada não se arrasta", eq.capitao === null);
+
+  // O dono é como o resto do site encontra os meus jogadores.
+  aplicarPlantelManual();
+  verificar("aplicar o plantel reescreve o dono",
+    jogadoresPorId[1].owner === 100 && jogadoresPorId[101].owner === null);
+  meuPlantel = null;
+  aplicarPlantelManual();
+  verificar("sem plantel meu, o dono volta ao da FPL",
+    jogadoresPorId[101].owner === 100 && jogadoresPorId[1].owner === null);
+  D.regras.squad.team_limit = limite;
+
+  // --- Caduca sozinho quando a FPL publica a jornada ---
+  try {
+    localStorage.setItem("plantel:100", JSON.stringify({ ids: quinze, jornada: 3 }));
+    verificar("o plantel guardado é lido enquanto a FPL não o alcança",
+      (lerPlantelManual() || {}).jornada === 3);
+    D.classica.equipa.jornada_picks = 3;
+    verificar("quando a FPL publica essa jornada, o manual é descartado",
+      lerPlantelManual() === null);
+    verificar("e é apagado, não fica a ressuscitar",
+      localStorage.getItem("plantel:100") === null);
+  } catch (e) { /* modo privado: sem localStorage não há o que testar */ }
+
+  D.classica = guardadoC;
+  D.modo = guardadoM;
+  meuPlantel = guardadoP;
+  D.players.forEach(function (p) { p.owner = p.id <= 15 ? 100 : (p.id < 300 ? 200 : null); });
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

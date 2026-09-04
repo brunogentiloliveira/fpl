@@ -1980,8 +1980,216 @@ function precoDe(p) {
   return (p.now_cost || 0) / 10;
 }
 
+/* --- O plantel que a API não publica --- */
+
+// A FPL só torna a equipa pública depois do deadline: até lá as escolhas
+// devolvidas são as da jornada anterior, sem as transferências nem o wildcard
+// desta. Sugerir capitão e trocas sobre um plantel que já não existe não ajuda
+// ninguém, e não há forma de o ir buscar sem sessão iniciada — mas o utilizador
+// sabe qual é. Isto deixa-o dizê-lo, e passa a ser essa a base de tudo.
+let meuPlantel = null; // { ids, banco, jornada } ou null
+
+function chavePlantel() {
+  return "plantel:" + ((((D.classica || {}).equipa) || {}).id || "0");
+}
+
+/** Lê o plantel indicado à mão, descartando-o quando a API já o alcançou. */
+function lerPlantelManual() {
+  let g = null;
+  try { g = JSON.parse(localStorage.getItem(chavePlantel()) || "null"); } catch (e) { g = null; }
+  if (!g || !Array.isArray(g.ids) || !g.ids.length) return null;
+  // Assim que a FPL publica a jornada para a qual isto foi escrito, a fonte
+  // oficial passa a saber mais do que a memória: o manual deixa de valer.
+  const oficial = (((D.classica || {}).equipa) || {}).jornada_picks;
+  if (oficial && g.jornada && oficial >= g.jornada) {
+    try { localStorage.removeItem(chavePlantel()); } catch (e) { /* nada a fazer */ }
+    return null;
+  }
+  return g;
+}
+
+function guardarPlantelManual() {
+  try {
+    if (meuPlantel && meuPlantel.ids.length) {
+      localStorage.setItem(chavePlantel(), JSON.stringify(meuPlantel));
+    } else {
+      localStorage.removeItem(chavePlantel());
+    }
+  } catch (e) { /* modo privado: vale só nesta sessão */ }
+}
+
+/**
+ * Um plantel só substitui o oficial quando está completo e legal — a meio
+ * daria sugestões de transferência sobre posições por preencher.
+ */
+function validarPlantel(ids) {
+  const jogadores = (ids || []).map((id) => jogadoresPorId[id]).filter(Boolean);
+  const conta = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const clubes = {};
+  jogadores.forEach((p) => {
+    conta[p.element_type] += 1;
+    clubes[p.team] = (clubes[p.team] || 0) + 1;
+  });
+  const aMais = [1, 2, 3, 4].filter((pos) => conta[pos] > NO_PLANTEL[pos])
+    .map((pos) => conta[pos] + " " + POSICOES[pos] + " (só cabem " + NO_PLANTEL[pos] + ")");
+  const clubeCheio = Object.keys(clubes)
+    .filter((t) => clubes[t] > (((D.regras || {}).squad || {}).team_limit || 3))
+    .map((t) => clubes[t] + " do " + nomeClube(Number(t)));
+  if (aMais.length || clubeCheio.length) {
+    return { ok: false, erro: "Tens " + aMais.concat(clubeCheio).join(" e ") + "." };
+  }
+  const falta = [1, 2, 3, 4].filter((pos) => conta[pos] < NO_PLANTEL[pos])
+    .map((pos) => (NO_PLANTEL[pos] - conta[pos]) + " " + POSICOES[pos]);
+  return { ok: falta.length === 0, falta: falta, conta: conta };
+}
+
 function minhaEquipaClassica() {
-  return ((D.classica || {}).equipa) || null;
+  const eq = ((D.classica || {}).equipa) || null;
+  if (!eq || !meuPlantel || !validarPlantel(meuPlantel.ids).ok) return eq;
+  return Object.assign({}, eq, {
+    picks: meuPlantel.ids.map((id, i) => ({ id: id, posicao: i + 1, multiplicador: 1 })),
+    banco: meuPlantel.banco != null ? meuPlantel.banco : eq.banco,
+    valor: meuPlantel.ids.reduce((t, id) => t + precoDe(jogadoresPorId[id] || {}), 0),
+    // O capitão da jornada passada não diz nada do plantel novo, e mantê-lo
+    // seria dar por feita uma escolha que ainda está por fazer.
+    capitao: null,
+    vice: null,
+    jornada_picks: meuPlantel.jornada,
+    manual: true,
+  });
+}
+
+/**
+ * O resto do site descobre os meus jogadores por `owner` — é assim nos dois
+ * modos. Reescrever o dono é o que faz o onze, os próximos jogos, a utilização
+ * e as sugestões seguirem o plantel indicado, sem cada um ter de saber dele.
+ */
+function aplicarPlantelManual() {
+  if (!ehClassica()) return;
+  const eq = ((D.classica || {}).equipa) || null;
+  if (!eq) return;
+  const usar = meuPlantel && validarPlantel(meuPlantel.ids).ok;
+  const meus = new Set(usar ? meuPlantel.ids : ((eq.picks || []).map((x) => x.id)));
+  D.players.forEach((p) => { p.owner = meus.has(p.id) ? eq.id : null; });
+}
+
+/** Os meus, já com projeção, seja o plantel o da FPL ou o indicado por mim. */
+function meusDaClassica() {
+  const equipa = minhaEquipaClassica();
+  const ids = new Set((((equipa || {}).picks) || []).map((x) => x.id));
+  return comProjecao(D.players.filter((p) => ids.has(p.id)));
+}
+
+function desenharMeuPlantel() {
+  const alvo = $("meu-lista");
+  if (!alvo) return;
+  const ids = (meuPlantel && meuPlantel.ids) || [];
+  const jogadores = ids.map((id) => jogadoresPorId[id]).filter(Boolean);
+  const val = validarPlantel(ids);
+
+  alvo.innerHTML = jogadores.length === 0
+    ? '<span class="sub">Sem jogadores: valem as escolhas que a FPL publica.</span>'
+    : jogadores
+      .slice()
+      .sort((a, b) => a.element_type - b.element_type || precoDe(b) - precoDe(a))
+      .map((p) => '<span class="chip">' +
+        '<span class="chip-nome">' + esc(p.web_name) + "</span>" +
+        '<span class="chip-info">' + (POSICOES[p.element_type] || "?") + " · " +
+          nomeClube(p.team) + " · " + precoDe(p).toFixed(1) + "M</span>" +
+        '<button type="button" class="tirar" data-id="' + p.id +
+          '" aria-label="Tirar ' + esc(p.web_name) + '">×</button>' +
+      "</span>").join("");
+
+  const custo = jogadores.reduce((t, p) => t + precoDe(p), 0);
+  const estado = $("meu-estado");
+  if (estado) {
+    estado.textContent = ids.length === 0
+      ? ""
+      : ids.length + "/" + NO_PLANTEL_TOTAL + (val.ok ? " · a valer" : "");
+  }
+  const falta = $("meu-falta");
+  if (falta) {
+    falta.textContent = ids.length === 0
+      ? ""
+      : val.erro
+        ? val.erro
+        : val.ok
+          ? "Plantel completo (" + custo.toFixed(1) +
+            "M): o capitão, as transferências e os chips acima já são sobre estes 15."
+          : "Faltam " + val.falta.join(", ") + ". Enquanto não estiver completo, as " +
+            "sugestões continuam a usar o plantel que a FPL publica.";
+    falta.className = "nota" + (val.erro ? " aviso-sug" : "");
+  }
+}
+
+function initMeuPlantel() {
+  const form = $("form-meu");
+  if (!form) return;
+  const procura = $("meu-procura");
+  const banco = $("meu-banco");
+  const bloco = $("bloco-meu-plantel");
+  $("meu-sugestoes").innerHTML = D.players.filter((p) => p.now_cost)
+    .map((p) => '<option value="' + esc(p.web_name) + " · " + nomeClube(p.team) + '">')
+    .join("");
+
+  // Só se abre sozinho quando há mesmo um problema a resolver: o plantel
+  // publicado é de uma jornada anterior e ainda não foi corrigido.
+  const eq = ((D.classica || {}).equipa) || {};
+  const proxima = (D.next_event || {}).id;
+  if (bloco && !meuPlantel && eq.jornada_picks && proxima && eq.jornada_picks < proxima) {
+    bloco.open = true;
+  }
+  if (banco && meuPlantel && meuPlantel.banco != null) banco.value = meuPlantel.banco;
+
+  const garantir = () => {
+    if (!meuPlantel) {
+      meuPlantel = { ids: [], banco: null, jornada: (D.next_event || {}).id || 0 };
+    }
+    return meuPlantel;
+  };
+  const redesenhar = () => {
+    guardarPlantelManual();
+    aplicarPlantelManual();
+    desenharMeuPlantel();
+    initSugestoes();
+    desenharClassica();
+  };
+
+  form.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const alvo = semAcentos(procura.value.split("·")[0].trim());
+    if (!alvo) return;
+    const achado = D.players.find((p) => semAcentos(p.web_name) === alvo && p.now_cost) ||
+      D.players.find((p) => semAcentos(p.web_name).indexOf(alvo) >= 0 && p.now_cost);
+    if (achado && !garantir().ids.includes(achado.id)) meuPlantel.ids.push(achado.id);
+    procura.value = "";
+    redesenhar();
+  });
+  $("meu-lista").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-id]");
+    if (!b || !meuPlantel) return;
+    meuPlantel.ids = meuPlantel.ids.filter((id) => id !== Number(b.dataset.id));
+    if (!meuPlantel.ids.length) meuPlantel = null;
+    redesenhar();
+  });
+  $("meu-copiar").addEventListener("click", () => {
+    // Corrigir duas ou três posições é mais rápido do que escrever quinze.
+    garantir().ids = ((((D.classica || {}).equipa) || {}).picks || []).map((x) => x.id);
+    redesenhar();
+  });
+  $("meu-repor").addEventListener("click", () => {
+    meuPlantel = null;
+    if (banco) banco.value = "";
+    redesenhar();
+  });
+  if (banco) {
+    banco.addEventListener("change", () => {
+      const v = parseFloat(banco.value);
+      garantir().banco = isNaN(v) ? null : v;
+      redesenhar();
+    });
+  }
+  desenharMeuPlantel();
 }
 
 /** Capitão: o dobro dos pontos de um jogador é o maior salto da jornada. */
@@ -2200,7 +2408,8 @@ function jornadasEspeciais(meusX) {
 
 let wcFixos = [];
 
-function desenharPlaneadorWC(meusX) {
+function desenharPlaneadorWC() {
+  const meusX = meusDaClassica();
   const alvo = $("wc-plantel");
   if (!alvo) return;
   const fixos = wcFixos.map((id) => jogadoresPorId[id]).filter(Boolean);
@@ -2271,7 +2480,7 @@ function desenharPlaneadorWC(meusX) {
     "</p>";
 }
 
-function initPlaneadorWC(meusX) {
+function initPlaneadorWC() {
   const form = $("form-wc");
   if (!form) return;
   const procura = $("wc-procura");
@@ -2289,19 +2498,19 @@ function initPlaneadorWC(meusX) {
       D.players.find((p) => semAcentos(p.web_name).indexOf(alvo) >= 0 && p.now_cost);
     if (achado && !wcFixos.includes(achado.id)) wcFixos.push(achado.id);
     procura.value = "";
-    desenharPlaneadorWC(meusX);
+    desenharPlaneadorWC();
   });
   $("wc-limpar").addEventListener("click", () => {
     wcFixos = [];
-    desenharPlaneadorWC(meusX);
+    desenharPlaneadorWC();
   });
   $("wc-fixos").addEventListener("click", (ev) => {
     const b = ev.target.closest("button[data-id]");
     if (!b) return;
     wcFixos = wcFixos.filter((id) => id !== Number(b.dataset.id));
-    desenharPlaneadorWC(meusX);
+    desenharPlaneadorWC();
   });
-  desenharPlaneadorWC(meusX);
+  desenharPlaneadorWC();
 }
 
 function desenharChips(meusX) {
@@ -2444,6 +2653,7 @@ function desenharChips(meusX) {
  * mais pontos por milhão gasto, até o dinheiro acabar.
  */
 const NO_PLANTEL = { 1: 2, 2: 5, 3: 5, 4: 3 };
+const NO_PLANTEL_TOTAL = 15;
 
 /**
  * O plantel de 15 que mais pontos projeta dentro do orçamento.
@@ -2651,6 +2861,16 @@ function avisoPlantelDesatualizado(equipa) {
   if (!alvo) return;
   const proxima = (D.next_event || {}).id;
   const daJornada = equipa && equipa.jornada_picks;
+  // Indicado à mão: já é o plantel certo, mas convém dizer de onde veio — os
+  // números que se seguem dependem dele estar bem escrito.
+  if (equipa && equipa.manual) {
+    alvo.hidden = false;
+    alvo.textContent = "As sugestões abaixo são sobre o plantel que indicaste em " +
+      "“O meu plantel”, não sobre o que a FPL publica (que ainda é o da jornada " +
+      (((D.classica || {}).equipa) || {}).jornada_picks + "). " +
+      "Se te enganaste a escrevê-lo, corrige aí.";
+    return;
+  }
   alvo.hidden = !(equipa && daJornada && proxima && daJornada < proxima);
   if (alvo.hidden) return;
   const dl = (D.next_event || {}).deadline_time;
@@ -2659,15 +2879,23 @@ function avisoPlantelDesatualizado(equipa) {
     "Transferências e chips que tenhas feito para a jornada " + proxima +
     " — o wildcard incluído — só ficam visíveis depois do deadline" +
     (dl ? " (" + fmtDataHora.format(new Date(dl)) + ")" : "") +
-    ". Até lá, o capitão, as transferências e os chips sugeridos referem-se ao plantel antigo.";
+    ". Até lá, abre “O meu plantel” e escreve os teus 15 — as sugestões passam " +
+    "a ser sobre a equipa que tens mesmo.";
 }
 
 function initClassica() {
   if (!ehClassica()) return;
+  initMeuPlantel();
+  initPlaneadorWC();
+  desenharClassica();
+}
+
+/** A parte que depende do plantel, e por isso se refaz quando ele muda. */
+function desenharClassica() {
+  if (!ehClassica()) return;
   const equipa = minhaEquipaClassica();
   avisoPlantelDesatualizado(equipa);
-  const meusIds = new Set((equipa && equipa.picks || []).map((x) => x.id));
-  const meusX = comProjecao(D.players.filter((p) => meusIds.has(p.id)));
+  const meusX = meusDaClassica();
   contextoClassica(equipa);
   // O plantel ideal só interessa quando não há equipa carregada (era a versão
   // do deadline); com plantel, a decisão útil são as transferências.
@@ -2680,7 +2908,7 @@ function initClassica() {
   if (tituloLivres) tituloLivres.textContent = "Melhores opções do mercado";
   desenharCapitao(meusX);
   desenharTransferencias(meusX);
-  initPlaneadorWC(meusX);
+  desenharPlaneadorWC();
   desenharChips(meusX);
 }
 
@@ -3531,6 +3759,8 @@ async function main() {
   initTicker(noticias);
   initBoletim(ordenarBoletim(noticiasBoletim()));
   initSeletorModo();
+  meuPlantel = lerPlantelManual();
+  aplicarPlantelManual();
   if (ehClassica()) {
     initLigaClassica();
     initEquipasClassica();

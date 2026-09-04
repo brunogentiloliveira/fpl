@@ -248,7 +248,16 @@ main { padding: 1rem; max-width: 58rem; margin: 0 auto; }
 
 /* Filtros */
 .filtros { display: grid; gap: 0.55rem; margin-bottom: 0.8rem; }
-.filtros input[type="search"], .filtros select {
+/* Linha própria: no ecrã largo o .filtros é de duas colunas, e uma fila de
+   botões na segunda esmagava a caixa de procura para 140px. */
+.filtros-botoes {
+  display: flex; flex-wrap: wrap; gap: 0.5rem;
+  justify-content: center; grid-column: 1 / -1;
+}
+.filtros-botoes .mostrar-mais { margin: 0; }
+.filtros-botoes .check { gap: 0.35rem; color: var(--texto-2); }
+.filtros input[type="number"] { width: 4.5rem; text-align: right; }
+.filtros input[type="search"], .filtros input[type="number"], .filtros select {
   width: 100%;
   background: var(--painel);
   color: var(--texto);

@@ -881,7 +881,49 @@ wildcard já gasto. Não era informação desatualizada, era um conselho errado.
   jornada"**, e a lista de chips avisa que pode incluir algum já gasto.
 
 Não há forma de contornar sem autenticação (`/api/my-team/{id}/` exige sessão iniciada), e isso
-está fora de questão. A correção é dizer o que se sabe e o que não se sabe.
+está fora de questão. A correção foi dizer o que se sabe e o que não se sabe — e, no dia
+seguinte, deixar o utilizador dizer o que a API não diz (ver a secção acima).
+
+## Dizer-lhe o plantel, já que a API não o dá (2026-09-04)
+
+Segundo reparo do utilizador, no mesmo dia e mais exigente do que o primeiro: *"devias-me dar
+sugestões com base no plantel atual e não da jornada passada, senão não me estás a ajudar a
+selecionar a melhor equipa"*. Tem razão — avisar que o plantel está velho é honesto, mas não
+resolve nada. Sugestões sobre uma equipa que já não existe não servem para escolher a equipa.
+
+A API continua a não publicar a equipa antes do deadline e isso não muda. **Mas o utilizador
+sabe qual é.** O bloco "O meu plantel" nas Sugestões deixa-o escrever os 15, e a partir daí é
+esse o plantel de tudo: onze, próximos jogos, utilização, capitão, transferências, chips e
+planeador do wildcard.
+
+- **O seam é o `owner`.** Os dois modos descobrem os meus jogadores pelo `owner` do jogador, e
+  não pelas picks — foi essa a decisão que fez o modo clássico reutilizar o motor do Draft.
+  `aplicarPlantelManual()` reescreve o dono na memória e **todo o resto segue sem saber que
+  isto existe**. Sem isso, seriam sete sítios a corrigir um a um.
+- **Só substitui quando está completo e legal** (`validarPlantel`): 2 GR / 5 DEF / 5 MED / 3 AV
+  e o máximo de 3 por clube. A meio, dá sugestões de transferência sobre posições por preencher
+  — e por isso, enquanto não estiver completo, diz o que falta e continua a usar o da FPL.
+- **Caduca sozinho.** Guardado em `localStorage` com a jornada para que foi escrito; assim que
+  `jornada_picks` da API a alcança, a fonte oficial sabe mais do que a memória e o manual é
+  apagado. Sem isto ficaria a contradizer a API para sempre.
+- **"Partir do da FPL"** carrega os 15 publicados para depois se corrigirem dois ou três — é o
+  caso normal, e escrever quinze nomes à mão para mudar dois não se faz duas vezes.
+- O capitão da jornada passada **não se arrasta** para o plantel novo (`capitao: null`): seria
+  dar por feita uma escolha que ainda está por fazer.
+
+**Duas armadilhas no caminho**, ambas de estrutura e não de lógica:
+
+- `initClassica()` registava listeners *e* desenhava. Chamá-la de novo a cada mudança do plantel
+  duplicaria os listeners do planeador do wildcard a cada jogador acrescentado. Separou-se em
+  `initClassica()` (uma vez) e `desenharClassica()` (as vezes que forem precisas), e o planeador
+  deixou de fechar `meusX` numa closure — ficava preso ao plantel antigo.
+- A fila de botões partia o formulário: no ecrã largo o `.filtros` é de duas colunas, e pôr três
+  botões na segunda esmagava a caixa de procura para **140px**. `.filtros-botoes` leva
+  `grid-column: 1 / -1`. O campo do banco também não apanhava estilo nenhum — a regra cobria
+  `search` e `select`, e não `number`.
+
+130 verificações no browser (eram 115): legalidade, substituição só quando completo, o dono a
+ser reescrito nos dois sentidos, e o caducar quando a FPL publica.
 
 ## Historial de lesões: medido e rejeitado (2026-09-01)
 
