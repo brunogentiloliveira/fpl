@@ -218,6 +218,19 @@ def testa_nomes_funcoes():
               not repetidos, repetidos)
     verificar("o app.js tem funções para verificar", len(nomes) > 50)
 
+    # Um `const` de topo declarado duas vezes é SyntaxError e apaga a página
+    # inteira — pior do que a colisão de funções, que só silencia uma delas.
+    consts = re.findall(r"^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=", js, re.M)
+    repetidos_c = sorted({n for n in consts if consts.count(n) > 1})
+    verificar("nenhuma constante de topo está declarada duas vezes",
+              not repetidos_c, repetidos_c)
+
+    # O tooltip da coluna "Calend." já esteve dentro de uma string de aspas
+    # duplas com `' + janelaAtual() + '` lá dentro, e o utilizador lia o código.
+    verificar("nenhuma string do app.js mostra concatenação por escrito",
+              "' + janelaAtual() + '" not in js,
+              "há uma expressão JS dentro de uma string de aspas duplas")
+
 
 # ---------- cruzar transferências com jogadores ----------
 

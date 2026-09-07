@@ -1043,7 +1043,8 @@ function linhaProjecao(p, pr) {
 function tabelaProjecao(linhas) {
   return '<table class="tabela tabela-proj">' +
     "<thead><tr><th>Jogador</th><th class=\"num\">Pts/90</th><th class=\"num\">Min</th>" +
-    "<th class=\"num\">Pts/J</th><th class=\"num\" title=\"Pts por jornada ajustados à dificuldade das próximas ' + janelaAtual() + ' jornadas\">Calend.</th></tr></thead>" +
+    "<th class=\"num\">Pts/J</th><th class=\"num\" title=\"Pts por jornada ajustados à dificuldade das próximas " +
+      janelaAtual() + " jornadas\">Calend.</th></tr></thead>" +
     "<tbody>" + linhas + "</tbody></table>";
 }
 
@@ -3706,7 +3707,11 @@ function initMercado() {
 /* ---------- Separadores ---------- */
 
 function initTabs() {
-  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  // Os separadores só do Draft ficam `hidden` no modo clássico. Sem os tirar
+  // daqui, a seta para a direita abre o painel Conferências na clássica — e o
+  // foco vai para um botão escondido, que não o aceita.
+  const tabs = [...document.querySelectorAll('[role="tab"]')]
+    .filter((t) => !t.hidden && t.offsetParent !== null);
   function ativar(tab) {
     tabs.forEach((t) => {
       const ativo = t === tab;
