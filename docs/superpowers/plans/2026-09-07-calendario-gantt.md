@@ -384,7 +384,7 @@ def testa_calendario_nomes():
     # 6 dos 20 nomes do zerozero não batem com os do bootstrap. Juntar por nome
     # deixava 4 dos 12 jogos de taça entre clubes da PL sem adversário.
     mapa = fc.ler_mapa_zerozero()
-    slugs = fc.slugs_para_id(mapa, {"1": {"nome": "Arsenal"}})
+    slugs = fc.slugs_para_id(mapa, {"1": {"name": "Arsenal"}})
     verificar("o mapa tem os 20 clubes", len(mapa) == 20, len(mapa))
     verificar("todos os caminhos são /equipa/<slug>",
               all(v["caminho"].startswith("/equipa/") for v in mapa.values()))
@@ -454,7 +454,7 @@ def slugs_para_id(mapa_zz, clubes_fpl):
     O slug está no HTML em todas as linhas e bate exactamente com o
     zerozero.json.
     """
-    por_nome = {v["nome"] if isinstance(v, dict) else v: int(k)
+    por_nome = {v["name"] if isinstance(v, dict) else v: int(k)
                 for k, v in clubes_fpl.items()}
     saida = {}
     for nome, info in mapa_zz.items():
@@ -766,7 +766,7 @@ def main():
     for nome, info in mapa.items():
         team_id = None
         for k, v in clubes_fpl.items():
-            if (v["nome"] if isinstance(v, dict) else v) == nome:
+            if (v["name"] if isinstance(v, dict) else v) == nome:
                 team_id = int(k)
         if team_id is None:
             continue
@@ -1074,10 +1074,10 @@ git commit -m "Carregar o calendario num try proprio: a falta dele nao mata a pa
   if (typeof trocosApertados !== "function") return;
   const d = (s) => new Date("2026-10-" + s + "T15:00:00Z").getTime();
 
-  // 3 jogos em 8 dias marca. A janela é inclusiva: o Arsenal joga 24/10,
-  // Carabao 28/10 e PL 1/11 — exactamente 8 dias, e é a semana em que isto
-  // vai ser olhado.
-  const tres = [{ t: d("24") }, { t: d("28") }, { t: d("01").valueOf() + 8 * 864e5 }];
+  // 3 jogos em 8 dias marca, e a janela é INCLUSIVA: o Arsenal joga a PL a
+  // 24/10, a Carabao a 28/10 e a PL a 1/11 — exactamente 8 dias entre o
+  // primeiro e o último, e é a semana em que isto vai ser olhado. Com um
+  // `< 8` não havia barra nenhuma aí.
   verificar("3 jogos em exactamente 8 dias contam como apertado",
     trocosApertados([{ t: d("01") }, { t: d("05") }, { t: d("09") }]).length === 1);
   verificar("3 jogos em 12 dias não contam",
