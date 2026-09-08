@@ -19,6 +19,7 @@ const fmtDataHora = new Intl.DateTimeFormat("pt-PT", {
 });
 
 let D = null; // dados carregados
+let C = null; // calendário carregado (só de leitura; ver carregarCalendario)
 let entradasPorId = {}; // league_entry id -> entry (standings)
 let entradasPorEntryId = {}; // entry_id -> entry (owner no element-status)
 let jogadoresPorId = {}; // element id -> jogador
@@ -3742,6 +3743,35 @@ function initTabs() {
 
 /* ---------- Arranque ---------- */
 
+/** O calendário é um extra: se falhar, perde-se o separador, não a página. */
+async function carregarCalendario() {
+  try {
+    if (window.__CALENDARIO__) {
+      C = window.__CALENDARIO__;
+    } else {
+      const resp = await fetch("data/calendario.json", { cache: "no-store" });
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      C = await resp.json();
+    }
+  } catch (err) {
+    C = null;
+    console.warn("Calendário indisponível:", err);
+  }
+}
+
+/** Esqueleto do separador Calendário: só o estado (dados ou aviso para
+ *  recolher). O gráfico é a Tarefa 8; colunas e ordenação, a Tarefa 9. */
+function desenharCalendario() {
+  const intro = $("cal-intro");
+  const semDados = !C || !C.clubes;
+  if (intro) {
+    intro.innerHTML = semDados
+      ? "Calendário indisponível. Corre o <strong>atualizar.cmd</strong> para o recolher."
+      : "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
+        " clubes da Premier League.";
+  }
+}
+
 async function main() {
   try {
     const modo = modoAtual();
@@ -3762,6 +3792,9 @@ async function main() {
     console.error(err);
     return;
   }
+  // Try próprio (fora do de cima): o calendário serve só um separador, e um
+  // ficheiro em falta não pode derrubar o resto do dashboard.
+  await carregarCalendario();
   entradasPorId = Object.fromEntries(D.entries.map((e) => [e.id, e]));
   entradasPorEntryId = Object.fromEntries(D.entries.map((e) => [e.entry_id, e]));
   jogadoresPorId = Object.fromEntries(D.players.map((p) => [p.id, p]));
@@ -3792,6 +3825,7 @@ async function main() {
   initTransferencias();
   initMercado();
   initJogadores();
+  desenharCalendario();
   initTabs();
 }
 

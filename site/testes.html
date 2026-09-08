@@ -659,6 +659,10 @@ verificar("o peso do modelo esperado está no ótimo medido",
   D.players.forEach(function (p) { p.owner = p.id <= 15 ? 100 : (p.id < 300 ? 200 : null); });
 })();
 
+/* --- Calendário: um separador extra não pode rebentar sem dados --- */
+verificar("sem calendário, o separador não rebenta",
+  typeof desenharCalendario === "function" && (C = null, desenharCalendario(), true));
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 
