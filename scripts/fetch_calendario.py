@@ -104,8 +104,12 @@ def epoca_da_pagina(pagina):
 
 # Por subcadeia, e não por igualdade: o rótulo leva o patrocinador e o ano, e
 # muda de época para época ("The Emirates FA Cup 25/26", "Community Shield
-# 2025"). A ordem importa — "Conference" antes de "Cup", "Super Cup" antes de
-# "Cup", senão a Supertaça Europeia caía na Taça da Liga.
+# 2025"). Hoje nenhuma das dez chaves é subcadeia de outra — reordenar a
+# lista e correr os 13 casos do teste não muda um único resultado —, por
+# isso a ordem não resolve nenhuma colisão real. Fica como defesa contra um
+# rótulo futuro que passe a sobrepor-se (ex.: a Taça de Inglaterra troca de
+# patrocinador outra vez e o novo nome passa a conter "cup" a seguir a uma
+# palavra já usada por outra chave).
 COMPETICOES = [
     ("premier league", "PL"),
     ("champions league", "UCL"),
@@ -141,11 +145,15 @@ def ler_mapa_zerozero():
 def slugs_para_id(mapa_zz, clubes_fpl):
     """slug do zerozero -> id do clube na FPL.
 
-    O nome não serve de chave: 6 dos 20 divergem ("Manchester City" vs
-    "Man City", "Tottenham" vs "Spurs"), o que são 27% das linhas. E um
-    recurso por tokens é pior — *city* liga o Manchester City ao Hull City.
-    O slug está no HTML em todas as linhas e bate exactamente com o
-    zerozero.json.
+    O nome não serve de chave para juntar às linhas de jogo: é no `adv_nome`
+    de cada linha que o zerozero usa o nome do site em vez do da FPL —
+    "Brighton & Hove Albion" em vez de "Brighton", "Manchester City" em vez
+    de "Man City" — em 6 dos 20 clubes, 27% das linhas. As chaves de topo do
+    zerozero.json não têm este problema (já batem 1:1 com a FPL), mas o
+    `adv_nome` de cada linha vem direto do HTML e não passa por essa
+    curadoria. E um recurso por tokens é pior — *city* liga o Manchester
+    City ao Hull City. O slug está no HTML em todas as linhas e bate
+    exactamente com o zerozero.json.
     """
     por_nome = {v["name"] if isinstance(v, dict) else v: int(k)
                 for k, v in clubes_fpl.items()}

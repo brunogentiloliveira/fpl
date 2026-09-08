@@ -586,7 +586,8 @@ def testa_calendario_nomes():
         verificar(f"{bruta!r} -> {esperado}",
                   fc.normalizar_comp(bruta) == esperado, fc.normalizar_comp(bruta))
 
-    # 6 dos 20 nomes do zerozero não batem com os do bootstrap. Juntar por nome
+    # O adv_nome das linhas de jogo diverge do nome da FPL em 6 dos 20
+    # clubes ("Brighton & Hove Albion" vs "Brighton"). Juntar por esse nome
     # deixava 4 dos 12 jogos de taça entre clubes da PL sem adversário.
     mapa = fc.ler_mapa_zerozero()
     slugs = fc.slugs_para_id(mapa, {"1": {"name": "Arsenal"}})
@@ -600,6 +601,24 @@ def testa_calendario_nomes():
     for slug, ident in com_id.items():
         verificar(f"o caminho do {slug} leva id",
                   f"/equipa/{slug}/{ident}" in caminhos, sorted(caminhos))
+
+    # A correcção central da tarefa: juntar pelo slug e não pelo nome. Isto
+    # exercita `slugs_para_id` a sério, com os 20 clubes reais da FPL —
+    # sem estas três afirmações a chamada acima não prova nada sobre o que
+    # a função devolve.
+    with io.open(os.path.join(fd.OUT_DIR, "data.json"), encoding="utf-8") as f:
+        clubes_reais = json.load(f)["teams"]
+    slugs_reais = fc.slugs_para_id(mapa, clubes_reais)
+    verificar("com os 20 clubes reais da FPL, os 20 slugs encontram id",
+              len(slugs_reais) == 20, len(slugs_reais))
+    # /equipa/sunderland/91: a chave pára no primeiro "/" — prova que é o
+    # slug (não o caminho todo) que serve de chave.
+    verificar("a chave do sunderland é só o slug e aponta para o id 20",
+              slugs_reais.get("sunderland") == 20, slugs_reais.get("sunderland"))
+    # Com um clubes_fpl incompleto (só o Arsenal), a função não rebenta:
+    # regista os 19 que faltam no diagnóstico e devolve só o que encontrou.
+    verificar("clubes_fpl parcial não rebenta, devolve só o que encontrou",
+              slugs == {"arsenal": 1}, slugs)
 
 
 def main():
