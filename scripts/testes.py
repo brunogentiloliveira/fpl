@@ -7,11 +7,13 @@ Cobre os pontos onde já apareceram erros a sério — o parsing do team news do
 Scout (negações e nomes ambíguos), a correspondência de nomes com acentos e
 apelidos compostos, e os dois formatos possíveis de /event/{ev}/live.
 """
+import contextlib
 import json
 import io
 import os
 import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fetch_data as fd
@@ -445,17 +447,61 @@ def testa_artefacto():
     verificar("comentário HTML escapado",
               "<!--" not in artefacto.json_seguro('{"t":"<!-- x"}'))
 
-    # Slot próprio: meter o calendário no dicionário `dados` faria o script
-    # anunciar "modos: calendario, classica, draft" e tornava
-    # `D = __DADOS__[modo]` ambíguo.
-    base = os.path.dirname(os.path.abspath(__file__))
-    fonte_artefacto = io.open(os.path.join(base, "artefacto.py"), encoding="utf-8").read()
-    verificar("o artefacto embute o calendário num slot próprio",
-              "__CALENDARIO__" in fonte_artefacto, "falta o slot")
-    verificar("o calendário não entra no dicionário `dados` (não é um modo)",
-              "dados[\"calendario\"]" not in fonte_artefacto
-              and "dados['calendario']" not in fonte_artefacto,
-              "o calendário foi parar ao dicionário dos modos")
+    # Teste funcional: gera o artefacto a sério com um calendario.json
+    # perigoso (o revisor injectou isto à mão e confirmou que escapa; isto
+    # prende essa confirmação num teste automático). Os dois testes que
+    # existiam aqui antes só faziam grep no código-fonte à procura de
+    # "__CALENDARIO__" e da ausência de dados["calendario"] — uma mudança
+    # que tirasse o json_seguro() só do embed do calendário passava a
+    # suite inteira sem ninguém dar conta, porque o grep nunca gera nada.
+    caminho_cal = os.path.join(artefacto.SITE, "data", "calendario.json")
+    with open(caminho_cal, "rb") as f:
+        cal_original = f.read()
+    marca = "TESTE_CALENDARIO_PERIGOSO"
+    payload_script = f"</script><script>{marca}(1)</script>"
+    payload_comentario = f"<!--{marca}-->"
+    cal_perigoso = {
+        "generated_at": "2026-09-07T00:00:00Z",
+        "clubes": {"1": {"nome": f"Sunderland{payload_script}{payload_comentario}"}},
+    }
+    try:
+        with io.open(caminho_cal, "w", encoding="utf-8") as f:
+            json.dump(cal_perigoso, f, ensure_ascii=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            saida_tmp = os.path.join(tmp, "artefacto_teste.html")
+            argv_antigo = sys.argv
+            saida_capturada = io.StringIO()
+            try:
+                sys.argv = ["artefacto.py", saida_tmp]
+                with contextlib.redirect_stdout(saida_capturada):
+                    artefacto.main()
+            finally:
+                sys.argv = argv_antigo
+            with io.open(saida_tmp, encoding="utf-8") as f:
+                html = f.read()
+    finally:
+        # Repor o calendário verdadeiro mesmo que o teste falhe a meio.
+        with open(caminho_cal, "wb") as f:
+            f.write(cal_original)
+
+    linha = saida_capturada.getvalue()
+    verificar("o slot window.__CALENDARIO__ chega ao artefacto gerado",
+              "window.__CALENDARIO__ = JSON.parse" in html, "falta o slot")
+    verificar("o </script> do calendário sai escapado no artefacto gerado",
+              payload_script not in html, "payload cru encontrado no artefacto")
+    verificar("...e a forma escapada do </script> chega ao ficheiro",
+              payload_script.replace("</", r"<\/") in html,
+              "forma escapada não encontrada")
+    verificar("o <!-- do calendário sai escapado no artefacto gerado",
+              payload_comentario not in html, "comentário cru encontrado no artefacto")
+    verificar("...e a forma escapada do <!-- chega ao ficheiro",
+              payload_comentario.replace("<!--", r"<\!--") in html,
+              "forma escapada do comentário não encontrada")
+    # Verificação funcional em vez de grep: se o calendário fosse parar ao
+    # dicionário `dados` (um "modo"), esta linha passaria a dizer "modos:
+    # calendario, classica, draft".
+    verificar("o calendário não vira um 'modo' na linha impressa pelo artefacto.py",
+              "modos: classica, draft" in linha, linha)
 
 
 # ---------- ficheiros curados ----------
