@@ -220,3 +220,170 @@ def _dias(data):
 def _data(ordinal):
     from datetime import date
     return date.fromordinal(ordinal).isoformat()
+
+
+def validar_pl(linhas_zz, fixtures_api, semanas_criticas=6):
+    """Cruza as linhas da PL do zerozero com a API. Recusa linhas, não clubes.
+
+    Só por (data, adversário, casa/fora) — nunca pela hora, que está noutro
+    fuso. Hoje batem 760/760.
+    """
+    oficiais = {(j["data"], j["adv_slug"], j["casa"]) for j in fixtures_api}
+    aceites, recusadas = [], []
+    for linha in linhas_zz:
+        chave = (linha["data"], linha["adv_slug"], linha["casa"])
+        if chave in oficiais:
+            aceites.append(linha)
+        else:
+            recusadas.append(f"{linha['data']} vs {linha['adv_slug']}")
+    return aceites, recusadas
+
+
+def _get_html(url):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 fpl-dashboard", "Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        dados = resp.read()
+        if resp.headers.get("Content-Encoding") == "gzip":
+            dados = gzip.decompress(dados)
+        return dados.decode("utf-8", "replace")
+
+
+def jogos_do_clube(caminho, epoca_id):
+    """Todas as páginas de um clube.
+
+    A tabela vem por data DECRESCENTE, portanto a última página tem os jogos
+    mais PRÓXIMOS: 34 jogos por realizar existem só na página 2, e são todos
+    dos 9 clubes europeus. Parar antes de a pedir apagava a congestão das
+    próximas duas semanas e deixava uma linha a começar em outubro — plausível.
+    """
+    todos, pagina = [], 1
+    while pagina <= 4:
+        url = f"{ZZ}{caminho}/jogos?epoca_id={epoca_id}&page={pagina}"
+        linhas = linhas_jogos(_get_html(url))
+        todos += linhas
+        if len(linhas) < LINHAS_POR_PAGINA:
+            break
+        pagina += 1
+        time.sleep(0.3)
+    # O id do jogo é único e estável; (data, adversário) não distingue uma
+    # remarcação de um jogo novo.
+    vistos, unicos = set(), []
+    for j in todos:
+        if j["id"] not in vistos:
+            vistos.add(j["id"])
+            unicos.append(j)
+    return unicos
+
+
+def fixtures_oficiais(slug_de_id):
+    """Os 380 jogos da PL, por clube, já com a dificuldade do lado certo.
+
+    A polaridade sai de `team_h_difficulty`/`team_a_difficulty` conforme o lado
+    — trocá-la seria uma inversão silenciosa e plausível, que transformava
+    "percurso fácil" em "percurso duro" sem nada partir.
+    """
+    req = urllib.request.Request(API + "/fixtures/",
+                                 headers={"User-Agent": "Mozilla/5.0 fpl-dashboard"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        jogos = json.load(resp)
+    por_clube = {}
+    for j in jogos:
+        if not j.get("kickoff_time"):
+            continue
+        data = j["kickoff_time"][:10]
+        for casa in (True, False):
+            eu = j["team_h"] if casa else j["team_a"]
+            adv = j["team_a"] if casa else j["team_h"]
+            por_clube.setdefault(eu, []).append({
+                "data": data, "kickoff": j["kickoff_time"], "casa": casa,
+                "adv": adv, "adv_slug": slug_de_id.get(adv, ""),
+                "dif": j["team_h_difficulty"] if casa else j["team_a_difficulty"],
+                "evento": j.get("event"),
+                "jogado": bool(j.get("finished") or j.get("finished_provisional")),
+            })
+    return por_clube
+
+
+def main():
+    with io.open(os.path.join(fd.OUT_DIR, "data.json"), encoding="utf-8") as f:
+        clubes_fpl = json.load(f)["teams"]
+    mapa = ler_mapa_zerozero()
+    slug_id = slugs_para_id(mapa, clubes_fpl)
+    id_slug = {v: k for k, v in slug_id.items()}
+    oficiais = fixtures_oficiais(id_slug)
+
+    epoca_id, epoca_txt, saida, recusados = None, "", {}, {}
+    for nome, info in mapa.items():
+        team_id = None
+        for k, v in clubes_fpl.items():
+            if (v["name"] if isinstance(v, dict) else v) == nome:
+                team_id = int(k)
+        if team_id is None:
+            continue
+        try:
+            primeira = _get_html(f"{ZZ}{info['caminho']}/jogos?epoca_id={epoca_id or 156}&page=1")
+        except Exception as exc:
+            recusados[str(team_id)] = f"não foi possível ler a página ({exc})"
+            fd.registar(f"Calendário: {nome}", False, exc)
+            continue
+        if epoca_id is None:
+            achada = epoca_da_pagina(primeira)
+            if not achada:
+                fd.registar("Calendário: época", False, "sem <select> na página")
+                return 1
+            epoca_id, epoca_txt = achada
+
+        linhas = jogos_do_clube(info["caminho"], epoca_id)
+        pl_zz = [x for x in linhas if normalizar_comp(x["comp_bruta"]) == "PL"]
+        desvios = desvios_por_data(pl_zz, oficiais.get(team_id, []))
+        _, divergentes = validar_pl(pl_zz, oficiais.get(team_id, []))
+        if len(divergentes) > 2:
+            recusados[str(team_id)] = f"{len(divergentes)} jogos da PL não batem com a API"
+            fd.registar(f"Calendário: {nome}", False, divergentes[:3])
+            continue
+
+        jogos = []
+        # A PL vem da API, que é a única com dificuldade; do zerozero só o resto.
+        for j in oficiais.get(team_id, []):
+            jogos.append({"id": None, "data": j["kickoff"], "comp": "PL",
+                          "adv": j["adv"], "adv_nome": None, "adv_slug": j["adv_slug"],
+                          "casa": j["casa"], "dif": j["dif"], "jornada": j["evento"],
+                          "ronda": None, "jogado": j["jogado"], "hora_incerta": False})
+        for x in linhas:
+            comp = normalizar_comp(x["comp_bruta"])
+            if comp == "PL":
+                continue
+            iso, incerta = para_utc(x["data"], x["hora"], desvios)
+            jogos.append({"id": x["id"], "data": iso, "comp": comp,
+                          "adv": slug_id.get(x["adv_slug"]), "adv_nome": x["adv_nome"],
+                          "adv_slug": x["adv_slug"], "casa": x["casa"], "dif": None,
+                          "jornada": None, "ronda": x["ronda"], "jogado": x["jogado"],
+                          "hora_incerta": incerta})
+        jogos.sort(key=lambda j: j["data"])
+        curto = clubes_fpl[str(team_id)]
+        saida[str(team_id)] = {
+            "nome": nome,
+            "curto": curto["short_name"] if isinstance(curto, dict) else nome[:3].upper(),
+            "jogos": jogos,
+        }
+        time.sleep(0.3)
+
+    nao_pl = sum(1 for c in saida.values() for j in c["jogos"]
+                 if j["comp"] != "PL" and not j["jogado"])
+    fd.registar("Calendário zerozero", bool(saida),
+                f"{len(saida)} clubes, {nao_pl} jogos por realizar fora da PL")
+    os.makedirs(fd.OUT_DIR, exist_ok=True)
+    with io.open(OUT, "w", encoding="utf-8") as f:
+        json.dump({
+            "generated_at": fd.datetime.now(fd.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "epoca_id": epoca_id, "epoca": epoca_txt, "clubes": saida,
+            "competicoes": NOMES_COMP, "recusados": recusados,
+            "diagnostico": fd.DIAGNOSTICO,
+        }, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"OK: {OUT} ({len(saida)} clubes, {nao_pl} jogos nao-PL por realizar)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -670,6 +670,34 @@ def testa_calendario_fuso():
               iso == "2026-10-10T23:30:00Z" and incerta is False, (iso, incerta))
 
 
+def testa_calendario_validacao():
+    print("Calendário: validação contra a API")
+    import fetch_calendario as fc
+
+    api = [{"data": "2026-10-11", "adv_slug": "liverpool", "casa": False,
+            "kickoff": "2026-10-11T15:30:00Z", "dif": 4, "evento": 6},
+           {"data": "2026-10-17", "adv_slug": "ipswich-town", "casa": True,
+            "kickoff": "2026-10-17T14:00:00Z", "dif": 2, "evento": 7}]
+    boas = [{"data": "2026-10-11", "adv_slug": "liverpool", "casa": False},
+            {"data": "2026-10-17", "adv_slug": "ipswich-town", "casa": True}]
+
+    aceites, recusadas = fc.validar_pl(boas, api)
+    verificar("linhas que batem passam todas", len(aceites) == 2 and not recusadas)
+
+    # Uma remarcação não pode derrubar o clube: 700 das 760 linhas ainda vão
+    # mexer com as escolhas televisivas, e os jogos europeus são a única coisa
+    # que esta fonte acrescenta.
+    ma = boas + [{"data": "2027-03-01", "adv_slug": "chelsea", "casa": True}]
+    aceites, recusadas = fc.validar_pl(ma, api)
+    verificar("uma divergência distante recusa a linha, não o clube",
+              len(aceites) == 2 and len(recusadas) == 1, (len(aceites), recusadas))
+
+    # A validação é por DATA. Comparar data-hora rejeitaria 155 dos 380 jogos
+    # por causa do fuso, e a regra de recusa deitava fora os 20 clubes.
+    verificar("a hora não entra na comparação",
+              len(fc.validar_pl(boas, api)[0]) == 2)
+
+
 def main():
     print("Testes da recolha\n")
     testa_nomes()
@@ -688,6 +716,7 @@ def main():
     testa_calendario_parser()
     testa_calendario_nomes()
     testa_calendario_fuso()
+    testa_calendario_validacao()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")
