@@ -473,6 +473,92 @@ def testa_ficheiros():
     verificar("cada onze de pré-época tem fonte", not sem_fonte, sem_fonte)
 
 
+CAL_HTML = """
+<select id="epoca_id">
+  <option value="155">2025/2026</option>
+  <option value="156" selected>2026/2027</option>
+  <option value="157">2027/2028</option>
+</select>
+<table><tr><th></th><th>J</th><th>V</th><th>E</th><th>D</th><th>DG</th>
+<th>A</th><th>AA</th><th>V</th><th>US</th><th>F</th><th></th><th></th></tr>
+<tr id="12253550" class="parent">
+ <td class="h2h">h2h</td><td class="double">2027-05-30</td><td>16:00</td>
+ <td>(C)</td><td><a href="/equipa/sunderland/91"><img src="x.png"></a></td>
+ <td class="text"><a href="/equipa/sunderland/91?epoca_id=156">Sunderland</a></td>
+ <td class="result"><a href="/jogo/2027-05-30-sunderland-manchester-city/12253550">-</a></td>
+ <td class="text">Premier League 26/27</td><td class="away">J38</td>
+ <td class="double right">h2h</td></tr>
+<tr id="12624711" class="parent">
+ <td class="h2h">h2h</td><td class="double">2026-10-14</td><td>20:00</td>
+ <td>(F)</td><td><a href="/equipa/paris-saint-germain"><img src="x.png"></a></td>
+ <td class="text"><a href="/equipa/paris-saint-germain">PSG</a></td>
+ <td class="result"><a href="/jogo/x/12624711">-</a></td>
+ <td class="text">UEFA Champions League 26/27</td><td class="away">&nbsp;</td>
+ <td class="double right"></td></tr>
+<tr id="11999001" class="parent">
+ <td class="form">V</td><td class="double">2026-08-12</td><td>20:00</td>
+ <td></td><td><a href="/equipa/paris-saint-germain"><img src="x.png"></a></td>
+ <td class="text"><a href="/equipa/paris-saint-germain">PSG</a></td>
+ <td class="result"><a href="/jogo/y/11999001">2-1</a></td>
+ <td class="text">UEFA Super Cup 2026</td><td class="away">F</td>
+ <td class="multimedia right"></td></tr>
+<tr id="11999002" class="parent">
+ <td class="h2h">h2h</td><td class="double">2026-09-16</td><td>19:45</td>
+ <td>(C)</td><td><a href="/equipa/brighton-hove-albion"><img src="x.png"></a></td>
+ <td class="text"><a href="/equipa/brighton-hove-albion">Brighton &amp; Hove Albion</a></td>
+ <td class="result"><a href="/jogo/z/11999002">-</a></td>
+ <td class="text">Carabao Cup 26/27</td><td class="away">3R</td>
+ <td class="double right">h2h</td></tr>
+</table>
+"""
+
+
+def testa_calendario_parser():
+    print("Calendário: parser do zerozero")
+    import fetch_calendario as fc
+    jogos = fc.linhas_jogos(CAL_HTML)
+    verificar("lê as 4 linhas de jogo e ignora o cabeçalho de 13 células",
+              len(jogos) == 4, len(jogos))
+
+    por_id = {j["id"]: j for j in jogos}
+    verificar("guarda o id do jogo, que é a chave estável entre recolhas",
+              12253550 in por_id and 12624711 in por_id, sorted(por_id))
+
+    pl = por_id[12253550]
+    verificar("lê data, hora e casa/fora", pl["data"] == "2027-05-30"
+              and pl["hora"] == "16:00" and pl["casa"] is True, pl)
+    verificar("junta pelo slug e não pelo nome", pl["adv_slug"] == "sunderland",
+              pl["adv_slug"])
+    verificar("o slug perde a query string",
+              "?" not in pl["adv_slug"] and "epoca_id" not in pl["adv_slug"])
+
+    # Campo neutro: a célula do (C)/(F) vem vazia. Um `== "(C)"` dava "fora".
+    sup = por_id[11999001]
+    verificar("campo neutro fica com casa=None, não com casa=False",
+              sup["casa"] is None, sup["casa"])
+    verificar("célula 0 com V/E/D marca o jogo como já disputado",
+              sup["jogado"] is True and por_id[12253550]["jogado"] is False)
+
+    # Última célula vazia em 30 dos jogos por jogar — e são os mais próximos.
+    ucl = por_id[12624711]
+    verificar("linha com a última célula vazia é lida na mesma",
+              ucl["comp_bruta"].startswith("UEFA Champions"), ucl["comp_bruta"])
+    verificar("&nbsp; na ronda não vira texto literal",
+              ucl["ronda"] == "", repr(ucl["ronda"]))
+
+    # Entidades nomeadas: a página é UTF-8 mas usa &amp;, &ccedil;, &nbsp;.
+    lc = por_id[11999002]
+    verificar("entidades HTML são desescapadas depois de tirar a marcação",
+              lc["adv_nome"] == "Brighton & Hove Albion", lc["adv_nome"])
+    verificar("lê a ronda quando existe", lc["ronda"] == "3R", lc["ronda"])
+
+    # A época lê-se da página; escrevê-la à mão dá um ficheiro vazio com ✓.
+    verificar("lê a época seleccionada da própria página",
+              fc.epoca_da_pagina(CAL_HTML) == (156, "2026/2027"),
+              fc.epoca_da_pagina(CAL_HTML))
+    verificar("sem <select> devolve None", fc.epoca_da_pagina("<html></html>") is None)
+
+
 def main():
     print("Testes da recolha\n")
     testa_nomes()
@@ -488,6 +574,7 @@ def main():
     testa_wiki()
     testa_completar_historico()
     testa_ficheiros()
+    testa_calendario_parser()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")
