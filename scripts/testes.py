@@ -445,6 +445,18 @@ def testa_artefacto():
     verificar("comentário HTML escapado",
               "<!--" not in artefacto.json_seguro('{"t":"<!-- x"}'))
 
+    # Slot próprio: meter o calendário no dicionário `dados` faria o script
+    # anunciar "modos: calendario, classica, draft" e tornava
+    # `D = __DADOS__[modo]` ambíguo.
+    base = os.path.dirname(os.path.abspath(__file__))
+    fonte_artefacto = io.open(os.path.join(base, "artefacto.py"), encoding="utf-8").read()
+    verificar("o artefacto embute o calendário num slot próprio",
+              "__CALENDARIO__" in fonte_artefacto, "falta o slot")
+    verificar("o calendário não entra no dicionário `dados` (não é um modo)",
+              "dados[\"calendario\"]" not in fonte_artefacto
+              and "dados['calendario']" not in fonte_artefacto,
+              "o calendário foi parar ao dicionário dos modos")
+
 
 # ---------- ficheiros curados ----------
 

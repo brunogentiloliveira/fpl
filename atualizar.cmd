@@ -30,6 +30,13 @@ if errorlevel 1 (
 )
 
 echo.
+echo A atualizar o calendario (liga, Europa e tacas)...
+"%PY%" scripts\fetch_calendario.py
+if errorlevel 1 (
+  echo Aviso: nao foi possivel atualizar o calendario. O separador fica com os dados anteriores.
+)
+
+echo.
 echo A abrir o dashboard. O endereco para o telemovel aparece abaixo.
 echo Fecha esta janela para desligar o servidor.
 echo.

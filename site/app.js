@@ -1709,14 +1709,21 @@ function initSugestoes() {
 
 /** Estado da última recolha e aviso quando os dados já não servem. */
 function initDiagnostico() {
-  const fontes = D.diagnostico || [];
+  // `C` (calendário) só existe a partir da Tarefa 7; até lá fica sempre por
+  // definir, e é preciso não rebentar com isso.
+  const cal = (typeof C !== "undefined" && C) ? C : null;
+  const fontes = (D.diagnostico || []).concat((cal && cal.diagnostico) || []);
   if (fontes.length) {
     $("estado-fontes").innerHTML = "Fontes: " + fontes.map((f) =>
       '<span class="fonte ' + (f.ok ? "ok" : "falhou") + '" title="' + esc(f.detalhe) + '">' +
       (f.ok ? "✓ " : "✗ ") + esc(f.fonte) + "</span>").join(" · ");
   }
 
-  const gerado = new Date(D.generated_at);
+  let gerado = new Date(D.generated_at);
+  if (cal && cal.generated_at) {
+    const geradoCal = new Date(cal.generated_at);
+    if (geradoCal < gerado) gerado = geradoCal; // o mais velho dos dois manda no aviso
+  }
   const horas = (Date.now() - gerado) / 36e5;
   const deadline = D.next_event ? new Date(D.next_event.deadline_time) : null;
   // Recolha feita antes de um deadline que já passou: as escolhas mudaram desde então.

@@ -47,6 +47,18 @@ def main():
             print(f"Aviso: {ficheiro} nao existe; o modo {modo} fica de fora.",
                   file=sys.stderr)
 
+    # Slot próprio (não uma terceira chave em `dados`): esse dicionário é
+    # iterado para o "modos: classica, draft" e para o `D = __DADOS__[modo]`
+    # do app.js, e o calendário não é um modo.
+    cal = {}
+    caminho_cal = os.path.join(SITE, "data", "calendario.json")
+    if os.path.exists(caminho_cal):
+        with io.open(caminho_cal, encoding="utf-8") as f:
+            cal = json.load(f)
+    else:
+        print("Aviso: calendario.json nao existe; o separador fica vazio.",
+              file=sys.stderr)
+
     pagina = (
         "<title>Haaland of Fame</title>\n"
         "<style>\n" + ler("styles.css") + "\n</style>\n"
@@ -56,6 +68,11 @@ def main():
         + "</script>\n"
         "<script>window.__DADOS__ = JSON.parse("
         'document.getElementById("dados-embutidos").textContent);</script>\n'
+        '<script type="application/json" id="calendario-embutido">'
+        + json_seguro(json.dumps(cal, ensure_ascii=False, separators=(",", ":")))
+        + "</script>\n"
+        "<script>window.__CALENDARIO__ = JSON.parse("
+        'document.getElementById("calendario-embutido").textContent);</script>\n'
         "<script>\n" + ler("app.js") + "\n</script>\n"
     )
     with io.open(saida, "w", encoding="utf-8") as f:
