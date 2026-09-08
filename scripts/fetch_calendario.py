@@ -165,3 +165,58 @@ def slugs_para_id(mapa_zz, clubes_fpl):
             continue
         saida[info["caminho"].split("/equipa/", 1)[1].split("/")[0]] = team_id
     return saida
+
+
+def desvios_por_data(linhas_pl, fixtures_api):
+    """Minutos entre a hora do zerozero e a UTC da API, por data.
+
+    Não se usa `ZoneInfo("Europe/Lisbon")`: rebenta nesta máquina
+    (ZoneInfoNotFoundError, Python do python.org em Windows sem tzdata) — e
+    seria assumir. As linhas da PL dão o par (hora local, UTC) para o mesmo
+    jogo, portanto o desvio é medido a partir dos próprios dados.
+    """
+    por_data = {}
+    for j in fixtures_api:
+        if j.get("kickoff"):
+            por_data.setdefault(j["data"], j["kickoff"])
+    desvios = {}
+    for linha in linhas_pl:
+        alvo = por_data.get(linha["data"])
+        if not alvo or not linha.get("hora"):
+            continue
+        hh, mm = (int(x) for x in linha["hora"].split(":"))
+        ah, am = int(alvo[11:13]), int(alvo[14:16])
+        delta = (hh * 60 + mm) - (ah * 60 + am)
+        # Só 0 ou 60 são plausíveis; qualquer outra coisa é jogo diferente no
+        # mesmo dia, não desvio de fuso.
+        if delta in (0, 60):
+            desvios[linha["data"]] = delta
+    return desvios
+
+
+def para_utc(data, hora, desvios):
+    """(ISO em UTC, hora_incerta). Sem hora, devolve a data nua."""
+    if not hora:
+        return data, True
+    if data in desvios:
+        delta, incerta = desvios[data], False
+    elif desvios:
+        # A âncora mais próxima: o regime de horário só muda duas vezes por ano.
+        vizinha = min(desvios, key=lambda d: abs(_dias(d) - _dias(data)))
+        delta, incerta = desvios[vizinha], False
+    else:
+        delta, incerta = 0, True
+    minutos = int(hora[:2]) * 60 + int(hora[3:5]) - delta
+    dia = _dias(data) + (minutos // (24 * 60))
+    minutos %= 24 * 60
+    return f"{_data(dia)}T{minutos // 60:02d}:{minutos % 60:02d}:00Z", incerta
+
+
+def _dias(data):
+    from datetime import date
+    return date(int(data[:4]), int(data[5:7]), int(data[8:10])).toordinal()
+
+
+def _data(ordinal):
+    from datetime import date
+    return date.fromordinal(ordinal).isoformat()

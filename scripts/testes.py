@@ -621,6 +621,55 @@ def testa_calendario_nomes():
               slugs == {"arsenal": 1}, slugs)
 
 
+def testa_calendario_fuso():
+    print("Calendário: fuso horário")
+    import fetch_calendario as fc
+
+    # O zerozero publica hora local do Reino Unido e a API publica UTC. Medido:
+    # 16 de 38 linhas do Man City diferem 60 min, e a separação bate a 100% com
+    # o horário de verão britânico. Escrever data+"T"+hora+"Z" ficava errado em
+    # 51% dos jogos — intermitente, que é o pior tipo.
+    linhas_pl = [
+        {"data": "2026-10-11", "hora": "16:30", "adv_slug": "liverpool"},   # verão
+        {"data": "2027-01-06", "hora": "20:00", "adv_slug": "chelsea"},     # inverno
+    ]
+    api = [
+        {"data": "2026-10-11", "kickoff": "2026-10-11T15:30:00Z"},
+        {"data": "2027-01-06", "kickoff": "2027-01-06T20:00:00Z"},
+    ]
+    desvios = fc.desvios_por_data(linhas_pl, api)
+    verificar("mede +60 min no horário de verão",
+              desvios.get("2026-10-11") == 60, desvios)
+    verificar("mede 0 min no horário de inverno",
+              desvios.get("2027-01-06") == 0, desvios)
+
+    iso, incerta = fc.para_utc("2026-10-11", "20:00", desvios)
+    verificar("aplica o desvio medido nesse dia",
+              iso == "2026-10-11T19:00:00Z" and incerta is False, (iso, incerta))
+
+    # Um jogo europeu a meio da semana não tem jogo da PL no mesmo dia: usa-se
+    # a âncora mais próxima, que é o mesmo regime de horário. 14 de outubro
+    # fica a 3 dias da âncora de verão (11/10) e a mais de 80 dias da de
+    # inverno (06/01) — a aritmética tem de escolher a de verão.
+    iso, incerta = fc.para_utc("2026-10-14", "20:00", desvios)
+    verificar("sem âncora no próprio dia, usa a mais próxima",
+              iso == "2026-10-14T19:00:00Z" and incerta is False, (iso, incerta))
+
+    iso, incerta = fc.para_utc("2026-10-14", None, desvios)
+    verificar("sem hora, devolve só a data e marca-a incerta",
+              iso == "2026-10-14" and incerta is True, (iso, incerta))
+
+    verificar("sem âncoras nenhumas, marca incerta em vez de inventar",
+              fc.para_utc("2026-10-14", "20:00", {})[1] is True)
+
+    # Aritmética à volta da meia-noite: subtrair 60 min a um jogo às 00:30
+    # muda o dia, não só a hora. Sem a divisão inteira sobre os minutos totais
+    # isto dava hora negativa (-00:30) em vez de recuar um dia.
+    iso, incerta = fc.para_utc("2026-10-11", "00:30", desvios)
+    verificar("desvio que cruza a meia-noite recua também o dia",
+              iso == "2026-10-10T23:30:00Z" and incerta is False, (iso, incerta))
+
+
 def main():
     print("Testes da recolha\n")
     testa_nomes()
@@ -638,6 +687,7 @@ def main():
     testa_ficheiros()
     testa_calendario_parser()
     testa_calendario_nomes()
+    testa_calendario_fuso()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")
