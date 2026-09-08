@@ -697,6 +697,67 @@ def testa_calendario_validacao():
     verificar("a hora não entra na comparação",
               len(fc.validar_pl(boas, api)[0]) == 2)
 
+    # semanas_criticas: a PL confirma as escolhas televisivas com 5-6
+    # semanas de antecedência — uma divergência aí dentro não é uma
+    # remarcação normal, e escala para recusar o clube inteiro mesmo sendo
+    # só 1 divergência (o limiar de "mais de 2" sozinho não a apanhava).
+    from datetime import datetime, timedelta, timezone
+    hoje = datetime.now(timezone.utc).date()
+    perto = (hoje + timedelta(days=10)).isoformat()
+    longe = (hoje + timedelta(days=300)).isoformat()
+
+    com_divergencia_perto = boas + [{"data": perto, "adv_slug": "chelsea", "casa": True}]
+    aceites, recusadas = fc.validar_pl(com_divergencia_perto, api, semanas_criticas=6)
+    verificar("divergência dentro da janela crítica recusa o clube, não só a linha",
+              aceites == [] and len(recusadas) == 3, (aceites, recusadas))
+
+    com_divergencia_longe = boas + [{"data": longe, "adv_slug": "chelsea", "casa": True}]
+    aceites, recusadas = fc.validar_pl(com_divergencia_longe, api, semanas_criticas=6)
+    verificar("a mesma divergência, fora da janela crítica, recusa só a linha",
+              len(aceites) == 2 and len(recusadas) == 1, (aceites, recusadas))
+
+
+def testa_calendario_epoca():
+    print("Calendário: a época lida tem de bater com a API")
+    import fetch_calendario as fc
+
+    # O bug crítico: escrever `epoca_id=156` à mão fazia o zerozero ecoar de
+    # volta a época pedida (medido ao vivo: ?epoca_id=155 devolve sempre
+    # "2025/2026", mesmo depois de a época ter mudado), e a verificação de
+    # então — só o <select> — via sempre a página "confirmar-se" a si
+    # própria. A segunda fonte (o ano do 1º deadline da FPL, independente do
+    # zerozero) é o que apanha uma página a mostrar a época errada.
+    pagina_errada = """
+    <select id="epoca_id">
+      <option value="155" selected>2025/2026</option>
+      <option value="156">2026/2027</option>
+    </select>
+    """
+    pagina_certa = """
+    <select id="epoca_id">
+      <option value="156" selected>2026/2027</option>
+    </select>
+    """
+
+    verificar("caminho de aborto dispara com uma época que não bate com a API",
+              fc.confirmar_epoca(pagina_errada, 2026) is None)
+    verificar("não dispara quando as duas fontes concordam",
+              fc.confirmar_epoca(pagina_certa, 2026) == (156, "2026/2027"),
+              fc.confirmar_epoca(pagina_certa, 2026))
+    verificar("dispara também sem <select> nenhum na página",
+              fc.confirmar_epoca("<html></html>", 2026) is None)
+    verificar("sem ano vindo da API (falha de rede), dispara — nunca confia às cegas",
+              fc.confirmar_epoca(pagina_certa, None) is None)
+
+    # As duas peças, isoladas: o <select> sozinho não distingue a página
+    # errada da certa (lê o que lá está, e é só isso). É a segunda fonte
+    # que apanha a divergência.
+    verificar("epoca_da_pagina sozinha só lê o que o <select> diz",
+              fc.epoca_da_pagina(pagina_errada) == (155, "2025/2026"))
+    verificar("epoca_coerente é que compara com a API e apanha a divergência",
+              fc.epoca_coerente("2025/2026", 2026) is False
+              and fc.epoca_coerente("2026/2027", 2026) is True)
+
 
 def main():
     print("Testes da recolha\n")
@@ -717,6 +778,7 @@ def main():
     testa_calendario_nomes()
     testa_calendario_fuso()
     testa_calendario_validacao()
+    testa_calendario_epoca()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")

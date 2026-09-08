@@ -90,7 +90,11 @@ def epoca_da_pagina(pagina):
 
     Escrever `epoca_id=156` à mão passava a verificação dos 38 jogos por clube
     na época seguinte e devolvia um ficheiro sem um único jogo por realizar,
-    com visto verde no diagnóstico.
+    com visto verde no diagnóstico. Não chega parar aqui: a página ecoa de
+    volta qualquer `epoca_id` pedido (confirmado ao vivo: `?epoca_id=155`
+    devolve sempre "2025/2026", mesmo depois de a época ter mudado), por
+    isso quem chama isto tem de pedir a primeira página SEM esse parâmetro —
+    só assim o <select> reflecte a época actual em vez de ecoar o pedido.
     """
     bloco = re.search(r'<select[^>]*epoca_id.*?</select>', pagina, re.S)
     if not bloco:
@@ -100,6 +104,52 @@ def epoca_da_pagina(pagina):
     if not m:
         return None
     return int(m.group(1)), m.group(2).strip()
+
+
+def ano_da_api():
+    """Ano do 1º deadline da época, lido da API oficial da FPL.
+
+    Segunda confirmação da época, independente do <select> do zerozero —
+    barata (um pedido) e uma fonte completamente diferente. Se o
+    comportamento da página mudar outra vez em silêncio (como já aconteceu
+    com o eco do `epoca_id`), isto continua a apanhar.
+    """
+    req = urllib.request.Request(API + "/bootstrap-static/",
+                                 headers={"User-Agent": "Mozilla/5.0 fpl-dashboard"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        dados = json.load(resp)
+    eventos = dados.get("events") or []
+    if not eventos or not eventos[0].get("deadline_time"):
+        return None
+    return int(eventos[0]["deadline_time"][:4])
+
+
+def epoca_coerente(epoca_txt, ano_api):
+    """O ano do rótulo lido no zerozero ("2026/2027") bate com `ano_da_api()`?
+
+    Sem `ano_api` (a API falhou a dar-nos um ano) ou sem ano nenhum no
+    rótulo, não há como confirmar — devolve False, que é o lado seguro:
+    antes escrever nada do que confiar às cegas.
+    """
+    m = re.search(r"\d{4}", epoca_txt or "")
+    if not m or not ano_api:
+        return False
+    return int(m.group()) == ano_api
+
+
+def confirmar_epoca(pagina, ano_api):
+    """(id, rótulo) da época — só se o <select> existir E bater com a API.
+
+    As duas condições de aborto num sítio só: sem <select> (a página mudou
+    de estrutura) ou o ano lido a não bater com `ano_da_api()` (a página
+    ecoou de volta um `epoca_id` errado, ou voltou a mudar de
+    comportamento em silêncio). Qualquer uma devolve None — nunca um
+    palpite escrito no ficheiro final.
+    """
+    achada = epoca_da_pagina(pagina)
+    if not achada or not epoca_coerente(achada[1], ano_api):
+        return None
+    return achada
 
 
 # Por subcadeia, e não por igualdade: o rótulo leva o patrocinador e o ano, e
@@ -223,19 +273,42 @@ def _data(ordinal):
 
 
 def validar_pl(linhas_zz, fixtures_api, semanas_criticas=6):
-    """Cruza as linhas da PL do zerozero com a API. Recusa linhas, não clubes.
+    """Cruza as linhas da PL do zerozero com a API. Recusa linhas — ou o
+    clube inteiro, quando a divergência é grave demais para ser só uma
+    remarcação normal.
 
     Só por (data, adversário, casa/fora) — nunca pela hora, que está noutro
     fuso. Hoje batem 760/760.
+
+    Escala de linha para clube em dois casos: mais de 2 divergências (perde-
+    se a confiança de que é só a TV a remarcar, e não a página errada), ou
+    qualquer divergência dentro das próximas `semanas_criticas` semanas — a
+    Premier League confirma as escolhas televisivas com 5-6 semanas de
+    antecedência, por isso aí dentro os jogos já estão fixos e uma
+    divergência não é uma remarcação, é sinal de um problema a sério.
+    Escalado, `recusadas` traz uma entrada por cada linha do clube (não só
+    as que divergem) — para qualquer clube real da época isto passa bem de
+    2, o que também é o sinal que `main()` já usa para não escrever o
+    clube. Os motivos genuínos ficam à cabeça da lista (as linhas que
+    batiam vêm depois), para a amostra do diagnóstico continuar a mostrar
+    o problema real e não uma linha qualquer que batia certo.
     """
     oficiais = {(j["data"], j["adv_slug"], j["casa"]) for j in fixtures_api}
-    aceites, recusadas = [], []
+    hoje = fd.datetime.now(fd.timezone.utc).date().isoformat()
+    limite = (fd.datetime.now(fd.timezone.utc)
+              + fd.timedelta(weeks=semanas_criticas)).date().isoformat()
+    aceites, recusadas, critica = [], [], False
     for linha in linhas_zz:
         chave = (linha["data"], linha["adv_slug"], linha["casa"])
         if chave in oficiais:
             aceites.append(linha)
         else:
             recusadas.append(f"{linha['data']} vs {linha['adv_slug']}")
+            if hoje <= linha["data"] <= limite:
+                critica = True
+    if critica or len(recusadas) > 2:
+        resto = [f"{l['data']} vs {l['adv_slug']}" for l in aceites]
+        return [], recusadas + resto
     return aceites, recusadas
 
 
@@ -253,9 +326,10 @@ def jogos_do_clube(caminho, epoca_id):
     """Todas as páginas de um clube.
 
     A tabela vem por data DECRESCENTE, portanto a última página tem os jogos
-    mais PRÓXIMOS: 34 jogos por realizar existem só na página 2, e são todos
-    dos 9 clubes europeus. Parar antes de a pedir apagava a congestão das
-    próximas duas semanas e deixava uma linha a começar em outubro — plausível.
+    mais PRÓXIMOS: cada clube com prova europeia tem 7 a 9 jogos por realizar
+    só na página 2 (89 jogos fora da PL por realizar, no total dos 20
+    clubes). Parar antes de a pedir apagava a congestão das próximas duas
+    semanas e deixava uma linha a começar em outubro — plausível.
     """
     todos, pagina = [], 1
     while pagina <= 4:
@@ -312,6 +386,12 @@ def main():
     slug_id = slugs_para_id(mapa, clubes_fpl)
     id_slug = {v: k for k, v in slug_id.items()}
     oficiais = fixtures_oficiais(id_slug)
+    try:
+        ano_api = ano_da_api()
+    except Exception as exc:
+        fd.registar("Calendário: época", False,
+                    f"não foi possível confirmar o ano pela API ({exc})")
+        return 1
 
     epoca_id, epoca_txt, saida, recusados = None, "", {}, {}
     for nome, info in mapa.items():
@@ -321,16 +401,25 @@ def main():
                 team_id = int(k)
         if team_id is None:
             continue
+        # Nunca um epoca_id escrito à mão: a primeira página pede-se SEM o
+        # parâmetro, para o zerozero devolver a época actual por omissão —
+        # com o parâmetro ele ecoa de volta o que se pediu (ver
+        # `epoca_da_pagina`), o que nunca dispararia o aborto na época
+        # seguinte.
+        url = (f"{ZZ}{info['caminho']}/jogos?page=1" if epoca_id is None else
+               f"{ZZ}{info['caminho']}/jogos?epoca_id={epoca_id}&page=1")
         try:
-            primeira = _get_html(f"{ZZ}{info['caminho']}/jogos?epoca_id={epoca_id or 156}&page=1")
+            primeira = _get_html(url)
         except Exception as exc:
             recusados[str(team_id)] = f"não foi possível ler a página ({exc})"
             fd.registar(f"Calendário: {nome}", False, exc)
             continue
         if epoca_id is None:
-            achada = epoca_da_pagina(primeira)
+            achada = confirmar_epoca(primeira, ano_api)
             if not achada:
-                fd.registar("Calendário: época", False, "sem <select> na página")
+                fd.registar("Calendário: época", False,
+                            f"sem <select> na página, ou ano incoerente com a API "
+                            f"({ano_api!r})")
                 return 1
             epoca_id, epoca_txt = achada
 
