@@ -663,6 +663,100 @@ verificar("o peso do modelo esperado está no ótimo medido",
 verificar("sem calendário, o separador não rebenta",
   typeof desenharCalendario === "function" && (C = null, desenharCalendario(), true));
 
+/* --- Calendário: congestão --- */
+(function () {
+  if (typeof trocosApertados !== "function") return;
+  const d = (s) => new Date("2026-10-" + s + "T15:00:00Z").getTime();
+
+  // 3 jogos em 8 dias marca, e a janela é INCLUSIVA: o Arsenal joga a PL a
+  // 24/10, a Carabao a 28/10 e a PL a 1/11 — exactamente 8 dias entre o
+  // primeiro e o último, e é a semana em que isto vai ser olhado. Com um
+  // `< 8` não havia barra nenhuma aí.
+  verificar("3 jogos em exactamente 8 dias contam como apertado",
+    trocosApertados([{ t: d("01") }, { t: d("05") }, { t: d("09") }]).length === 1);
+  verificar("3 jogos em 12 dias não contam",
+    trocosApertados([{ t: d("01") }, { t: d("07") }, { t: d("13") }]).length === 0);
+  verificar("2 jogos nunca contam",
+    trocosApertados([{ t: d("01") }, { t: d("03") }]).length === 0);
+
+  // A barra não é booleana: 5 jogos em 8 dias não é o mesmo que 3.
+  const denso = trocosApertados([{ t: d("01") }, { t: d("03") }, { t: d("05") },
+                                 { t: d("07") }, { t: d("08") }]);
+  verificar("a intensidade do troço é o número de jogos",
+    denso.length === 1 && denso[0].jogos === 5, denso);
+})();
+
+/* --- Calendário: horizonte de um clube, por data e não pelo "jogado" do retrato --- */
+(function () {
+  if (typeof jogosNoHorizonte !== "function") return;
+  const agora = Date.now();
+  const maisTarde = new Date(agora + 6 * 864e5).toISOString();
+  const maisCedo = new Date(agora + 2 * 864e5).toISOString();
+  const clube = { jogos: [
+    { data: maisTarde, jogado: false, comp: "PL", dif: 3 },
+    // "jogado" ficou congelado no retrato e diz falso: este já passou de facto
+    // (é o cenário do artefacto: publicado hoje, visto semanas depois).
+    { data: new Date(agora - 2 * 864e5).toISOString(), jogado: false, comp: "PL", dif: 3 },
+    { data: maisCedo, jogado: false, comp: "PL", dif: 3 },
+    { data: new Date(agora + 40 * 864e5).toISOString(), jogado: false, comp: "PL", dif: 3 },
+  ] };
+  const jogos = jogosNoHorizonte(clube, agora + 10 * 864e5);
+  verificar("filtra por data (agora), não pelo 'jogado' congelado no retrato",
+    jogos.length === 2, jogos.length);
+  verificar("e devolve por ordem cronológica",
+    jogos.length === 2 && jogos[0].data === maisCedo && jogos[1].data === maisTarde,
+    jogos.map(function (j) { return j.data; }));
+})();
+
+/* --- Calendário: versões mínimas de fimDoHorizonte e clubesOrdenados --- */
+(function () {
+  if (typeof fimDoHorizonte !== "function") return;
+  const antes = Date.now();
+  const ate = fimDoHorizonte();
+  verificar("horizonte mínimo: 12 semanas a partir de agora",
+    Math.abs((ate - antes) - 12 * 6048e5) < 5000, ate - antes);
+})();
+
+(function () {
+  if (typeof clubesOrdenados !== "function") return;
+  const guardado = C;
+  // Os ids não seguem a ordem alfabética do nome: se a "versão mínima" fosse
+  // só Object.keys() (sem odenar), a ordem numérica dos ids bateria por
+  // coincidência com a alfabética nalguns casos — aqui não bate de propósito.
+  C = { clubes: {
+    "3": { nome: "Zebra FC", curto: "ZEB", jogos: [] },
+    "20": { nome: "Arsenal", curto: "ARS", jogos: [] },
+    "7": { nome: "Liverpool", curto: "LIV", jogos: [] },
+  }, competicoes: {} };
+  const ordem = clubesOrdenados(Date.now());
+  verificar("versão mínima ordena por nome, alfabeticamente (não por id)",
+    ordem.join(",") === "20,7,3", ordem);
+  C = guardado;
+})();
+
+/* --- Calendário: com dados a sério também não rebenta --- */
+(function () {
+  if (typeof desenharCalendario !== "function") return;
+  const guardado = C;
+  const agora = Date.now();
+  C = { clubes: {
+    "1": { nome: "Arsenal", curto: "ARS", jogos: [
+      { data: new Date(agora + 2 * 864e5).toISOString(), comp: "PL", dif: 3,
+        adv: 2, adv_nome: null, casa: true, jogado: false, hora_incerta: false },
+      { data: new Date(agora + 6 * 864e5).toISOString(), comp: "PL", dif: 4,
+        adv: 3, adv_nome: null, casa: false, jogado: false, hora_incerta: false },
+      { data: new Date(agora + 9 * 864e5).toISOString(), comp: "UCL", dif: null,
+        adv: null, adv_nome: "Bayern", casa: true, jogado: false, hora_incerta: true },
+    ] },
+  }, competicoes: { PL: "Premier League", UCL: "Champions League" } };
+  // Sem #cal-grafico neste harness: só prova que a lógica (ordenar clubes,
+  // filtrar o horizonte, agrupar troços apertados, montar os marcadores) não
+  // rebenta com dados verdadeiros. O conteúdo visual verifica-se no browser.
+  verificar("com calendário real também não rebenta",
+    (desenharCalendario(), true));
+  C = guardado;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

@@ -1710,8 +1710,8 @@ function initSugestoes() {
 
 /** Estado da última recolha e aviso quando os dados já não servem. */
 function initDiagnostico() {
-  // `C` (calendário) só existe a partir da Tarefa 7; até lá fica sempre por
-  // definir, e é preciso não rebentar com isso.
+  // `C` (calendário) é carregado à parte, num try próprio (carregarCalendario),
+  // e fica `null` quando falha ou o ficheiro não existe — nunca por definir.
   const cal = (typeof C !== "undefined" && C) ? C : null;
   const fontes = (D.diagnostico || []).concat((cal && cal.diagnostico) || []);
   if (fontes.length) {
@@ -3759,17 +3759,133 @@ async function carregarCalendario() {
   }
 }
 
-/** Esqueleto do separador Calendário: só o estado (dados ou aviso para
- *  recolher). O gráfico é a Tarefa 8; colunas e ordenação, a Tarefa 9. */
+/* ---------- Calendário: a linha do tempo ---------- */
+
+const CAL_JANELA_DIAS = 8;   // inclusivo
+const CAL_MIN_JOGOS = 3;
+
+/**
+ * Troços em que o clube tem 3+ jogos em 8 dias.
+ *
+ * Medido no calendário real, a regra dispara para 14 dos 20 clubes e cobre 49%
+ * da linha do Arsenal e do Man City — por isso o troço guarda a intensidade
+ * (quantos jogos) e troços de intensidade diferente não se fundem. Metade da
+ * linha sombreada com um tom só não é um aviso, é um fundo.
+ */
+function trocosApertados(jogos) {
+  const t = jogos.map((j) => j.t).sort((a, b) => a - b);
+  const limite = CAL_JANELA_DIAS * 864e5;
+  const trocos = [];
+  for (let i = 0; i + CAL_MIN_JOGOS - 1 < t.length; i += 1) {
+    let fim = i;
+    while (fim + 1 < t.length && t[fim + 1] - t[i] <= limite) fim += 1;
+    const n = fim - i + 1;
+    if (n < CAL_MIN_JOGOS) continue;
+    const ultimo = trocos[trocos.length - 1];
+    if (ultimo && ultimo.jogos === n && t[i] <= ultimo.fim) {
+      ultimo.fim = Math.max(ultimo.fim, t[fim]);
+    } else {
+      trocos.push({ inicio: t[i], fim: t[fim], jogos: n });
+    }
+    // Salta os jogos já contados neste troço: sem isto, cada índice seguinte
+    // (ainda dentro da mesma janela) reabre uma janela mais curta a partir
+    // do jogo seguinte e cria um troço quase igual com uma intensidade a
+    // menos — 5 jogos em 8 dias saía como três troços sobrepostos (5, 4, 3)
+    // em vez de um só de intensidade 5.
+    i = fim;
+  }
+  return trocos;
+}
+
+const CAL_PX_SEMANA = 42;  // medido: a 375px sobram 287px para o gráfico
+
+/**
+ * Os jogos de um clube dentro do horizonte, já em milissegundos.
+ *
+ * Filtra por `Date.now()` e não pelo `jogado` da recolha: o artefacto é um
+ * retrato, e um publicado hoje mostraria outubro como futuro em novembro.
+ */
+function jogosNoHorizonte(clube, ate) {
+  const agora = Date.now();
+  return ((clube || {}).jogos || [])
+    .map((j) => Object.assign({}, j, { t: Date.parse(j.data) }))
+    .filter((j) => j.t >= agora && j.t <= ate)
+    .sort((a, b) => a.t - b.t);
+}
+
+/** Versão mínima: 12 jornadas aproximadas a 12 semanas a partir de agora — o
+ *  gráfico já trabalha em semanas (CAL_PX_SEMANA). A Tarefa 9 substitui por
+ *  um seletor com o calendário real de jornadas, mantendo a assinatura. */
+function fimDoHorizonte() {
+  return Date.now() + 12 * 6048e5;
+}
+
+/** Versão mínima: ordem alfabética pelo nome do clube. A Tarefa 9 substitui,
+ *  mantendo a assinatura (recebe `ate`), por uma ordenação que também usa os
+ *  meus jogadores (D.players). */
+function clubesOrdenados(ate) {
+  return Object.keys(C.clubes).sort((a, b) =>
+    C.clubes[a].nome.localeCompare(C.clubes[b].nome, "pt"));
+}
+
+/** O separador Calendário: a linha do tempo à escala, com um marcador por
+ *  jogo e uma barra que assinala a congestão. */
 function desenharCalendario() {
   const intro = $("cal-intro");
+  const alvo = $("cal-grafico");
   const semDados = !C || !C.clubes;
-  if (intro) {
-    intro.innerHTML = semDados
-      ? "Calendário indisponível. Corre o <strong>atualizar.cmd</strong> para o recolher."
-      : "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
-        " clubes da Premier League.";
+  if (semDados) {
+    if (intro) intro.textContent = "";
+    if (alvo) {
+      alvo.innerHTML = '<p class="nota">Sem calendário. Corre o <code>atualizar.cmd</code>.</p>';
+    }
+    return;
   }
+  if (intro) {
+    intro.textContent = "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
+      " clubes da Premier League.";
+  }
+  const ate = fimDoHorizonte();          // do seletor, Tarefa 9
+  const inicio = Date.now();
+  const largura = ((ate - inicio) / 6048e5) * CAL_PX_SEMANA;
+  const linhas = clubesOrdenados(ate).map((id) => {
+    const clube = C.clubes[id];
+    const jogos = jogosNoHorizonte(clube, ate);
+    const pos = (t) => ((t - inicio) / (ate - inicio)) * largura;
+    const trocos = trocosApertados(jogos).map((tr) =>
+      '<span class="cal-troco n' + Math.min(tr.jogos, 5) + '" style="left:' +
+      pos(tr.inicio).toFixed(1) + "px;width:" + (pos(tr.fim) - pos(tr.inicio)).toFixed(1) +
+      'px"></span>').join("");
+    const marcas = jogos.map((j) =>
+      '<button type="button" class="cal-jogo' + (j.comp === "PL" ? " d" + j.dif : " fora-pl") +
+      '" style="left:' + pos(j.t).toFixed(1) + 'px" data-clube="' + id +
+      '" data-jogo="' + j.t + '">' +
+      // Texto lá dentro: as classes de cor sozinhas dão 1.14:1 de contraste.
+      (j.comp === "PL" ? j.dif : C.competicoes[j.comp][0]) + "</button>").join("");
+    return '<div class="cal-linha"><span class="cal-clube">' + clube.curto +
+      '</span><span class="cal-faixa" style="width:' + largura.toFixed(0) + 'px">' +
+      trocos + marcas + "</span></div>";
+  }).join("");
+  if (!alvo) return;
+  // Detalhe por baixo da linha do tempo ao clicar num marcador — não em
+  // `title`, que em ecrã tátil nunca aparece.
+  alvo.innerHTML = linhas + '<p class="nota cal-detalhe" id="cal-detalhe" hidden></p>';
+  alvo.onclick = (ev) => {
+    const btn = ev.target.closest(".cal-jogo");
+    const det = $("cal-detalhe");
+    if (!btn || !det) return;
+    const clube = C.clubes[btn.dataset.clube];
+    const t = Number(btn.dataset.jogo);
+    const jogo = (clube.jogos || []).find((j) => Date.parse(j.data) === t);
+    if (!jogo) return;
+    const comp = C.competicoes[jogo.comp] || jogo.comp;
+    const adversario = jogo.adv_nome || nomeClube(jogo.adv);
+    det.textContent = clube.curto + " · " + comp + " · " + (jogo.casa ? "casa" : "fora") +
+      " vs " + adversario + " · " + fmtDataHora.format(new Date(jogo.data)) +
+      (jogo.comp === "PL" ? " · dificuldade " + jogo.dif : "") +
+      (jogo.hora_incerta ? " · hora por confirmar" : "");
+    det.hidden = false;
+  };
 }
 
 async function main() {

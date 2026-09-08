@@ -630,3 +630,43 @@ main { padding: 1rem; max-width: 58rem; margin: 0 auto; }
   font-size: 0.95rem; line-height: 1; padding: 0 0.2rem; margin-left: 0.25rem;
 }
 .chip .tirar:hover, .chip .tirar:focus-visible { color: var(--perigo); }
+
+/* --- Calendário: a linha do tempo --- */
+/* O gráfico arrasta dentro de si próprio; o body nunca ganha scroll lateral. */
+.cal-grafico { overflow-x: auto; overflow-y: visible; }
+.cal-linha { display: flex; align-items: center; height: 2.1rem; }
+.cal-clube {
+  position: sticky; left: 0; z-index: 2; width: 3.5rem; flex: none;
+  background: var(--fundo); font-size: 0.78rem; font-weight: 700;
+}
+.cal-faixa { position: relative; height: 100%; flex: none; }
+.cal-jogo {
+  position: absolute; top: 50%; transform: translate(-50%, -50%);
+  min-width: 1.05rem; height: 1.05rem; border-radius: 3px;
+  font-size: 0.62rem; font-weight: 700; line-height: 1.05rem; text-align: center;
+  border: 1px solid currentColor;
+  /* É um <button>: sem isto herdava padding, fundo e tipo de letra do browser
+     e deixava de caber no tamanho medido do marcador. */
+  padding: 0; margin: 0; background: none; font-family: inherit; cursor: pointer;
+}
+/* Dificuldade: contorno a sério e não fundo esbatido. Os fundos das .fx dão
+   1.14:1 contra o --painel (mínimo 3:1) e só funcionam lá porque têm sempre
+   texto por cima. A dificuldade 1 não existe nos 380 jogos (casa 2-4, fora
+   2-5), por isso não há regra para ela nem entrada na legenda. */
+.cal-jogo.d2 { color: var(--acento); background: color-mix(in srgb, var(--acento) 16%, transparent); }
+.cal-jogo.d3 { color: var(--texto-2); background: var(--painel-2); }
+.cal-jogo.d4 { color: var(--aviso); background: color-mix(in srgb, var(--aviso) 16%, transparent); }
+.cal-jogo.d5 { color: var(--perigo); background: color-mix(in srgb, var(--perigo) 20%, transparent); }
+/* Europa e taças: círculo contornado, sem preenchimento — não têm dificuldade
+   para mostrar, e uma cor por competição colidia com o vocabulário do site
+   (verde disponível, dourado a vigiar, coral fora). */
+.cal-jogo.fora-pl { border-radius: 50%; background: transparent; color: var(--texto); }
+.cal-troco {
+  position: absolute; top: 0; bottom: 0; border-radius: 3px;
+  background: color-mix(in srgb, var(--aviso) 10%, transparent);
+}
+.cal-troco.n4 { background: color-mix(in srgb, var(--aviso) 18%, transparent); }
+.cal-troco.n5 { background: color-mix(in srgb, var(--perigo) 20%, transparent); }
+/* Detalhe do jogo clicado, por baixo da linha do tempo (não em `title`, que
+   em ecrã tátil nunca aparece). */
+.cal-detalhe { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--borda); }

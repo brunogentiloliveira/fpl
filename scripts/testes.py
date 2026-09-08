@@ -214,11 +214,16 @@ def testa_nomes_funcoes():
     # a das sugestões da clássica, e a secção ficou vazia sem nada na consola.
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     js = io.open(os.path.join(base, "site", "app.js"), encoding="utf-8").read()
-    nomes = re.findall(r"^function\s+([A-Za-z_$][\w$]*)\s*\(", js, re.M)
+    nomes = re.findall(r"^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(", js, re.M)
     repetidos = sorted({n for n in nomes if nomes.count(n) > 1})
     verificar("nenhuma função de topo está declarada duas vezes",
               not repetidos, repetidos)
     verificar("o app.js tem funções para verificar", len(nomes) > 50)
+    # O regex antigo (`^function\s+`) não apanhava `async function` — nem
+    # `carregarCalendario` nem `main` entravam na lista, e o guarda contra
+    # nomes duplicados tinha um ponto cego precisamente nas funções async.
+    verificar("apanha também 'async function' (ex.: carregarCalendario, main)",
+              {"carregarCalendario", "main"}.issubset(set(nomes)), nomes)
 
     # Um `const` de topo declarado duas vezes é SyntaxError e apaga a página
     # inteira — pior do que a colisão de funções, que só silencia uma delas.
