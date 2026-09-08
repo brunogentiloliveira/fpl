@@ -545,6 +545,8 @@ def testa_calendario_parser():
               ucl["comp_bruta"].startswith("UEFA Champions"), ucl["comp_bruta"])
     verificar("&nbsp; na ronda não vira texto literal",
               ucl["ronda"] == "", repr(ucl["ronda"]))
+    verificar("jogo fora fica com casa=False, não confundido com campo neutro",
+              ucl["casa"] is False, ucl["casa"])
 
     # Entidades nomeadas: a página é UTF-8 mas usa &amp;, &ccedil;, &nbsp;.
     lc = por_id[11999002]
@@ -557,6 +559,47 @@ def testa_calendario_parser():
               fc.epoca_da_pagina(CAL_HTML) == (156, "2026/2027"),
               fc.epoca_da_pagina(CAL_HTML))
     verificar("sem <select> devolve None", fc.epoca_da_pagina("<html></html>") is None)
+
+
+def testa_calendario_nomes():
+    print("Calendário: competições e clubes")
+    import fetch_calendario as fc
+
+    casos = [
+        ("Premier League 26/27", "PL"),
+        ("UEFA Champions League 26/27", "UCL"),
+        ("UEFA Europa League 26/27", "UEL"),
+        ("UEFA Conference League 26/27", "UECL"),
+        ("UEFA Conference League (Qual.) 26/27", "UECL"),
+        ("Carabao Cup 26/27", "LC"),
+        ("EFL League Cup 26/27", "LC"),
+        # O rótulo muda com o patrocinador e com o ano civil: fixar a string
+        # inteira quebrava na época seguinte.
+        ("The Emirates FA Cup 25/26", "FAC"),
+        ("The FA Cup 26/27", "FAC"),
+        ("The FA Community Shield 2026", "SUP"),
+        ("Community Shield 2025", "SUP"),
+        ("UEFA Super Cup 2026", "SUP"),
+        ("Qualquer Outra Coisa", "OUT"),
+    ]
+    for bruta, esperado in casos:
+        verificar(f"{bruta!r} -> {esperado}",
+                  fc.normalizar_comp(bruta) == esperado, fc.normalizar_comp(bruta))
+
+    # 6 dos 20 nomes do zerozero não batem com os do bootstrap. Juntar por nome
+    # deixava 4 dos 12 jogos de taça entre clubes da PL sem adversário.
+    mapa = fc.ler_mapa_zerozero()
+    slugs = fc.slugs_para_id(mapa, {"1": {"name": "Arsenal"}})
+    verificar("o mapa tem os 20 clubes", len(mapa) == 20, len(mapa))
+    verificar("todos os caminhos são /equipa/<slug>",
+              all(v["caminho"].startswith("/equipa/") for v in mapa.values()))
+    # Os slugs que precisam de id têm-no: sem ele a página redirecciona.
+    com_id = {"brentford": "2600", "sunderland": "91", "aston-villa": "76",
+              "hull-city": "5096", "coventry-city": "2584"}
+    caminhos = {v["caminho"] for v in mapa.values()}
+    for slug, ident in com_id.items():
+        verificar(f"o caminho do {slug} leva id",
+                  f"/equipa/{slug}/{ident}" in caminhos, sorted(caminhos))
 
 
 def main():
@@ -575,6 +618,7 @@ def main():
     testa_completar_historico()
     testa_ficheiros()
     testa_calendario_parser()
+    testa_calendario_nomes()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")

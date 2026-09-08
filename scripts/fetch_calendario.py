@@ -40,11 +40,13 @@ def _celulas(tr):
 
     A ordem importa: tirar a marcação primeiro e só depois `html.unescape`.
     Ao contrário, um `&lt;b&gt;` escrito por extenso virava marcação a sério.
+    O `split()` sem argumentos já trata o `\xa0` (nbsp, comum na tabela) como
+    espaço, por isso não é preciso um `replace` à parte para ele.
     """
     fora = []
     for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S):
         limpo = html_mod.unescape(re.sub(r"<[^>]+>", " ", c))
-        fora.append(" ".join(limpo.split()).replace("\xa0", " ").strip())
+        fora.append(" ".join(limpo.split()).strip())
     return fora
 
 
@@ -98,3 +100,60 @@ def epoca_da_pagina(pagina):
     if not m:
         return None
     return int(m.group(1)), m.group(2).strip()
+
+
+# Por subcadeia, e não por igualdade: o rótulo leva o patrocinador e o ano, e
+# muda de época para época ("The Emirates FA Cup 25/26", "Community Shield
+# 2025"). A ordem importa — "Conference" antes de "Cup", "Super Cup" antes de
+# "Cup", senão a Supertaça Europeia caía na Taça da Liga.
+COMPETICOES = [
+    ("premier league", "PL"),
+    ("champions league", "UCL"),
+    ("europa league", "UEL"),
+    ("conference league", "UECL"),
+    ("super cup", "SUP"),
+    ("supertaça", "SUP"),
+    ("community shield", "SUP"),
+    ("fa cup", "FAC"),
+    ("carabao", "LC"),
+    ("league cup", "LC"),
+]
+
+NOMES_COMP = {"PL": "Premier League", "UCL": "Champions League",
+              "UEL": "Liga Europa", "UECL": "Conference League",
+              "LC": "Taça da Liga", "FAC": "Taça de Inglaterra",
+              "SUP": "Supertaças", "OUT": "Outras"}
+
+
+def normalizar_comp(bruta):
+    txt = fd.sem_acentos((bruta or "").lower())
+    for chave, sigla in COMPETICOES:
+        if fd.sem_acentos(chave) in txt:
+            return sigla
+    return "OUT"
+
+
+def ler_mapa_zerozero():
+    with io.open(MAPA, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def slugs_para_id(mapa_zz, clubes_fpl):
+    """slug do zerozero -> id do clube na FPL.
+
+    O nome não serve de chave: 6 dos 20 divergem ("Manchester City" vs
+    "Man City", "Tottenham" vs "Spurs"), o que são 27% das linhas. E um
+    recurso por tokens é pior — *city* liga o Manchester City ao Hull City.
+    O slug está no HTML em todas as linhas e bate exactamente com o
+    zerozero.json.
+    """
+    por_nome = {v["name"] if isinstance(v, dict) else v: int(k)
+                for k, v in clubes_fpl.items()}
+    saida = {}
+    for nome, info in mapa_zz.items():
+        team_id = por_nome.get(nome)
+        if team_id is None:
+            fd.registar("Calendário: clube sem id", False, nome)
+            continue
+        saida[info["caminho"].split("/equipa/", 1)[1].split("/")[0]] = team_id
+    return saida
