@@ -3771,6 +3771,19 @@ const CAL_MIN_JOGOS = 3;
  * da linha do Arsenal e do Man City — por isso o troço guarda a intensidade
  * (quantos jogos) e troços de intensidade diferente não se fundem. Metade da
  * linha sombreada com um tom só não é um aviso, é um fundo.
+ *
+ * Para cada índice `i` calcula-se a extensão máxima `fim` que ainda cabe na
+ * janela de `i`. Uma versão anterior saltava para `i = fim` depois de
+ * registar o troço, para não reabrir a mesma janela — mas isso perdia jogos:
+ * `[0,3,6,9]` dias dava só `[0,6]`, e o jogo do dia 9 ficava de fora, apesar
+ * de `3,6,9` ser também uma janela apertada válida (6 dias). Sem saltar,
+ * cada índice é avaliado, e só se suprime o *push* de um troço cujo
+ * intervalo fica inteiramente contido num troço já registado com
+ * intensidade igual ou maior — nesse caso não há cobertura nova para
+ * acrescentar. A fusão (mesma intensidade, sobreposto) trata o resto:
+ * estende o troço anterior em vez de abrir um quase igual ao lado. Medido
+ * contra o calendario.json real: sem isto, os 20 clubes perdiam pelo menos
+ * um jogo cada.
  */
 function trocosApertados(jogos) {
   const t = jogos.map((j) => j.t).sort((a, b) => a - b);
@@ -3781,18 +3794,18 @@ function trocosApertados(jogos) {
     while (fim + 1 < t.length && t[fim + 1] - t[i] <= limite) fim += 1;
     const n = fim - i + 1;
     if (n < CAL_MIN_JOGOS) continue;
+    const inicio = t[i];
+    const fimTroco = t[fim];
     const ultimo = trocos[trocos.length - 1];
-    if (ultimo && ultimo.jogos === n && t[i] <= ultimo.fim) {
-      ultimo.fim = Math.max(ultimo.fim, t[fim]);
+    if (ultimo && ultimo.jogos === n && inicio <= ultimo.fim) {
+      // Mesma intensidade e sobreposto ao troço anterior: estende-o.
+      ultimo.fim = Math.max(ultimo.fim, fimTroco);
+    } else if (ultimo && ultimo.jogos >= n && inicio >= ultimo.inicio && fimTroco <= ultimo.fim) {
+      // Inteiramente contido num troço já registado, de intensidade igual
+      // ou maior: não acrescenta cobertura nem informação, não empurra nada.
     } else {
-      trocos.push({ inicio: t[i], fim: t[fim], jogos: n });
+      trocos.push({ inicio: inicio, fim: fimTroco, jogos: n });
     }
-    // Salta os jogos já contados neste troço: sem isto, cada índice seguinte
-    // (ainda dentro da mesma janela) reabre uma janela mais curta a partir
-    // do jogo seguinte e cria um troço quase igual com uma intensidade a
-    // menos — 5 jogos em 8 dias saía como três troços sobrepostos (5, 4, 3)
-    // em vez de um só de intensidade 5.
-    i = fim;
   }
   return trocos;
 }
@@ -3828,6 +3841,20 @@ function clubesOrdenados(ate) {
     C.clubes[a].nome.localeCompare(C.clubes[b].nome, "pt"));
 }
 
+/** Frase descritiva de um jogo: "clube · competição · casa/fora vs
+ *  adversário · data · dificuldade (só PL) · aviso de hora por confirmar".
+ *  Extraída para não duplicar a string entre o `aria-label` de cada
+ *  marcador e o texto do detalhe ao clicar — eram os dois sítios que a
+ *  montavam à mão. */
+function descricaoJogo(clube, jogo) {
+  const comp = C.competicoes[jogo.comp] || jogo.comp;
+  const adversario = jogo.adv_nome || nomeClube(jogo.adv);
+  return clube.curto + " · " + comp + " · " + (jogo.casa ? "casa" : "fora") +
+    " vs " + adversario + " · " + fmtDataHora.format(new Date(jogo.data)) +
+    (jogo.comp === "PL" ? " · dificuldade " + jogo.dif : "") +
+    (jogo.hora_incerta ? " · hora por confirmar" : "");
+}
+
 /** O separador Calendário: a linha do tempo à escala, com um marcador por
  *  jogo e uma barra que assinala a congestão. */
 function desenharCalendario() {
@@ -3859,8 +3886,10 @@ function desenharCalendario() {
     const marcas = jogos.map((j) =>
       '<button type="button" class="cal-jogo' + (j.comp === "PL" ? " d" + j.dif : " fora-pl") +
       '" style="left:' + pos(j.t).toFixed(1) + 'px" data-clube="' + id +
-      '" data-jogo="' + j.t + '">' +
+      '" data-jogo="' + j.t + '" aria-label="' + esc(descricaoJogo(clube, j)) + '">' +
       // Texto lá dentro: as classes de cor sozinhas dão 1.14:1 de contraste.
+      // O aria-label leva a frase toda — sem ele um leitor de ecrã só ouvia
+      // o dígito ou a letra, sem clube, adversário nem data.
       (j.comp === "PL" ? j.dif : C.competicoes[j.comp][0]) + "</button>").join("");
     return '<div class="cal-linha"><span class="cal-clube">' + clube.curto +
       '</span><span class="cal-faixa" style="width:' + largura.toFixed(0) + 'px">' +
@@ -3868,8 +3897,11 @@ function desenharCalendario() {
   }).join("");
   if (!alvo) return;
   // Detalhe por baixo da linha do tempo ao clicar num marcador — não em
-  // `title`, que em ecrã tátil nunca aparece.
-  alvo.innerHTML = linhas + '<p class="nota cal-detalhe" id="cal-detalhe" hidden></p>';
+  // `title`, que em ecrã tátil nunca aparece. `aria-live` avisa quem usa
+  // leitor de ecrã que o texto por baixo mudou, já que o clique em si não
+  // move o foco para lá.
+  alvo.innerHTML = linhas +
+    '<p class="nota cal-detalhe" id="cal-detalhe" aria-live="polite" hidden></p>';
   alvo.onclick = (ev) => {
     const btn = ev.target.closest(".cal-jogo");
     const det = $("cal-detalhe");
@@ -3878,12 +3910,7 @@ function desenharCalendario() {
     const t = Number(btn.dataset.jogo);
     const jogo = (clube.jogos || []).find((j) => Date.parse(j.data) === t);
     if (!jogo) return;
-    const comp = C.competicoes[jogo.comp] || jogo.comp;
-    const adversario = jogo.adv_nome || nomeClube(jogo.adv);
-    det.textContent = clube.curto + " · " + comp + " · " + (jogo.casa ? "casa" : "fora") +
-      " vs " + adversario + " · " + fmtDataHora.format(new Date(jogo.data)) +
-      (jogo.comp === "PL" ? " · dificuldade " + jogo.dif : "") +
-      (jogo.hora_incerta ? " · hora por confirmar" : "");
+    det.textContent = descricaoJogo(clube, jogo);
     det.hidden = false;
   };
 }

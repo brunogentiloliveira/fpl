@@ -684,6 +684,37 @@ verificar("sem calendário, o separador não rebenta",
                                  { t: d("07") }, { t: d("08") }]);
   verificar("a intensidade do troço é o número de jogos",
     denso.length === 1 && denso[0].jogos === 5, denso);
+
+  // Um jogo que continua a sequência apertada mas começa depois de um troço
+  // já fechado não pode ficar órfão. `[0,3,6,9]` dias é uma janela apertada
+  // contínua (3,6,9 cabe nos mesmos 8 dias) e tem de sair como UM troço que
+  // cobre os quatro jogos — não `[0,6]` com o dia 9 de fora.
+  const cobre = (trocos, t) => trocos.some((tr) => tr.inicio <= t && t <= tr.fim);
+  const seq4 = [d("01"), d("04"), d("07"), d("10")]; // 0, 3, 6, 9 dias
+  const trocos4 = trocosApertados(seq4.map((t) => ({ t })));
+  verificar("[0,3,6,9] dias: os quatro jogos ficam cobertos por algum troço",
+    seq4.every((t) => cobre(trocos4, t)), trocos4);
+
+  // O mesmo problema, um passo mais longo: cada índice sucessivo tem de
+  // alargar o troço em vez de o fechar cedo demais. Cobertura completa,
+  // um troço só.
+  const seq6 = [d("01"), d("03"), d("05"), d("07"), d("09"), d("11")]; // 0,2,4,6,8,10 dias
+  const trocos6 = trocosApertados(seq6.map((t) => ({ t })));
+  verificar("[0,2,4,6,8,10] dias: os seis jogos ficam cobertos",
+    seq6.every((t) => cobre(trocos6, t)), trocos6);
+  verificar("...e saem como um só troço, de intensidade 5",
+    trocos6.length === 1 && trocos6[0].jogos === 5, trocos6);
+
+  // Dois grupos apertados mas bem separados no tempo não podem virar um
+  // troço só a atravessar o vazio entre eles. Cada grupo repete o padrão
+  // órfão de 4 jogos em 9 dias, para também confirmar que a cobertura
+  // dentro de cada grupo continua completa quando há mais do que um.
+  const doisGrupos = [d("01"), d("04"), d("07"), d("10"), d("21"), d("24"), d("27"), d("30")];
+  const trocosDoisGrupos = trocosApertados(doisGrupos.map((t) => ({ t })));
+  verificar("dois grupos separados dão dois troços, não um a atravessar o vazio",
+    trocosDoisGrupos.length === 2, trocosDoisGrupos);
+  verificar("...e nenhum dos oito jogos, nos dois grupos, fica de fora",
+    doisGrupos.every((t) => cobre(trocosDoisGrupos, t)), trocosDoisGrupos);
 })();
 
 /* --- Calendário: horizonte de um clube, por data e não pelo "jogado" do retrato --- */
