@@ -1174,7 +1174,26 @@ escreveu.
 
 `site/testes.html` ganhou as verificações do horizonte por jornada, da congestão inclusiva, dos
 troços que não se fundem, da ordenação por "apertado" e do clube recusado a aparecer "sem dados"
-em vez de linha vazia — chegou a **179** (eram 130 antes deste separador).
+em vez de linha vazia — chegou a **194** (eram 130 antes deste separador).
+
+### Duas coisas por resolver, encontradas na revisão final (2026-09-09)
+
+**A conversão de fuso volta a falhar no hiato de março de 2027.** O `para_utc()` prefere a âncora
+anterior porque "está do mesmo lado da troca de hora" — o que só é verdade quando não há transição
+no meio do intervalo. Esta época tem um hiato **real de 21 dias sem jogo da liga de clube nenhum**
+(20/03 → 10/04/2027) que atravessa a mudança de 28/03. Um jogo a 28, 29 ou 30 de março sairia com
+uma hora a mais **e sem `hora_incerta`**, que é exatamente o defeito que a correção de outubro
+eliminou. Hoje não afeta nada: a recolha de jogos fora da liga não vai além de 28/01/2027, porque
+as provas europeias só têm a fase de liga marcada. **Rever antes de fevereiro de 2027**, quando os
+quartos de final forem sorteados.
+
+**Os testes escrevem por cima dos dados verdadeiros.** O teste do artefacto substitui o
+`site/data/calendario.json` real por uma versão com um payload perigoso e repõe-no num `finally`.
+Julguei o risco aceitável — ficheiro versionado, janela de milissegundos — e **materializou-se duas
+vezes na mesma sessão**: dois agentes que instrumentavam a recolha morreram a meio e deixaram o
+ficheiro com **20 jogos em vez de 865**, sem erro nenhum e com aspeto normal. Um deles quase foi
+fundido. Os testes que precisam de escrever devem apontar para um directório temporário, ou trocar
+a constante `OUT` em memória — nunca para o caminho real.
 
 ## Fase 2 das melhorias: medir as constantes (2026-09-01)
 
