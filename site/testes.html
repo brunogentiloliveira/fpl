@@ -739,31 +739,292 @@ verificar("sem calendário, o separador não rebenta",
     jogos.map(function (j) { return j.data; }));
 })();
 
-/* --- Calendário: versões mínimas de fimDoHorizonte e clubesOrdenados --- */
+/* --- Calendário: resumoClube (Tarefa 9, Passo 1 do briefing, tal e qual) --- */
 (function () {
-  if (typeof fimDoHorizonte !== "function") return;
-  const antes = Date.now();
-  const ate = fimDoHorizonte();
-  verificar("horizonte mínimo: 12 semanas a partir de agora",
-    Math.abs((ate - antes) - 12 * 6048e5) < 5000, ate - antes);
+  if (typeof resumoClube !== "function") return;
+  // Medido: no horizonte longo, o número de jogos tem 3 valores distintos em
+  // 20 clubes (empates de 9 e 10), e os dias apertados têm 7. Ordenar pela
+  // contagem empatava metade da liga; é o "apertado" que separa.
+  const a = resumoClube(1, [{ t: 1e12 }, { t: 1e12 + 2 * 864e5 }, { t: 1e12 + 4 * 864e5 }], {});
+  const b = resumoClube(1, [{ t: 1e12 }, { t: 1e12 + 20 * 864e5 }, { t: 1e12 + 40 * 864e5 }], {});
+  verificar("o mesmo número de jogos pode dar apertado diferente",
+    a.jogos === b.jogos && a.apertado > b.apertado, [a, b]);
+  verificar("a dificuldade média ignora os jogos sem dificuldade",
+    resumoClube(1, [{ t: 1e12, dif: 4 }, { t: 1e12, dif: null }], {}).dificuldade === 4);
+  verificar("clube sem jogos no horizonte não dá NaN",
+    resumoClube(1, [], {}).dificuldade === null);
+  verificar("conta os meus jogadores desse clube",
+    resumoClube(7, [], { 7: 3 }).meus === 3);
 })();
 
+/* --- Calendário: meusPorClube não confunde "com dono" com "meu" --- */
+(function () {
+  if (typeof meusPorClube !== "function") return;
+  // Referência independente, calculada aqui e não através da própria função
+  // (blocos anteriores já mexeram no `team` de alguns jogadores, por isso não
+  // se pode assumir de cor o layout original): "certo" só conta owner===100,
+  // "errado" conta qualquer owner!=null — o erro fácil que o briefing avisa.
+  // Para o teste dizer alguma coisa, as duas têm de discordar nalgum clube.
+  const certo = {}, errado = {};
+  D.players.forEach((p) => {
+    if (p.owner === 100) certo[p.team] = (certo[p.team] || 0) + 1;
+    if (p.owner != null) errado[p.team] = (errado[p.team] || 0) + 1;
+  });
+  verificar("o plantel sintético tem mesmo clubes partilhados por dois donos",
+    Object.keys(errado).some((t) => (certo[t] || 0) !== errado[t]), [certo, errado]);
+  const contaMeus = meusPorClube();
+  const chaves = new Set(Object.keys(certo).concat(Object.keys(contaMeus)));
+  verificar("meusPorClube conta só o meu owner (100), não qualquer dono",
+    [...chaves].every((t) => (contaMeus[t] || 0) === (certo[t] || 0)),
+    [contaMeus, certo]);
+})();
+
+/* --- Calendário: fimDoHorizonte ancora em jornadas, não em semanas --- */
+(function () {
+  if (typeof fimDoHorizonte !== "function" || typeof definirHorizonte !== "function" ||
+    typeof horizonteAtual !== "function") return;
+  const guardadoC = C;
+  const agora = Date.now();
+  // +1 dia de folga antes do primeiro jogo: fimDoHorizonte() volta a chamar
+  // Date.now() lá dentro, um instante depois deste `agora` ser capturado — a
+  // folga evita que essa diferença de milissegundos empurre o primeiro jogo
+  // para "o passado" e o exclua do horizonte (flakiness apanhada ao correr
+  // este teste — falhava de vez em quando sem a folga).
+  const dia = (n) => new Date(agora + (1 + n) * 864e5).toISOString();
+  // Um só clube, 20 jornadas futuras (11 a 30), uma a cada 3 dias — dá
+  // controlo total sobre que jornada cai em cada horizonte.
+  const jogos = [];
+  for (let k = 0; k < 20; k += 1) {
+    jogos.push({ data: dia(3 * k), comp: "PL", dif: 3, jornada: 11 + k });
+  }
+  C = { clubes: { "1": { nome: "A", curto: "AAA", jogos: jogos } },
+    competicoes: { PL: "Premier League" }, recusados: {} };
+
+  definirHorizonte("6");
+  verificar("o seletor lido de volta é o que se guardou", horizonteAtual() === "6");
+  const ate6 = fimDoHorizonte();
+  // 6 jornadas a partir da 11: jornadas 11-16, ou seja os primeiros 6 jogos
+  // (k=0..5) — o último é k=5, a 1+3*5=16 dias (com a folga de +1 dia).
+  verificar("horizonte de 6 jornadas pára no último jogo da 6.ª jornada, não em semanas",
+    ate6 === agora + 16 * 864e5, (ate6 - agora) / 864e5);
+
+  definirHorizonte("12");
+  const ate12 = fimDoHorizonte();
+  // 12 jornadas: jornadas 11-22, k=0..11, último a 1+3*11=34 dias.
+  verificar("horizonte de 12 jornadas vai mais longe do que o de 6",
+    ate12 === agora + 34 * 864e5 && ate12 > ate6, (ate12 - agora) / 864e5);
+
+  definirHorizonte("resto");
+  const ateResto = fimDoHorizonte();
+  // Resto da época: o jogo mais tardio conhecido — k=19, a 1+3*19=58 dias.
+  verificar("resto da época vai até ao jogo mais tardio conhecido",
+    ateResto === agora + 58 * 864e5 && ateResto > ate12, (ateResto - agora) / 864e5);
+
+  // Valor inválido em localStorage cai no valor por omissão, como janelaAtual().
+  try { localStorage.setItem("calHorizonte", JSON.stringify("nonsense")); } catch (e) {}
+  verificar("um valor inválido guardado cai no horizonte por omissão",
+    horizonteAtual() === "12");
+
+  definirHorizonte("12");
+  C = guardadoC;
+})();
+
+/* --- Calendário: clubesOrdenados filtra "só os meus" e ordena pela coluna --- */
 (function () {
   if (typeof clubesOrdenados !== "function") return;
-  const guardado = C;
-  // Os ids não seguem a ordem alfabética do nome: se a "versão mínima" fosse
-  // só Object.keys() (sem odenar), a ordem numérica dos ids bateria por
-  // coincidência com a alfabética nalguns casos — aqui não bate de propósito.
+  if (typeof definirOrdemCalendario !== "function" || typeof definirMostrarTodos !== "function") return;
+  const guardadoC = C, guardadoPlayers = D.players;
+  const agora = Date.now();
+  const d = (n) => new Date(agora + n * 864e5).toISOString();
+
+  // Clube 10: muito apertado (3 jogos em 4 dias), 2 jogadores meus.
+  // Clube 20: percurso mais difícil (dificuldade média 5), 0 jogadores meus.
+  // Clube 30: nem apertado nem difícil, 1 jogador meu.
   C = { clubes: {
-    "3": { nome: "Zebra FC", curto: "ZEB", jogos: [] },
-    "20": { nome: "Arsenal", curto: "ARS", jogos: [] },
-    "7": { nome: "Liverpool", curto: "LIV", jogos: [] },
-  }, competicoes: {} };
-  const ordem = clubesOrdenados(Date.now());
-  verificar("versão mínima ordena por nome, alfabeticamente (não por id)",
-    ordem.join(",") === "20,7,3", ordem);
+    "10": { nome: "Dez", curto: "DEZ", jogos: [
+      { data: d(1), comp: "PL", dif: 3, jornada: 1 },
+      { data: d(3), comp: "PL", dif: 3, jornada: 2 },
+      { data: d(5), comp: "PL", dif: 3, jornada: 3 },
+    ] },
+    "20": { nome: "Vinte", curto: "VIN", jogos: [
+      { data: d(2), comp: "PL", dif: 5, jornada: 1 },
+      { data: d(40), comp: "PL", dif: 5, jornada: 5 },
+    ] },
+    "30": { nome: "Trinta", curto: "TRI", jogos: [
+      { data: d(2), comp: "PL", dif: 2, jornada: 1 },
+      { data: d(50), comp: "PL", dif: 2, jornada: 6 },
+    ] },
+  }, competicoes: { PL: "Premier League" }, recusados: {} };
+  D.players = [
+    { id: 9001, team: 10, owner: 100 }, { id: 9002, team: 10, owner: 100 },
+    { id: 9003, team: 30, owner: 100 }, { id: 9004, team: 20, owner: 200 },
+  ];
+  const ate = agora + 60 * 864e5;
+
+  definirOrdemCalendario("meus");
+  definirMostrarTodos(false);
+  const soMeus = clubesOrdenados(ate);
+  verificar("só os meus clubes por omissão: exclui o 20 (nenhum jogador meu lá)",
+    soMeus.includes("10") && soMeus.includes("30") && !soMeus.includes("20"), soMeus);
+  verificar("ordenado por jogadores meus: o clube com 2 vem antes do clube com 1",
+    soMeus.indexOf("10") < soMeus.indexOf("30"), soMeus);
+
+  definirMostrarTodos(true);
+  const todosClubes = clubesOrdenados(ate);
+  verificar("o interruptor 'mostrar todos' traz o clube sem jogadores meus de volta",
+    todosClubes.includes("20"), todosClubes);
+
+  definirOrdemCalendario("apertado");
+  const porApertado = clubesOrdenados(ate);
+  verificar("ordenado por apertado: só o clube 10 tem troço apertado, vem primeiro",
+    porApertado[0] === "10", porApertado);
+
+  definirOrdemCalendario("dificuldade");
+  const porDificuldade = clubesOrdenados(ate);
+  verificar("ordenado por dificuldade: o clube 20 (média 5) vem primeiro",
+    porDificuldade[0] === "20", porDificuldade);
+
+  // Sem ninguém com jogadores meus (ex.: clássica sem FPL_ENTRY_ID), cai nos
+  // clubes todos em vez de ficar vazio — mesmo com "só os meus" ligado.
+  D.players = [{ id: 9005, team: 10, owner: null }];
+  definirMostrarTodos(false);
+  const semNinguem = clubesOrdenados(ate);
+  verificar("sem ninguém com jogadores meus, cai em todos os clubes (não fica vazio)",
+    semNinguem.length === 3, semNinguem);
+
+  definirOrdemCalendario("apertado");
+  definirMostrarTodos(false);
+  D.players = guardadoPlayers;
+  C = guardadoC;
+})();
+
+/* --- Calendário: clássica sem FPL_ENTRY_ID cai nos 20 clubes --- */
+(function () {
+  if (typeof clubesOrdenados !== "function" || typeof definirMostrarTodos !== "function") return;
+  const guardadoModo = D.modo, guardadoClassica = D.classica, guardadoC = C;
+  D.modo = "classica";
+  D.classica = {}; // sem equipa: falta o FPL_ENTRY_ID, ninguém tem "owner" meu
+  C = { clubes: {
+    "10": { nome: "Dez", curto: "DEZ", jogos: [] },
+    "20": { nome: "Vinte", curto: "VIN", jogos: [] },
+  }, competicoes: {}, recusados: {} };
+  definirMostrarTodos(false);
+  const ids = clubesOrdenados(Date.now() + 30 * 864e5);
+  verificar("clássica sem FPL_ENTRY_ID cai nos clubes todos, não numa lista vazia",
+    ids.length === 2, ids);
+  D.modo = guardadoModo; D.classica = guardadoClassica; C = guardadoC;
+})();
+
+/* --- Calendário: clube recusado na validação nunca é uma linha vazia --- */
+(function () {
+  if (typeof clubesRecusados !== "function") return;
+  const guardado = C;
+  C = { clubes: {}, competicoes: {},
+    recusados: { "1": "3 jogos da PL não batem com a API" } };
+  const r = clubesRecusados();
+  verificar("clube recusado aparece com o nome (de D.teams) e o motivo",
+    r.length === 1 && r[0].nome === "C1" && r[0].motivo.indexOf("não batem") >= 0, r);
   C = guardado;
 })();
+
+/* --- Calendário: paragem para seleções --- */
+(function () {
+  if (typeof pausaSeleccoes !== "function") return;
+  const guardado = C;
+  const agora = Date.now();
+  const d = (n) => new Date(agora + n * 864e5).toISOString();
+
+  C = { clubes: { "1": { nome: "A", jogos: [{ data: d(1) }, { data: d(8) }, { data: d(15) }] } },
+    competicoes: {}, recusados: {} };
+  verificar("jogos toda semana (intervalos de 7 dias) não acusam paragem",
+    pausaSeleccoes(agora + 20 * 864e5) === null);
+
+  // Só juntando os dois clubes é que o intervalo de 22 dias aparece.
+  C = { clubes: {
+    "1": { nome: "A", jogos: [{ data: d(1) }, { data: d(3) }] },
+    "2": { nome: "B", jogos: [{ data: d(25) }, { data: d(27) }] },
+  }, competicoes: {}, recusados: {} };
+  const p = pausaSeleccoes(agora + 30 * 864e5);
+  verificar("um intervalo de 22 dias sem jogo nenhum (de nenhum clube) é a paragem",
+    p && Math.round((p.fim - p.inicio) / 864e5) === 22, p);
+
+  C = guardado;
+})();
+
+/* --- Calendário: prova universal (Taça de Inglaterra) ainda por sortear --- */
+(function () {
+  if (typeof provasPorSortear !== "function") return;
+  const guardado = C;
+  C = { clubes: {
+    "1": { nome: "A", jogos: [{ comp: "PL" }, { comp: "LC" }] },
+    "2": { nome: "B", jogos: [{ comp: "PL" }] },
+  }, competicoes: {}, recusados: {} };
+  verificar("sem jogo nenhum da Taça de Inglaterra em lado nenhum, fica por sortear",
+    provasPorSortear().length === 1, provasPorSortear());
+
+  C = { clubes: {
+    "1": { nome: "A", jogos: [{ comp: "PL" }, { comp: "FAC" }] },
+    "2": { nome: "B", jogos: [{ comp: "PL" }] },
+  }, competicoes: {}, recusados: {} };
+  verificar("assim que UM clube tem jogo da Taça de Inglaterra, deixa de estar por sortear",
+    provasPorSortear().length === 0, provasPorSortear());
+  C = guardado;
+})();
+
+/* --- Calendário: horas provisórias para lá de ~6 semanas --- */
+(function () {
+  if (typeof temHorasProvisorias !== "function") return;
+  const agora = Date.now();
+  verificar("horizonte curto (20 dias) não avisa de horas provisórias",
+    !temHorasProvisorias(agora + 20 * 864e5));
+  verificar("horizonte longo (50 dias) avisa de horas provisórias",
+    temHorasProvisorias(agora + 50 * 864e5));
+})();
+
+/* --- Calendário: a legenda só lista o que está no horizonte mostrado --- */
+(function () {
+  if (typeof legendaCalendario !== "function") return;
+  verificar("sem jogos de dificuldade 5 no horizonte, a legenda não a lista",
+    legendaCalendario([{ comp: "PL", dif: 3 }], []).indexOf("dificuldade 5 (muito difícil)") < 0);
+  verificar("com um jogo de dificuldade 5, a legenda passa a listá-la",
+    legendaCalendario([{ comp: "PL", dif: 5 }], []).some((s) => s.indexOf("dificuldade 5") >= 0));
+  verificar("dificuldade 1 nunca aparece na legenda (não existe nos 380 jogos da época)",
+    legendaCalendario([{ comp: "PL", dif: 1 }], []).length === 0,
+    legendaCalendario([{ comp: "PL", dif: 1 }], []));
+  verificar("sem jogos fora da PL, a legenda não menciona Europa/taças",
+    legendaCalendario([{ comp: "PL", dif: 3 }], []).indexOf("Europa / taças") < 0);
+  verificar("com um jogo fora da PL, a legenda passa a mencionar Europa/taças",
+    legendaCalendario([{ comp: "UCL", dif: null }], []).indexOf("Europa / taças") >= 0);
+  verificar("sem troços apertados, a legenda não os menciona",
+    legendaCalendario([], []).some((s) => s.indexOf("apertado") >= 0) === false);
+  verificar("com um troço, a legenda passa a mencionar o calendário apertado",
+    legendaCalendario([], [{ jogos: 3 }]).some((s) => s.indexOf("apertado") >= 0));
+})();
+
+/* --- Calendário: a nota da dificuldade mostra a amplitude real --- */
+(function () {
+  if (typeof notaDificuldade !== "function") return;
+  verificar("sem clubes com dificuldade conhecida, a nota fica vazia",
+    notaDificuldade([null, null]) === "");
+  const nota = notaDificuldade([2.0, 4.5, 3.1]);
+  verificar("a nota mostra o mínimo e o máximo reais",
+    nota.indexOf("2.0") >= 0 && nota.indexOf("4.5") >= 0, nota);
+})();
+
+/* --- Calendário: o separador redesenha-se a partir de desenharClassica --- */
+(function () {
+  if (typeof desenharClassica !== "function") return;
+  // A mesma armadilha do initClassica/desenharClassica: sem isto, quando o
+  // utilizador escreve o plantel à mão (aplicarPlantelManual reescreve o
+  // `owner`), a contagem de jogadores meus por clube ficava presa ao plantel
+  // da jornada anterior até à próxima recarga da página.
+  verificar("desenharClassica também desenha o calendário, não só o main",
+    /desenharCalendario\s*\(\s*\)/.test(desenharClassica.toString()));
+})();
+
+/* --- Calendário: initCalendario não rebenta sem os controlos no DOM --- */
+verificar("initCalendario não rebenta quando os controlos do separador não existem",
+  typeof initCalendario !== "function" || (initCalendario(), true));
 
 /* --- Calendário: com dados a sério também não rebenta --- */
 (function () {

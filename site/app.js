@@ -2919,6 +2919,12 @@ function desenharClassica() {
   desenharTransferencias(meusX);
   desenharPlaneadorWC();
   desenharChips(meusX);
+  // aplicarPlantelManual() (chamada antes disto, no fluxo que redesenha)
+  // reescreve o `owner` em memória; sem isto o Calendário ficava com a
+  // contagem de jogadores meus por clube presa ao plantel da jornada
+  // anterior até à próxima recarga da página — a mesma armadilha do
+  // initClassica()/desenharClassica().
+  desenharCalendario();
 }
 
 /* ---------- Analisador de trocas ---------- */
@@ -3810,7 +3816,10 @@ function trocosApertados(jogos) {
   return trocos;
 }
 
-const CAL_PX_SEMANA = 42;  // medido: a 375px sobram 287px para o gráfico
+// px por semana da faixa do gráfico — só entra em jogo a partir de 40rem,
+// onde há sempre largura de sobra; abaixo disso usa-se a lista por clube
+// (Tarefa 9), não este valor.
+const CAL_PX_SEMANA = 42;
 
 /**
  * Os jogos de um clube dentro do horizonte, já em milissegundos.
@@ -3826,19 +3835,244 @@ function jogosNoHorizonte(clube, ate) {
     .sort((a, b) => a.t - b.t);
 }
 
-/** Versão mínima: 12 jornadas aproximadas a 12 semanas a partir de agora — o
- *  gráfico já trabalha em semanas (CAL_PX_SEMANA). A Tarefa 9 substitui por
- *  um seletor com o calendário real de jornadas, mantendo a assinatura. */
-function fimDoHorizonte() {
-  return Date.now() + 12 * 6048e5;
+/** Quantos jogadores meus tem cada clube. Só do meu plantel, não de todos. */
+function meusPorClube() {
+  // O padrão do resto do ficheiro (app.js:1065, 1585, 3176): a minha equipa
+  // descobre-se pelo apelido do gestor no Draft, e pelo `equipa.id` na
+  // clássica. `owner != null` sozinho daria 18 dos 20 clubes.
+  const eu = ehClassica()
+    ? ((minhaEquipaClassica() || {}).id)
+    : ((D.entries.find((e) => MEU_GESTOR.test(e.manager)) || {}).entry_id);
+  const conta = {};
+  D.players.forEach((p) => {
+    if (eu != null && p.owner === eu) {
+      conta[p.team] = (conta[p.team] || 0) + 1;
+    }
+  });
+  return conta;
 }
 
-/** Versão mínima: ordem alfabética pelo nome do clube. A Tarefa 9 substitui,
- *  mantendo a assinatura (recebe `ate`), por uma ordenação que também usa os
- *  meus jogadores (D.players). */
+/** Os números por que se ordena. Ambos ficam à vista, ao lado do clube. */
+function resumoClube(teamId, jogos, meus) {
+  const trocos = trocosApertados(jogos);
+  // Dias dentro de troço apertado — mede a congestão melhor do que a contagem
+  // de jogos, que no horizonte longo tem 3 valores distintos em 20 clubes.
+  const apertado = trocos.reduce(
+    (t, tr) => t + Math.round((tr.fim - tr.inicio) / 864e5) + 1, 0);
+  const comDif = jogos.filter((j) => typeof j.dif === "number");
+  return {
+    jogos: jogos.length,
+    apertado: apertado,
+    // Só os jogos da PL têm dificuldade; a Europa não tem nenhuma para dar.
+    dificuldade: comDif.length
+      ? comDif.reduce((t, j) => t + j.dif, 0) / comDif.length : null,
+    nJogosDif: comDif.length,
+    meus: (meus || {})[teamId] || 0,
+  };
+}
+
+// Seletor de horizonte: em JORNADAS, não em semanas. Medido: com uma paragem
+// de 20 dias entre 20/09 e 10/10, uma janela de 4 SEMANAS tem só 2 jogos da
+// PL por clube; medir em semanas dá um número de jogos que varia muito com a
+// altura do ano. "resto" cobre o que falta da época conhecida.
+const CAL_HORIZONTES = ["6", "12", "resto"];
+const CAL_HORIZONTE_OMISSAO = "12";
+
+function horizonteAtual() {
+  const guardado = lerGuardado("calHorizonte");
+  return CAL_HORIZONTES.includes(guardado) ? guardado : CAL_HORIZONTE_OMISSAO;
+}
+
+function definirHorizonte(v) {
+  try {
+    localStorage.setItem("calHorizonte", JSON.stringify(v));
+  } catch (err) {
+    /* sem localStorage: fica só nesta sessão */
+  }
+}
+
+/** Jornadas de PL com jogo por realizar (agora ou depois), ordenadas — a
+ *  primeira é "a próxima jornada" para efeitos do horizonte. Só olha para o
+ *  calendário (C), de propósito: não depende de D.next_event, por isso
+ *  funciona mesmo quando só o calendário carregou. */
+function jornadasFuturas() {
+  const agora = Date.now();
+  const jornadas = new Set();
+  Object.values((C || {}).clubes || {}).forEach((clube) => {
+    (clube.jogos || []).forEach((j) => {
+      if (j.comp === "PL" && j.jornada != null && Date.parse(j.data) >= agora) {
+        jornadas.add(j.jornada);
+      }
+    });
+  });
+  return [...jornadas].sort((a, b) => a - b);
+}
+
+/** A data mais tardia entre os jogos que passam no filtro (ou null). */
+function maxDataJogos(filtro) {
+  let max = -Infinity;
+  Object.values((C || {}).clubes || {}).forEach((clube) => {
+    (clube.jogos || []).forEach((j) => {
+      if (filtro && !filtro(j)) return;
+      const t = Date.parse(j.data);
+      if (!isNaN(t) && t > max) max = t;
+    });
+  });
+  return max === -Infinity ? null : max;
+}
+
+/**
+ * Fim do horizonte, ancorado em jornadas e não em semanas (ver
+ * CAL_HORIZONTES). "6"/"12" vão até ao último jogo de PL conhecido dentro
+ * dessas jornadas a partir da próxima; "resto" vai até ao jogo mais tardio
+ * conhecido, de qualquer competição — inclui finais europeias que podem cair
+ * depois da última jornada da PL.
+ */
+function fimDoHorizonte() {
+  const jornadas = jornadasFuturas();
+  const h = horizonteAtual();
+  if (h === "resto" || jornadas.length === 0) {
+    return maxDataJogos(null) ?? Date.now();
+  }
+  const alvoJornada = jornadas[Math.min(Number(h), jornadas.length) - 1];
+  return maxDataJogos((j) =>
+    j.comp === "PL" && j.jornada != null && j.jornada <= alvoJornada) ?? Date.now();
+}
+
+// Coluna por que se ordena, e se se mostram só os meus clubes ou os 20. Não
+// persistido: cada abertura do separador começa "só os meus", que é o que o
+// briefing pede por omissão.
+const CAL_ORDENS = ["apertado", "dificuldade", "meus"];
+let calOrdem = "apertado";
+let calMostrarTodos = false;
+
+function definirOrdemCalendario(v) {
+  calOrdem = CAL_ORDENS.includes(v) ? v : "apertado";
+}
+
+function definirMostrarTodos(v) {
+  calMostrarTodos = !!v;
+}
+
+/**
+ * Os clubes a mostrar, e pela ordem certa.
+ *
+ * Por omissão só os meus (interruptor para os 20): dos meus 11 de hoje, 6 não
+ * jogam na Europa e a linha deles é sempre a mesma fila semanal — ruído para
+ * decidir e redundante com a coluna "Meus". Sem ninguém identificado (ex.:
+ * clássica sem FPL_ENTRY_ID, ninguém tem `owner`), cai nos clubes todos em
+ * vez de uma lista vazia — não uses `Object.keys(C.clubes).length===0` aqui,
+ * é `meusPorClube()` vazio que decide.
+ */
 function clubesOrdenados(ate) {
-  return Object.keys(C.clubes).sort((a, b) =>
-    C.clubes[a].nome.localeCompare(C.clubes[b].nome, "pt"));
+  const meus = meusPorClube();
+  const todos = Object.keys(C.clubes);
+  const temAlgum = Object.keys(meus).length > 0;
+  const candidatos = (calMostrarTodos || !temAlgum)
+    ? todos
+    : todos.filter((id) => (meus[id] || 0) > 0);
+  const resumo = {};
+  candidatos.forEach((id) => {
+    resumo[id] = resumoClube(Number(id), jogosNoHorizonte(C.clubes[id], ate), meus);
+  });
+  const chave = CAL_ORDENS.includes(calOrdem) ? calOrdem : "apertado";
+  return candidatos.slice().sort((a, b) => {
+    const va = resumo[a][chave], vb = resumo[b][chave];
+    const na = va == null ? -1 : va, nb = vb == null ? -1 : vb;
+    if (nb !== na) return nb - na; // descendente: quem exige mais atenção primeiro
+    return C.clubes[a].nome.localeCompare(C.clubes[b].nome, "pt");
+  });
+}
+
+/** Clubes que a validação recusou (ver fetch_calendario.py: mais de 2 jogos
+ *  da PL não bateram com a API oficial). Não estão em C.clubes — só em
+ *  C.recusados — por isso o nome vem de D.teams. Nunca uma linha vazia: uma
+ *  linha em branco lê-se como "clube tranquilo". */
+function clubesRecusados() {
+  return Object.keys((C || {}).recusados || {}).map((id) => ({
+    id: id,
+    nome: nomeClube(Number(id)),
+    motivo: C.recusados[id],
+  }));
+}
+
+// Um intervalo normal entre jornadas é ~7 dias; 10+ dias sem jogo nenhum, de
+// nenhum dos 20 clubes, só acontece na paragem para as seleções.
+const CAL_LIMIAR_PAUSA_DIAS = 10;
+
+/** {inicio, fim} do maior intervalo sem jogo nenhum (de nenhum clube) dentro
+ *  do horizonte, ou null se não houver — a paragem para as seleções. Sem
+ *  isto o gráfico fica com uma faixa em branco que parece avaria. */
+function pausaSeleccoes(ate) {
+  const dias = new Set();
+  Object.values((C || {}).clubes || {}).forEach((clube) => {
+    jogosNoHorizonte(clube, ate).forEach((j) => dias.add(Math.floor(j.t / 864e5)));
+  });
+  const ordenados = [...dias].sort((a, b) => a - b);
+  for (let i = 1; i < ordenados.length; i += 1) {
+    const gap = ordenados[i] - ordenados[i - 1];
+    if (gap >= CAL_LIMIAR_PAUSA_DIAS) {
+      return { inicio: ordenados[i - 1] * 864e5, fim: ordenados[i] * 864e5 };
+    }
+  }
+  return null;
+}
+
+// Provas em que TODOS os 20 clubes entram mais cedo ou mais tarde, sem
+// exceção nenhuma — ao contrário da Taça da Liga, onde a entrada varia por
+// clube e "sem jogo nenhum" também pode ser eliminação (medido: o Nott'm
+// Forest jogou a 2.ª eliminatória e não tem 3.ª, mas 19 dos outros 20 clubes
+// já têm — é eliminação, não sorteio por fazer). Só nestas é seguro concluir
+// "por sortear" a partir da ausência total de jogos.
+const PROVAS_UNIVERSAIS = { FAC: "Taça de Inglaterra" };
+
+/** Provas universais sem jogo nenhum, em nenhum clube: a ronda existe (é
+ *  sabido que todos entram), só não foi sorteada. Sem isto o separador
+ *  parece dizer "não joga" quando o que sabe é "não sei". */
+function provasPorSortear() {
+  const vistas = new Set();
+  Object.values((C || {}).clubes || {}).forEach((clube) =>
+    (clube.jogos || []).forEach((j) => vistas.add(j.comp)));
+  return Object.keys(PROVAS_UNIVERSAIS).filter((c) => !vistas.has(c))
+    .map((c) => PROVAS_UNIVERSAIS[c]);
+}
+
+// ~6 semanas: para lá disso a Premier League ainda não fixou os horários por
+// televisão, e a API devolve um horário por omissão (novembro tem 30 dos 32
+// jogos às 15:00, abril tem os 30 às 14:00) sem bandeira nenhuma que o
+// distinga de um horário confirmado.
+const CAL_HORAS_PROVISORIAS_DIAS = 42;
+
+function temHorasProvisorias(ate) {
+  return ate - Date.now() > CAL_HORAS_PROVISORIAS_DIAS * 864e5;
+}
+
+const CAL_DIF_ROTULOS = { 2: "fácil", 3: "neutro", 4: "difícil", 5: "muito difícil" };
+
+/** A legenda só lista o que está mesmo no horizonte mostrado — senão aparecem
+ *  cores/marcadores sem explicação, ou explicações para cores que não
+ *  aparecem (a dificuldade 1 nunca ocorre nos 380 jogos da época). */
+function legendaCalendario(jogos, trocos) {
+  const itens = [];
+  const difs = new Set(jogos.filter((j) => j.comp === "PL").map((j) => j.dif));
+  [2, 3, 4, 5].filter((d) => difs.has(d)).forEach((d) =>
+    itens.push("dificuldade " + d + " (" + CAL_DIF_ROTULOS[d] + ")"));
+  if (jogos.some((j) => j.comp !== "PL")) itens.push("Europa / taças");
+  if (trocos.length) itens.push("calendário apertado (3+ jogos em 8 dias)");
+  return itens;
+}
+
+/** Amplitude real da coluna Dificuldade nos clubes mostrados — como
+ *  amplitudeCalendario() já faz para a janela das Sugestões (app.js:982):
+ *  serve para lembrar que a coluna afina entre clubes parecidos, não inverte
+ *  diferenças grandes. */
+function notaDificuldade(valores) {
+  const vals = valores.filter((v) => v != null);
+  if (!vals.length) return "";
+  const min = Math.min(...vals), max = Math.max(...vals);
+  return "Dificuldade nos clubes mostrados: entre " + min.toFixed(1) + " e " +
+    max.toFixed(1) + " em 5 (1 fácil, 5 difícil) — serve para afinar entre clubes " +
+    "parecidos, não para inverter diferenças grandes.";
 }
 
 /** Frase descritiva de um jogo: "clube · competição · casa/fora vs
@@ -3855,31 +4089,67 @@ function descricaoJogo(clube, jogo) {
     (jogo.hora_incerta ? " · hora por confirmar" : "");
 }
 
-/** O separador Calendário: a linha do tempo à escala, com um marcador por
- *  jogo e uma barra que assinala a congestão. */
+function fmtDif(v) {
+  return v != null ? v.toFixed(1) : "–";
+}
+
+/** O separador Calendário: a linha do tempo à escala em ecrã largo (≥40rem)
+ *  e a lista por clube em ecrã estreito — abaixo disso o gráfico não cabe
+ *  sem dar scroll ao body (medido e recusado no separador Transferências,
+ *  "438 contra 375"). As duas ficam sempre construídas; é o CSS que escolhe
+ *  qual se vê. */
 function desenharCalendario() {
   const intro = $("cal-intro");
+  const aviso = $("cal-aviso");
   const alvo = $("cal-grafico");
+  const lista = $("cal-lista");
+  const legenda = $("cal-legenda");
+  const nota = $("cal-nota");
   const semDados = !C || !C.clubes;
   if (semDados) {
     if (intro) intro.textContent = "";
+    if (aviso) aviso.hidden = true;
     if (alvo) {
       alvo.innerHTML = '<p class="nota">Sem calendário. Corre o <code>atualizar.cmd</code>.</p>';
     }
+    if (lista) lista.innerHTML = "";
+    if (legenda) legenda.textContent = "";
+    if (nota) nota.textContent = "";
     return;
   }
   if (intro) {
     intro.textContent = "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
       " clubes da Premier League.";
   }
-  const ate = fimDoHorizonte();          // do seletor, Tarefa 9
+  const ate = fimDoHorizonte();
   const inicio = Date.now();
   const largura = ((ate - inicio) / 6048e5) * CAL_PX_SEMANA;
-  const linhas = clubesOrdenados(ate).map((id) => {
+  const ids = clubesOrdenados(ate);
+  const meus = meusPorClube();
+
+  const todosJogos = [];
+  const todosTrocos = [];
+  const difsMostradas = [];
+  const linhasGrafico = ['<div class="cal-linha cal-cabecalho"><span class="cal-rotulo">' +
+    '<span class="cal-clube">Clube</span>' +
+    '<span class="cal-num" title="Jogadores meus">Meus</span>' +
+    '<span class="cal-num" title="Dias dentro de um calendário apertado (3+ jogos em 8 dias)">Aper.</span>' +
+    '<span class="cal-num" title="Dificuldade média dos adversários da PL, 1 fácil a 5 difícil">Dif.</span>' +
+    "</span></div>"];
+  const itensLista = [];
+
+  ids.forEach((id) => {
     const clube = C.clubes[id];
     const jogos = jogosNoHorizonte(clube, ate);
+    const resumo = resumoClube(Number(id), jogos, meus);
+    const trocos = trocosApertados(jogos);
+    todosJogos.push(...jogos);
+    todosTrocos.push(...trocos);
+    difsMostradas.push(resumo.dificuldade);
+
+    // --- Linha do tempo (ecrã largo) ---
     const pos = (t) => ((t - inicio) / (ate - inicio)) * largura;
-    const trocos = trocosApertados(jogos).map((tr) =>
+    const faixaTrocos = trocos.map((tr) =>
       '<span class="cal-troco n' + Math.min(tr.jogos, 5) + '" style="left:' +
       pos(tr.inicio).toFixed(1) + "px;width:" + (pos(tr.fim) - pos(tr.inicio)).toFixed(1) +
       'px"></span>').join("");
@@ -3891,28 +4161,120 @@ function desenharCalendario() {
       // O aria-label leva a frase toda — sem ele um leitor de ecrã só ouvia
       // o dígito ou a letra, sem clube, adversário nem data.
       (j.comp === "PL" ? j.dif : C.competicoes[j.comp][0]) + "</button>").join("");
-    return '<div class="cal-linha"><span class="cal-clube">' + clube.curto +
+    linhasGrafico.push('<div class="cal-linha"><span class="cal-rotulo">' +
+      '<span class="cal-clube">' + esc(clube.curto) + "</span>" +
+      '<span class="cal-num" title="' + resumo.meus + ' jogador(es) meu(s) neste clube">' +
+        resumo.meus + "</span>" +
+      '<span class="cal-num" title="' + resumo.apertado +
+        ' dias dentro de um calendário apertado (3+ jogos em 8 dias)">' + resumo.apertado +
+        "</span>" +
+      '<span class="cal-num" title="Dificuldade média: ' + fmtDif(resumo.dificuldade) +
+        ' em 5 (1 fácil, 5 difícil)">' + fmtDif(resumo.dificuldade) + "</span>" +
       '</span><span class="cal-faixa" style="width:' + largura.toFixed(0) + 'px">' +
-      trocos + marcas + "</span></div>";
-  }).join("");
-  if (!alvo) return;
-  // Detalhe por baixo da linha do tempo ao clicar num marcador — não em
-  // `title`, que em ecrã tátil nunca aparece. `aria-live` avisa quem usa
-  // leitor de ecrã que o texto por baixo mudou, já que o clique em si não
-  // move o foco para lá.
-  alvo.innerHTML = linhas +
-    '<p class="nota cal-detalhe" id="cal-detalhe" aria-live="polite" hidden></p>';
-  alvo.onclick = (ev) => {
-    const btn = ev.target.closest(".cal-jogo");
-    const det = $("cal-detalhe");
-    if (!btn || !det) return;
-    const clube = C.clubes[btn.dataset.clube];
-    const t = Number(btn.dataset.jogo);
-    const jogo = (clube.jogos || []).find((j) => Date.parse(j.data) === t);
-    if (!jogo) return;
-    det.textContent = descricaoJogo(clube, jogo);
-    det.hidden = false;
-  };
+      faixaTrocos + marcas + "</span></div>");
+
+    // --- Lista por clube (ecrã estreito) ---
+    const dentroDeTroco = (j) => trocos.some((tr) => tr.inicio <= j.t && j.t <= tr.fim);
+    const itensJogos = jogos.map((j) =>
+      '<li' + (dentroDeTroco(j) ? ' class="cal-apertado"' : "") + ">" +
+      esc(descricaoJogo(clube, j)) + "</li>").join("");
+    itensLista.push('<li class="cal-lista-item"><div class="cal-lista-cab">' +
+      '<span class="cal-lista-nome">' + esc(clube.nome) + "</span>" +
+      '<span class="cal-lista-nums">' + resumo.meus + " meus · " + resumo.apertado +
+        " apertado · " + fmtDif(resumo.dificuldade) + " dif.</span></div>" +
+      (itensJogos
+        ? '<ul class="cal-lista-jogos">' + itensJogos + "</ul>"
+        : '<p class="nota">Sem jogos conhecidos neste horizonte.</p>') +
+      "</li>");
+  });
+
+  // --- Clubes recusados na validação: nunca uma linha vazia ---
+  clubesRecusados().forEach((r) => {
+    linhasGrafico.push('<div class="cal-linha cal-sem-dados"><span class="cal-rotulo">' +
+      '<span class="cal-clube">' + esc(r.nome) + "</span></span>" +
+      '<span class="nota">Sem dados: ' + esc(r.motivo) + "</span></div>");
+    itensLista.push('<li class="cal-lista-item cal-sem-dados"><div class="cal-lista-cab">' +
+      '<span class="cal-lista-nome">' + esc(r.nome) + "</span></div>" +
+      '<p class="nota">Sem dados: ' + esc(r.motivo) + "</p></li>");
+  });
+
+  if (alvo) {
+    // Detalhe por baixo da linha do tempo ao clicar num marcador — não em
+    // `title`, que em ecrã tátil nunca aparece. `aria-live` avisa quem usa
+    // leitor de ecrã que o texto por baixo mudou, já que o clique em si não
+    // move o foco para lá.
+    alvo.innerHTML = linhasGrafico.join("") +
+      '<p class="nota cal-detalhe" id="cal-detalhe" aria-live="polite" hidden></p>';
+    alvo.onclick = (ev) => {
+      const btn = ev.target.closest(".cal-jogo");
+      const det = $("cal-detalhe");
+      if (!btn || !det) return;
+      const clube = C.clubes[btn.dataset.clube];
+      const t = Number(btn.dataset.jogo);
+      const jogo = (clube.jogos || []).find((j) => Date.parse(j.data) === t);
+      if (!jogo) return;
+      det.textContent = descricaoJogo(clube, jogo);
+      det.hidden = false;
+    };
+  }
+  if (lista) lista.innerHTML = itensLista.join("");
+
+  // --- Avisos: paragem para seleções, provas por sortear, horas provisórias ---
+  if (aviso) {
+    const partes = [];
+    const pausa = pausaSeleccoes(ate);
+    if (pausa) {
+      partes.push("Sem jogos entre " + fmtDataHora.format(new Date(pausa.inicio)) + " e " +
+        fmtDataHora.format(new Date(pausa.fim)) + ": é a paragem para as seleções.");
+    }
+    provasPorSortear().forEach((nomeProva) => {
+      partes.push(nomeProva + ": ronda ainda por sortear (entra tipicamente mais tarde " +
+        "na época) — não aparece no calendário até lá.");
+    });
+    if (temHorasProvisorias(ate)) {
+      partes.push("Jogos a mais de 6 semanas ainda não têm hora confirmada pelas " +
+        "televisões: a hora mostrada é um valor por omissão que pode mudar.");
+    }
+    aviso.hidden = partes.length === 0;
+    if (partes.length) aviso.textContent = partes.join(" ");
+  }
+
+  // --- Legenda: só o que está mesmo no horizonte mostrado ---
+  if (legenda) {
+    const itens = legendaCalendario(todosJogos, todosTrocos);
+    legenda.textContent = itens.length ? "Legenda: " + itens.join(" · ") + "." : "";
+  }
+  if (nota) nota.textContent = notaDificuldade(difsMostradas);
+}
+
+/** Regista os controlos do separador (horizonte, ordenação, mostrar todos) e
+ *  desenha a primeira vez. Chamado uma só vez a partir do main(). */
+function initCalendario() {
+  const selH = $("cal-horizonte");
+  const selO = $("cal-ordenar");
+  const chkT = $("cal-todos");
+  if (selH) {
+    selH.value = horizonteAtual();
+    selH.addEventListener("change", () => {
+      definirHorizonte(selH.value);
+      desenharCalendario();
+    });
+  }
+  if (selO) {
+    selO.value = calOrdem;
+    selO.addEventListener("change", () => {
+      definirOrdemCalendario(selO.value);
+      desenharCalendario();
+    });
+  }
+  if (chkT) {
+    chkT.checked = calMostrarTodos;
+    chkT.addEventListener("change", () => {
+      definirMostrarTodos(chkT.checked);
+      desenharCalendario();
+    });
+  }
+  desenharCalendario();
 }
 
 async function main() {
@@ -3968,7 +4330,7 @@ async function main() {
   initTransferencias();
   initMercado();
   initJogadores();
-  desenharCalendario();
+  initCalendario();
   initTabs();
 }
 

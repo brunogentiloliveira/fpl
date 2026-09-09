@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=53">
+<link rel="stylesheet" href="styles.css?v=54">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#12171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -372,8 +372,26 @@
     <h2 class="sec-titulo">Calendário</h2>
     <p class="nota" id="cal-intro"></p>
     <p class="aviso-jornada" id="cal-aviso" hidden></p>
-    <div class="filtros" id="cal-filtros"></div>
+    <div class="filtros" id="cal-filtros">
+      <div class="filtros-linha">
+        <label class="visually-hidden" for="cal-horizonte">Horizonte do calendário</label>
+        <select id="cal-horizonte">
+          <option value="6">Horizonte: 6 jornadas</option>
+          <option value="12">Horizonte: 12 jornadas</option>
+          <option value="resto">Horizonte: resto da época</option>
+        </select>
+        <label class="visually-hidden" for="cal-ordenar">Ordenar por</label>
+        <select id="cal-ordenar">
+          <option value="apertado">Calendário mais apertado primeiro</option>
+          <option value="dificuldade">Percurso mais difícil primeiro</option>
+          <option value="meus">Mais jogadores meus primeiro</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="cal-todos"> Mostrar os 20 clubes</label>
+    </div>
+    <p class="nota" id="cal-nota"></p>
     <div class="cal-grafico" id="cal-grafico"></div>
+    <ul class="cal-lista" id="cal-lista"></ul>
     <p class="nota" id="cal-legenda"></p>
   </section>
 </main>
@@ -383,7 +401,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=53"></script>
+<script src="app.js?v=54"></script>
 
 </body>
 </html>

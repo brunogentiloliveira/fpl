@@ -631,14 +631,34 @@ main { padding: 1rem; max-width: 58rem; margin: 0 auto; }
 }
 .chip .tirar:hover, .chip .tirar:focus-visible { color: var(--perigo); }
 
-/* --- Calendário: a linha do tempo --- */
-/* O gráfico arrasta dentro de si próprio; o body nunca ganha scroll lateral. */
-.cal-grafico { overflow-x: auto; overflow-y: visible; }
-.cal-linha { display: flex; align-items: center; height: 2.1rem; }
-.cal-clube {
-  position: sticky; left: 0; z-index: 2; width: 3.5rem; flex: none;
-  background: var(--fundo); font-size: 0.78rem; font-weight: 700;
+/* --- Calendário: a linha do tempo (≥40rem) e a lista por clube (abaixo) ---
+   Abaixo de 40rem o gráfico não cabe sem dar scroll ao body (medido e
+   recusado no separador Transferências, "438 contra 375") — mostra-se a
+   lista em vez dele, o mesmo padrão do `.col-noticia`: as duas ficam sempre
+   construídas, é só o CSS que escolhe qual se vê. */
+.cal-grafico { display: none; overflow-x: auto; overflow-y: visible; }
+@media (min-width: 40rem) {
+  .cal-grafico { display: block; }
 }
+.cal-linha { display: flex; align-items: center; height: 2.1rem; }
+/* O rótulo (nome + as colunas por que se ordena) fica sticky em bloco: assim
+   as colunas nunca desaparecem quando a faixa é arrastada para a direita. */
+.cal-rotulo {
+  position: sticky; left: 0; z-index: 2; flex: none;
+  display: flex; align-items: center; gap: 0.4rem;
+  background: var(--fundo); padding-right: 0.5rem;
+}
+.cal-clube { width: 2.4rem; flex: none; font-size: 0.78rem; font-weight: 700; }
+.cal-num {
+  width: 1.9rem; flex: none; text-align: right;
+  font-size: 0.72rem; font-variant-numeric: tabular-nums; color: var(--texto-2);
+}
+.cal-cabecalho { border-bottom: 1px solid var(--borda); margin-bottom: 0.15rem; }
+.cal-cabecalho .cal-clube, .cal-cabecalho .cal-num {
+  color: var(--texto-2); font-size: 0.62rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.cal-linha.cal-sem-dados { color: var(--texto-2); font-style: italic; }
 .cal-faixa { position: relative; height: 100%; flex: none; }
 .cal-jogo {
   position: absolute; top: 50%; transform: translate(-50%, -50%);
@@ -670,3 +690,27 @@ main { padding: 1rem; max-width: 58rem; margin: 0 auto; }
 /* Detalhe do jogo clicado, por baixo da linha do tempo (não em `title`, que
    em ecrã tátil nunca aparece). */
 .cal-detalhe { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--borda); }
+
+/* Lista por clube — a versão de ecrã estreito, ver .cal-grafico acima. */
+.cal-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+@media (min-width: 40rem) {
+  .cal-lista { display: none; }
+}
+.cal-lista-item {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-lg);
+  padding: 0.65rem 0.85rem;
+  box-shadow: var(--sombra);
+}
+.cal-lista-item.cal-sem-dados { opacity: 0.7; font-style: italic; }
+.cal-lista-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.2rem 0.6rem; }
+.cal-lista-nome { font-weight: 800; }
+.cal-lista-nums { font-size: 0.75rem; color: var(--texto-2); }
+.cal-lista-jogos { list-style: none; margin: 0.45rem 0 0; padding: 0; display: grid; gap: 0.32rem; }
+.cal-lista-jogos li {
+  font-size: 0.82rem; color: var(--texto-2);
+  padding-left: 0.35rem; border-left: 3px solid transparent;
+}
+/* Mesmo sinal da faixa apertada no gráfico largo, aqui como borda à esquerda. */
+.cal-lista-jogos li.cal-apertado { border-left-color: var(--aviso); color: var(--texto); padding-left: 0.5rem; }
