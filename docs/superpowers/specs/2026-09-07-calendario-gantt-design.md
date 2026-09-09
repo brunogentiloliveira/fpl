@@ -254,7 +254,10 @@ parseadas — eram parseadas e deitadas fora. `jogado` distingue-as.
 `adv_slug` (chave de junção correcta), `ronda` (`'3R'`, `'F'`, `''` na fase de liga — rodar antes
 de uma eliminatória e antes de um jogo de grupos não é a mesma coisa).
 
-Tamanho medido com os 865 jogos reais: **~98 KB** compacto.
+Tamanho medido com os 865 jogos reais: **160 KB** compacto, não os ~98 KB estimados aqui — a
+estimativa estava errada. São 189 bytes por jogo (865 jogos, 164262 bytes ÷ 865, arredondado por
+baixo), com 12 nomes de chave repetidos em cada registo (`id`, `data`, `comp`, `adv`, `adv_nome`,
+`adv_slug`, `casa`, `dif`, `jornada`, `ronda`, `jogado`, `hora_incerta`).
 
 ## Interface: separador "Calendário"
 

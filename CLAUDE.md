@@ -1034,9 +1034,26 @@ Três armadilhas, todas do mesmo feitio das que já apanhei noutras fontes:
 - **`PE` é "Pré-Época"**, não uma prova europeia. Contá-la teria triplicado a lista de clubes
   em competições europeias.
 
-**Quem joga na Europa em 2026/27**: Champions League — Arsenal, Aston Villa, Liverpool, Man City,
-Man Utd; Conference League (qualificação) — Brighton; Supertaça Europeia — Aston Villa. Seis dos
-vinte. *Não aparece Europa League em clube nenhum*, o que é invulgar e não consegui confirmar.
+**Quem joga na Europa em 2026/27, corrigido.** A nota original ("seis dos vinte, sem Liga Europa
+nenhuma") estava errada, e o erro **nasceu de ler a fonte errada**: os distintivos da página do
+clube, que nessa altura ainda listavam "PE" (pré-época) em vez da prova europeia. A **tabela de
+jogos** é que diz a verdade, e a sondagem dos 20 clubes deu:
+
+| Prova | Jogos | Clubes desta liga |
+|---|---|---|
+| Premier League | 760 | 38 × 20 |
+| UEFA Champions League | 40 | Arsenal, Aston Villa, Liverpool, Man City, Man Utd |
+| Carabao Cup | 30 | — |
+| UEFA Europa League | 24 | Bournemouth, Sunderland, Crystal Palace |
+| UEFA Conference League (fase de liga) | 6 | Brighton |
+| UEFA Conference League (qualificação) | 2 | — |
+| The FA Community Shield 2026 | 2 | — |
+| UEFA Super Cup 2026 | 1 | Aston Villa |
+
+São **nove** clubes em provas europeias, não seis: a Liga Europa tem **três** equipas
+(Bournemouth, Sunderland, Crystal Palace), ausentes por completo da nota antiga, e o Brighton
+está na **fase de liga** da Conference, não só na qualificação — as duas linhas de Conference
+são do mesmo clube.
 
 **O calendário parseia limpo** (`/edicao/<prova>/<id>/calendario`: data ISO, hora e os dois
 clubes por linha). Cruzado com as jornadas: GW4, GW7 e GW8 têm cinco clubes desta liga a chegar
@@ -1050,6 +1067,114 @@ disciplina do limiar dos 60 minutos, que medi e concluí não compensar.
 
 Limitações da recolha em si: só apanhei 14 jogos até 21 de outubro (a página de calendário não
 traz a fase de liga toda — é preciso paginar), e só a Champions.
+
+## Separador Calendário: todos os jogos, e o que a fonte não garante (2026-09-09)
+
+Separador novo, pedido pelo utilizador: todos os jogos por disputar das 20 equipas da PL — liga,
+Europa e taças — num diagrama de Gantt. Nos dois modos. Serve as **duas decisões** escolhidas
+pelo utilizador: **congestão e rotação** (que clubes chegam à jornada com jogo a meio da semana)
+e **dificuldade do percurso** (quem tem a sequência mais fácil ou mais dura nas próximas
+semanas). É o que finalmente **liga o zerozero.pt** (secção acima) a alguma coisa — só que ao
+ecrã, não ao modelo, ver mais abaixo.
+
+**Fontes, e o custo de cada uma.** A Premier League vem da API oficial (`/fixtures/`, **1
+pedido**) — é a única das duas com `team_h_difficulty`/`team_a_difficulty`, por isso é a única
+que serve a decisão da dificuldade. Europa, taças e supertaças vêm do zerozero.pt, em **29
+pedidos, não 40**: só 9 dos 20 clubes (precisamente os que jogam competições europeias) têm
+segunda página; os outros 11 devolvem 0 linhas nela e a recolha pára assim que uma página vem
+com menos de 40 linhas.
+
+**A tabela do zerozero vem por data DECRESCENTE** — a página 1 tem os jogos mais distantes (até
+ao fim da época) e é a **última** página que tem os mais próximos. **34 jogos por realizar
+existem só na página 2, e os 34 são dos 9 clubes europeus**: para o Man City são a Champions no
+Porto (08/09), a PL no Man Utd (13/09), a Carabao com o Norwich (17/09) e a PL com o Sunderland
+(20/09). Parar na página 1 apagava a congestão das próximas duas semanas e deixava uma linha a
+começar só em outubro — plausível, e errado.
+
+**O fuso**: o zerozero publica hora local do Reino Unido, a API publica UTC. Nas 38 linhas de PL
+do Man City, **16 diferem 60 minutos** da API e 22 diferem 0 — a separação bate exactamente com
+o horário de verão britânico. `ZoneInfo("Europe/Lisbon")` **rebenta nesta máquina**
+(`ZoneInfoNotFoundError`, Python do python.org em Windows sem `tzdata`) — e de qualquer forma
+seria assumir o desvio, não medi-lo. As **760 linhas de PL da liga aparecem nas duas fontes** e
+dão o par (hora local, UTC) do mesmo jogo, por isso o desvio de cada data é *medido* a partir dos
+próprios dados, não de uma tabela de fusos escrita à mão.
+
+**A época lê-se da página, nunca se escreve à mão.** A página **ecoa** o `epoca_id` pedido:
+`?epoca_id=155` devolve sempre `(155, "2025/2026")`, mesmo depois de a época ter mudado a sério.
+Uma guarda que só confirmasse o número escrito à mão não verificava nada — na época seguinte a
+recolha escreveria calmamente um calendário velho, com visto verde no diagnóstico. Por isso
+pede-se a primeira página **sem** o parâmetro `epoca_id` (só assim o `<select>` reflecte a época
+actual em vez de ecoar o pedido de volta) e cruza-se o ano lido com o ano do `deadline_time` do
+primeiro evento da API da FPL — segunda fonte, independente, e barata (mais 1 pedido).
+
+**A junção é pelo slug, não pelo nome.** 6 dos 20 nomes do zerozero divergem do nome da FPL
+("Manchester City"/"Man City", "Tottenham"/"Spurs", "Nottingham Forest"/"Nott'm Forest", entre
+outros) — **214 das 789 linhas, 27%**. Juntar por nome deixava **4 dos 12 jogos de taça entre
+clubes desta liga sem adversário** (`adv = null`), porque um lado do jogo batia e o outro não. O
+slug está no HTML de todas as linhas e bate exactamente com as chaves de `scripts/zerozero.json`.
+
+**A validação recusa linhas, não clubes.** Só se escala de linha para clube acima de **2
+divergências**, ou perante qualquer divergência dentro das próximas 6 semanas — janela em que a
+PL já confirmou as escolhas de televisão, por isso aí uma divergência não é uma remarcação
+normal, é sinal de um problema a sério. Recusar o clube inteiro à primeira divergência
+apagava-lhe os jogos europeus — a única coisa que esta fonte acrescenta ao que já se tinha.
+
+**Não liga ao modelo de projeção** — a mesma linha vermelha que já valia para o zerozero.pt
+sozinho. Há *quem* joga na Europa e *quando*, falta *quanto custa em minutos*: um treinador roda
+três jogadores, outro nenhum, e aplicar um corte hoje seria inventar um número. Mede-se quando
+houver jornadas suficientes a seguir a jogos europeus, com os dados que já se guardam por
+jornada.
+
+**A barra de congestão não é booleana.** Medida sobre o calendário real, a regra "3 jogos em 8
+dias" dispara para **14 dos 20 clubes** e cobre **49% da linha do Arsenal e do Man City** —
+metade da linha sombreada deixava de ser aviso para virar fundo. Guarda-se a **intensidade** (3,
+4, 5+ jogos no troço) em vez de uma marca única, e a janela dos 8 dias é **inclusiva**: o Arsenal
+joga a 24/10, a Carabao a 28/10 e a PL a 1/11 — exactamente 8 dias, e era a semana que ficaria de
+fora com `< 8`.
+
+**As duas leituras em texto deram lugar a duas colunas ordenáveis** ("Aper." e "Dif."), porque
+como frases podiam contradizer o gráfico e a tabela ao lado: o Brighton seria anunciado como
+"percurso mais duro" (dificuldade média 3.5) enquanto a coluna Calend. das Sugestões lhe dá
+**+2%**, o melhor bónus de calendário da liga — a média ignora o decaimento e as jornadas em
+branco que o `calFator` já trata, e as duas escalas têm a polaridade invertida (3.5 alto é mau,
++2% é bom). É o mesmo defeito já apanhado noutro sítio deste ficheiro: "rende 4.9, abaixo da
+alternativa" com 4.4 ao lado.
+
+**Os marcadores do gráfico levam texto lá dentro, não são só cor.** Contraste medido das classes
+`.fx` já existentes contra o fundo do painel: **1.14:1** na classe da dificuldade neutra (`d3`,
+45% dos jogos) e 1.29–1.51:1 nas restantes — todas muito abaixo do mínimo de 3:1 para um objecto
+gráfico não textual. As `.fx` só funcionam no resto do site porque **têm sempre o nome do
+adversário, ou "dif. N", escrito lá dentro**; como manchas nuas seriam invisíveis para quem não
+distingue essas cores.
+
+**O horizonte ancora em jornadas, não em semanas.** Há uma paragem de **20 dias** entre 20/09 e
+10/10 no calendário real — uma janela de "4 semanas" escolhida hoje dava só **2 jogos da PL por
+clube**, um número que varia enormemente com a altura do ano em vez de responder à pergunta
+"quantas jornadas dá para ver".
+
+**A fonte só garante a Premier League.** A própria página do zerozero avisa que não garante
+completude nas outras provas. Os 9 clubes europeus têm **exactamente 8 jogos** marcados — a fase
+de liga —, a acabar a 27/01/2027, e a Taça da Liga pára na 3.ª eliminatória (17/09): a partir de
+Fevereiro o calendário fica quase só com jogos de liga, e o gráfico mostraria o Man City com a
+primavera inteira livre — o contrário da verdade. Daí a marca **"por sortear"**.
+
+**"Por sortear" ficou só para a Taça de Inglaterra**, por uma razão concreta: 19 dos 20 clubes já
+têm a 3.ª eliminatória da Taça da Liga marcada, e o único sem ela, o Nott'm Forest, **jogou a 2.ª
+e foi eliminado** — não é uma ronda por sortear, é uma prova de que já saiu. Como a recolha não
+guarda resultados, uma heurística por clube ("sem jogo nenhum = por sortear") marcá-lo-ia como
+ainda vivo na prova. Só a Taça de Inglaterra tem entrada universal e simultânea para os 20
+clubes, por isso só aí "zero jogos em todo o lado" só pode significar uma coisa.
+
+**Um limite conhecido, para memória futura.** `resumoClube().apertado` soma a duração de cada
+troço apertado (`trocosApertados`); se dois troços de intensidades diferentes se sobrepusessem
+parcialmente, sem um conter o outro, os dias da sobreposição contariam a dobrar. Testado nos 20
+clubes no horizonte mais longo: **zero divergências** — não acontece nestes dados, mas o código
+não o impede estruturalmente, por isso fica escrito aqui em vez de só na cabeça de quem o
+escreveu.
+
+`site/testes.html` ganhou as verificações do horizonte por jornada, da congestão inclusiva, dos
+troços que não se fundem, da ordenação por "apertado" e do clube recusado a aparecer "sem dados"
+em vez de linha vazia — chegou a **179** (eram 130 antes deste separador).
 
 ## Fase 2 das melhorias: medir as constantes (2026-09-01)
 

@@ -940,7 +940,8 @@ e no `pagina`, antes do `<script>` do app.js:
 - [ ] **Step 4: Correr e confirmar que passa**
 
 Run: `python scripts/testes.py && python scripts/artefacto.py`
-Expected: testes verdes; o artefacto sai sem erro e cresce ~100 KB.
+Expected: testes verdes; o artefacto sai sem erro e cresce ~160 KB, de 1.9 para 2.1 MB (medido
+depois: o `calendario.json` real tem 160 KB, não os ~98 KB estimados na spec).
 
 - [ ] **Step 5: Chamar a recolha no atualizar.cmd**
 

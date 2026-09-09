@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# Configuração local de sessões de teste (Browser pane, servidores de preview).
+# Útil por sessão, não faz parte do projeto — fica ignorado em vez de apagado.
+.claude/launch.json
