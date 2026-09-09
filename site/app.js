@@ -3835,6 +3835,29 @@ function jogosNoHorizonte(clube, ate) {
     .sort((a, b) => a.t - b.t);
 }
 
+/**
+ * Os jogos de um clube para medir congestão: janela alargada que começa
+ * `CAL_JANELA_DIAS` dias ATRÁS, ao contrário de jogosNoHorizonte (só
+ * futuro).
+ *
+ * Sem isto, um clube que acabou de sair de uma sequência apertada aparecia
+ * como tranquilo: medido, o Chelsea e o Hull marcavam "Apertado" = 0 apesar
+ * de terem feito 3 jogos em 6-7 dias, só porque o primeiro desses jogos já
+ * tinha passado. A recolha guarda os jogos já disputados precisamente para
+ * isto (a especificação: "para medir a GW4 são precisos os jogos de
+ * 08-10/09") — esta função é quem finalmente os usa. Quem desenha o
+ * gráfico continua a mostrar marcadores só a partir de agora
+ * (jogosNoHorizonte trata disso); esta janela serve só para calcular
+ * `apertado` e ordenar por ele.
+ */
+function jogosParaApertado(clube, ate) {
+  const desde = Date.now() - CAL_JANELA_DIAS * 864e5;
+  return ((clube || {}).jogos || [])
+    .map((j) => Object.assign({}, j, { t: Date.parse(j.data) }))
+    .filter((j) => j.t >= desde && j.t <= ate)
+    .sort((a, b) => a.t - b.t);
+}
+
 /** Quantos jogadores meus tem cada clube. Só do meu plantel, não de todos. */
 function meusPorClube() {
   // O padrão do resto do ficheiro (app.js:1065, 1585, 3176): a minha equipa
@@ -3852,9 +3875,15 @@ function meusPorClube() {
   return conta;
 }
 
-/** Os números por que se ordena. Ambos ficam à vista, ao lado do clube. */
-function resumoClube(teamId, jogos, meus) {
-  const trocos = trocosApertados(jogos);
+/** Os números por que se ordena. Ambos ficam à vista, ao lado do clube.
+ *
+ * `jogos` é o horizonte de futuro (conta jogos e a dificuldade — decisão b).
+ * `jogosApertado`, se vier, é a janela alargada para trás de
+ * jogosParaApertado() que mede a congestão (decisão a); sem ela cai em
+ * `jogos`, o que preserva o comportamento de quem ainda chama isto só com
+ * 3 argumentos. */
+function resumoClube(teamId, jogos, meus, jogosApertado) {
+  const trocos = trocosApertados(jogosApertado || jogos);
   // Dias dentro de troço apertado — mede a congestão melhor do que a contagem
   // de jogos, que no horizonte longo tem 3 valores distintos em 20 clubes.
   const apertado = trocos.reduce(
@@ -3973,7 +4002,8 @@ function clubesOrdenados(ate) {
     : todos.filter((id) => (meus[id] || 0) > 0);
   const resumo = {};
   candidatos.forEach((id) => {
-    resumo[id] = resumoClube(Number(id), jogosNoHorizonte(C.clubes[id], ate), meus);
+    resumo[id] = resumoClube(Number(id), jogosNoHorizonte(C.clubes[id], ate), meus,
+      jogosParaApertado(C.clubes[id], ate));
   });
   const chave = CAL_ORDENS.includes(calOrdem) ? calOrdem : "apertado";
   return candidatos.slice().sort((a, b) => {
@@ -4002,7 +4032,12 @@ const CAL_LIMIAR_PAUSA_DIAS = 10;
 
 /** {inicio, fim} do maior intervalo sem jogo nenhum (de nenhum clube) dentro
  *  do horizonte, ou null se não houver — a paragem para as seleções. Sem
- *  isto o gráfico fica com uma faixa em branco que parece avaria. */
+ *  isto o gráfico fica com uma faixa em branco que parece avaria.
+ *
+ *  `inicio`/`fim` são o primeiro e o último dia SEM jogo nenhum — não os
+ *  dias dos jogos que rodeiam a pausa. Devolver esses (como uma versão
+ *  anterior fazia) produzia texto que se contradizia: "sem jogos entre
+ *  20/09 e 10/10" quando havia 8 jogos precisamente a 20/09. */
 function pausaSeleccoes(ate) {
   const dias = new Set();
   Object.values((C || {}).clubes || {}).forEach((clube) => {
@@ -4012,7 +4047,7 @@ function pausaSeleccoes(ate) {
   for (let i = 1; i < ordenados.length; i += 1) {
     const gap = ordenados[i] - ordenados[i - 1];
     if (gap >= CAL_LIMIAR_PAUSA_DIAS) {
-      return { inicio: ordenados[i - 1] * 864e5, fim: ordenados[i] * 864e5 };
+      return { inicio: (ordenados[i - 1] + 1) * 864e5, fim: (ordenados[i] - 1) * 864e5 };
     }
   }
   return null;
@@ -4083,7 +4118,12 @@ function notaDificuldade(valores) {
 function descricaoJogo(clube, jogo) {
   const comp = C.competicoes[jogo.comp] || jogo.comp;
   const adversario = jogo.adv_nome || nomeClube(jogo.adv);
-  return clube.curto + " · " + comp + " · " + (jogo.casa ? "casa" : "fora") +
+  // `casa` é true/false/null (campo neutro, ex.: as supertaças) — a recolha
+  // já distingue os três com cuidado (a célula (C)/(F) vem vazia em campo
+  // neutro). Um ternário `? "casa" : "fora"` reintroduzia a jusante a
+  // armadilha que ela evitou, tratando `null` como "fora".
+  const lado = jogo.casa === true ? "casa" : jogo.casa === false ? "fora" : "campo neutro";
+  return clube.curto + " · " + comp + " · " + lado +
     " vs " + adversario + " · " + fmtDataHora.format(new Date(jogo.data)) +
     (jogo.comp === "PL" ? " · dificuldade " + jogo.dif : "") +
     (jogo.hora_incerta ? " · hora por confirmar" : "");
@@ -4117,15 +4157,38 @@ function desenharCalendario() {
     if (nota) nota.textContent = "";
     return;
   }
-  if (intro) {
-    intro.textContent = "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
-      " clubes da Premier League.";
-  }
   const ate = fimDoHorizonte();
   const inicio = Date.now();
-  const largura = ((ate - inicio) / 6048e5) * CAL_PX_SEMANA;
   const ids = clubesOrdenados(ate);
   const meus = meusPorClube();
+  // Reflecte o filtro "só os meus" (por omissão): sem isto a intro dizia
+  // sempre "dos 20 clubes" por cima de só 11 linhas, sem avisar que a vista
+  // estava filtrada.
+  const filtrado = !calMostrarTodos && Object.keys(meus).length > 0;
+  if (intro) {
+    intro.textContent = filtrado
+      ? "Jogos de todas as competições dos " + ids.length + " clube" +
+        (ids.length === 1 ? "" : "s") + " com jogadores meus (de " +
+        Object.keys(C.clubes).length + " na Premier League) — vista filtrada; " +
+        "«Mostrar os 20 clubes» vê todos."
+      : "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
+        " clubes da Premier League.";
+  }
+  // Fim da época, ou artefacto publicado há meses e aberto muito depois: não
+  // há jogo nenhum à frente de "agora" em horizonte nenhum, e `ate` cai no
+  // passado. Sem esta guarda `largura` ficava negativa e cada clube
+  // desenhava uma faixa com `width:-Npx` — pior do que a linha vazia que a
+  // especificação já proíbe, por se ler como "clube tranquilo".
+  if (ate <= inicio) {
+    if (aviso) aviso.hidden = true;
+    const vazio = '<p class="nota">Sem jogos conhecidos neste horizonte.</p>';
+    if (alvo) alvo.innerHTML = vazio;
+    if (lista) lista.innerHTML = vazio;
+    if (legenda) legenda.textContent = "";
+    if (nota) nota.textContent = "";
+    return;
+  }
+  const largura = ((ate - inicio) / 6048e5) * CAL_PX_SEMANA;
 
   const todosJogos = [];
   const todosTrocos = [];
@@ -4141,18 +4204,28 @@ function desenharCalendario() {
   ids.forEach((id) => {
     const clube = C.clubes[id];
     const jogos = jogosNoHorizonte(clube, ate);
-    const resumo = resumoClube(Number(id), jogos, meus);
-    const trocos = trocosApertados(jogos);
+    // Janela alargada para trás: mede a congestão de quem acabou de sair de
+    // uma sequência apertada (ver jogosParaApertado). `trocos` sai dela, não
+    // de `jogos` — senão o número "Aper." e a ordenação ignoravam-na na
+    // mesma, mesmo com resumoClube já corrigido.
+    const jogosApertado = jogosParaApertado(clube, ate);
+    const resumo = resumoClube(Number(id), jogos, meus, jogosApertado);
+    const trocos = trocosApertados(jogosApertado);
     todosJogos.push(...jogos);
     todosTrocos.push(...trocos);
     difsMostradas.push(resumo.dificuldade);
 
     // --- Linha do tempo (ecrã largo) ---
     const pos = (t) => ((t - inicio) / (ate - inicio)) * largura;
-    const faixaTrocos = trocos.map((tr) =>
-      '<span class="cal-troco n' + Math.min(tr.jogos, 5) + '" style="left:' +
-      pos(tr.inicio).toFixed(1) + "px;width:" + (pos(tr.fim) - pos(tr.inicio)).toFixed(1) +
-      'px"></span>').join("");
+    const faixaTrocos = trocos.map((tr) => {
+      // Um troço pode começar antes de "agora" (a janela alargada olha para
+      // trás): desenha-se só a partir do início do horizonte, senão pos()
+      // fica negativo e pede uma posição/largura impossível no eixo.
+      const trIni = Math.max(tr.inicio, inicio);
+      return '<span class="cal-troco n' + Math.min(tr.jogos, 5) + '" style="left:' +
+        pos(trIni).toFixed(1) + "px;width:" + (pos(tr.fim) - pos(trIni)).toFixed(1) +
+        'px"></span>';
+    }).join("");
     const marcas = jogos.map((j) =>
       '<button type="button" class="cal-jogo' + (j.comp === "PL" ? " d" + j.dif : " fora-pl") +
       '" style="left:' + pos(j.t).toFixed(1) + 'px" data-clube="' + id +
@@ -4224,8 +4297,11 @@ function desenharCalendario() {
     const partes = [];
     const pausa = pausaSeleccoes(ate);
     if (pausa) {
-      partes.push("Sem jogos entre " + fmtDataHora.format(new Date(pausa.inicio)) + " e " +
-        fmtDataHora.format(new Date(pausa.fim)) + ": é a paragem para as seleções.");
+      // Data só, sem hora: a grandeza é um dia (o "01:00" era só a meia-noite
+      // UTC vista de Lisboa, e não dizia nada). fmtDataCurta é o mesmo
+      // formatador já usado nas Transferências.
+      partes.push("Sem jogos entre " + fmtDataCurta.format(new Date(pausa.inicio)) + " e " +
+        fmtDataCurta.format(new Date(pausa.fim)) + ": é a paragem para as seleções.");
     }
     provasPorSortear().forEach((nomeProva) => {
       partes.push(nomeProva + ": ronda ainda por sortear (entra tipicamente mais tarde " +

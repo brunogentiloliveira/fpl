@@ -244,18 +244,49 @@ def desvios_por_data(linhas_pl, fixtures_api):
     return desvios
 
 
+# Quão perto (em dias) a âncora POSTERIOR precisa de estar da data-alvo para
+# entrar na verificação de desacordo, em para_utc(). As âncoras são jogos de
+# PL do próprio clube (~1 por semana); uma que caia muito mais longe (ex.: a
+# paragem de inverno, a ~80 dias) não é vizinha nenhuma, é só a única que
+# existe do lado de lá — não deve tornar incerta uma data que já tem uma
+# âncora anterior próxima e sem conflito nenhum por perto.
+ANCORA_VIZINHA_DIAS = 10
+
+
 def para_utc(data, hora, desvios):
-    """(ISO em UTC, hora_incerta). Sem hora, devolve a data nua."""
+    """(ISO em UTC, hora_incerta). Sem hora, devolve a data nua.
+
+    A âncora por distância ABSOLUTA atravessa a mudança de horário: 22/10
+    fica a 4 dias de uma âncora de Verão (18/10, BST) e só a 3 de uma de
+    Inverno (25/10 — o próprio dia da troca, já GMT) — "mais próxima"
+    escolhia a errada, e ainda marcava `hora_incerta=False`, como se
+    estivesse certa. A troca de horário acontece num instante só, por isso a
+    âncora ANTERIOR à data está sempre do mesmo lado dela; usa-se essa, com
+    recurso à posterior só quando não há nenhuma antes. Quando as duas
+    existem, estão a `ANCORA_VIZINHA_DIAS` uma da outra (a data cai mesmo na
+    semana da troca) e DISCORDAM, o valor da anterior continua a ser o mais
+    plausível — mas fica `hora_incerta`, em vez de se afirmar uma certeza
+    que não se tem.
+    """
     if not hora:
         return data, True
     if data in desvios:
         delta, incerta = desvios[data], False
-    elif desvios:
-        # A âncora mais próxima: o regime de horário só muda duas vezes por ano.
-        vizinha = min(desvios, key=lambda d: abs(_dias(d) - _dias(data)))
-        delta, incerta = desvios[vizinha], False
     else:
-        delta, incerta = 0, True
+        alvo = _dias(data)
+        anteriores = {d: v for d, v in desvios.items() if _dias(d) < alvo}
+        posteriores = {d: v for d, v in desvios.items() if _dias(d) > alvo}
+        anterior = max(anteriores, key=_dias, default=None)
+        posterior = min(posteriores, key=_dias, default=None)
+        if anterior is not None:
+            delta = desvios[anterior]
+            incerta = (posterior is not None
+                       and _dias(posterior) - alvo <= ANCORA_VIZINHA_DIAS
+                       and desvios[posterior] != delta)
+        elif posterior is not None:
+            delta, incerta = desvios[posterior], False
+        else:
+            delta, incerta = 0, True
     minutos = int(hora[:2]) * 60 + int(hora[3:5]) - delta
     dia = _dias(data) + (minutos // (24 * 60))
     minutos %= 24 * 60
@@ -322,7 +353,7 @@ def _get_html(url):
         return dados.decode("utf-8", "replace")
 
 
-def jogos_do_clube(caminho, epoca_id):
+def jogos_do_clube(caminho, epoca_id, pagina1_html=None):
     """Todas as páginas de um clube.
 
     A tabela vem por data DECRESCENTE, portanto a última página tem os jogos
@@ -330,9 +361,21 @@ def jogos_do_clube(caminho, epoca_id):
     só na página 2 (89 jogos fora da PL por realizar, no total dos 20
     clubes). Parar antes de a pedir apagava a congestão das próximas duas
     semanas e deixava uma linha a começar em outubro — plausível.
+
+    `pagina1_html`, se vier, é a página 1 já lida por quem chama (para
+    confirmar a época, ver `main()`) — poupa pedi-la outra vez aqui. Sem
+    isto os 20 clubes pediam a mesma URL da página 1 duas vezes (49 pedidos
+    em vez dos 29 que a especificação afirma), e para 19 deles a primeira
+    resposta nem chegava a ser parseada: era lida só para confirmar a época
+    (já sabida) e deitada fora.
     """
-    todos, pagina = [], 1
-    while pagina <= 4:
+    if pagina1_html is not None:
+        primeiras = linhas_jogos(pagina1_html)
+        todos = list(primeiras)
+        pagina, parar = 2, len(primeiras) < LINHAS_POR_PAGINA
+    else:
+        todos, pagina, parar = [], 1, False
+    while not parar and pagina <= 4:
         url = f"{ZZ}{caminho}/jogos?epoca_id={epoca_id}&page={pagina}"
         linhas = linhas_jogos(_get_html(url))
         todos += linhas
@@ -405,7 +448,12 @@ def main():
         # parâmetro, para o zerozero devolver a época actual por omissão —
         # com o parâmetro ele ecoa de volta o que se pediu (ver
         # `epoca_da_pagina`), o que nunca dispararia o aborto na época
-        # seguinte.
+        # seguinte. Essa mesma resposta serve também de página 1 dos jogos
+        # deste clube (passada a `jogos_do_clube` a seguir): sem a
+        # reaproveitar, os 20 clubes pediam a página 1 duas vezes — 49
+        # pedidos em vez dos 29 que a especificação afirma — e para 19
+        # deles a primeira resposta era lida só para ser deitada fora sem
+        # ser parseada.
         url = (f"{ZZ}{info['caminho']}/jogos?page=1" if epoca_id is None else
                f"{ZZ}{info['caminho']}/jogos?epoca_id={epoca_id}&page=1")
         try:
@@ -423,7 +471,7 @@ def main():
                 return 1
             epoca_id, epoca_txt = achada
 
-        linhas = jogos_do_clube(info["caminho"], epoca_id)
+        linhas = jogos_do_clube(info["caminho"], epoca_id, primeira)
         pl_zz = [x for x in linhas if normalizar_comp(x["comp_bruta"]) == "PL"]
         desvios = desvios_por_data(pl_zz, oficiais.get(team_id, []))
         _, divergentes = validar_pl(pl_zz, oficiais.get(team_id, []))

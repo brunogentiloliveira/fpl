@@ -553,7 +553,7 @@ CAL_HTML = """
  <td class="double right">h2h</td></tr>
 <tr id="12624711" class="parent">
  <td class="h2h">h2h</td><td class="double">2026-10-14</td><td>20:00</td>
- <td>(F)</td><td><a href="/equipa/paris-saint-germain"><img src="x.png"></a></td>
+ <td>(F)</td><td><a href="/equipa/paris-saint-germain?epoca_id=156"><img src="x.png"></a></td>
  <td class="text"><a href="/equipa/paris-saint-germain">PSG</a></td>
  <td class="result"><a href="/jogo/x/12624711">-</a></td>
  <td class="text">UEFA Champions League 26/27</td><td class="away">&nbsp;</td>
@@ -592,8 +592,6 @@ def testa_calendario_parser():
               and pl["hora"] == "16:00" and pl["casa"] is True, pl)
     verificar("junta pelo slug e não pelo nome", pl["adv_slug"] == "sunderland",
               pl["adv_slug"])
-    verificar("o slug perde a query string",
-              "?" not in pl["adv_slug"] and "epoca_id" not in pl["adv_slug"])
 
     # Campo neutro: a célula do (C)/(F) vem vazia. Um `== "(C)"` dava "fora".
     sup = por_id[11999001]
@@ -606,6 +604,15 @@ def testa_calendario_parser():
     ucl = por_id[12624711]
     verificar("linha com a última célula vazia é lida na mesma",
               ucl["comp_bruta"].startswith("UEFA Champions"), ucl["comp_bruta"])
+    # O slug perde a query string: o PSG não precisa de id (`com_id` só tem 5
+    # clubes), por isso o "?" fica logo a seguir ao nome no href do <img> —
+    # que é o primeiro "/equipa/" da linha, o que o regex apanha de facto.
+    # A verificação anterior usava a linha do Sunderland (`.../91`), cujo
+    # primeiro href pára no "/" antes de chegar a qualquer "?" — passava por
+    # construção mesmo com o "?" fora da classe de caracteres do regex
+    # (provado por mutação: `[^"?/]` -> `[^"/]` não a fazia falhar).
+    verificar("o slug perde a query string",
+              ucl["adv_slug"] == "paris-saint-germain", ucl["adv_slug"])
     verificar("&nbsp; na ronda não vira texto literal",
               ucl["ronda"] == "", repr(ucl["ronda"]))
     verificar("jogo fora fica com casa=False, não confundido com campo neutro",
@@ -732,6 +739,31 @@ def testa_calendario_fuso():
     verificar("desvio que cruza a meia-noite recua também o dia",
               iso == "2026-10-10T23:30:00Z" and incerta is False, (iso, incerta))
 
+    # Achado da revisão final: a âncora por distância ABSOLUTA atravessa a
+    # mudança de horário. 22/10/2026 fica a 4 dias de uma âncora de Verão
+    # (18/10) e só a 3 dias de uma de Inverno (25/10 — o próprio dia da
+    # troca) — "mais próxima" escolhia a errada (delta 0 em vez de 60) e
+    # ainda marcava hora_incerta=False, como se estivesse certa.
+    desvios_troca = {"2026-10-18": 60, "2026-10-25": 0}
+    iso, incerta = fc.para_utc("2026-10-22", "20:00", desvios_troca)
+    verificar("prefere a âncora ANTERIOR (Verão), não a mais próxima (Inverno)",
+              iso == "2026-10-22T19:00:00Z", (iso, incerta))
+    verificar("...mas fica hora_incerta: as duas âncoras vizinhas discordam",
+              incerta is True, (iso, incerta))
+
+    # Vizinhas próximas mas a CONCORDAR não ficam incertas — só a
+    # discordância é que desconfia.
+    iso, incerta = fc.para_utc("2026-10-19", "20:00", {"2026-10-18": 60, "2026-10-20": 60})
+    verificar("vizinhas próximas mas a concordar continuam confiantes",
+              iso == "2026-10-19T19:00:00Z" and incerta is False, (iso, incerta))
+
+    # Uma âncora POSTERIOR muito distante (aqui, quase 3 meses) não é vizinha
+    # nenhuma: não pode tornar incerta uma data com âncora anterior próxima e
+    # sem conflito por perto. Mesmo caso do "sem âncora no próprio dia" acima
+    # (desvios = {"2026-10-11": 60, "2027-01-06": 0}), agora afirmado à parte.
+    verificar("uma âncora posterior distante (a paragem de inverno) não conta para o desacordo",
+              fc.para_utc("2026-10-14", "20:00", desvios)[1] is False)
+
 
 def testa_calendario_validacao():
     print("Calendário: validação contra a API")
@@ -822,6 +854,60 @@ def testa_calendario_epoca():
               and fc.epoca_coerente("2026/2027", 2026) is True)
 
 
+def testa_calendario_pedidos():
+    print("Calendário: um só pedido por página (achado da revisão final)")
+    import fetch_calendario as fc
+
+    pedidos = []
+
+    def get_html_falso(url):
+        pedidos.append(url)
+        return CAL_HTML  # 4 linhas, muito abaixo das 40: nunca pede uma 2ª página.
+
+    original = fc._get_html
+    fc._get_html = get_html_falso
+    try:
+        # O `main()` pedia a página 1 para confirmar a época/ler os jogos, e
+        # `jogos_do_clube` pedia-a OUTRA VEZ (byte a byte a mesma URL) — 49
+        # pedidos nos 20 clubes reais, não os 29 que a especificação afirma,
+        # e para 19 deles a primeira resposta nem chegava a ser parseada.
+        pedidos.clear()
+        linhas = fc.jogos_do_clube("/equipa/sunderland/91", 156, CAL_HTML)
+        verificar("com a página 1 já lida, jogos_do_clube não volta a pedi-la",
+                  pedidos == [], pedidos)
+        verificar("...e continua a devolver os jogos dessa página",
+                  len(linhas) == 4, len(linhas))
+
+        # Sem página pré-lida (quem não a tem à mão), continua a saber
+        # pedi-la sozinho — só deixa de o fazer quando já a tem.
+        pedidos.clear()
+        linhas_sem_pre = fc.jogos_do_clube("/equipa/sunderland/91", 156)
+        verificar("sem página pré-lida, jogos_do_clube pede-a sozinho",
+                  len(pedidos) == 1 and "page=1" in pedidos[0], pedidos)
+        verificar("...com o mesmo resultado",
+                  len(linhas_sem_pre) == 4, len(linhas_sem_pre))
+
+        # O padrão real do main(): por clube, UM pedido de página 1 (sem
+        # parâmetro só no primeiro, para confirmar a época; com epoca_id
+        # nos seguintes) que é passado directamente a jogos_do_clube — nunca
+        # dois pedidos pela mesma URL. Para 3 clubes com página curta (sem
+        # 2ª página, como todos os que não jogam competições europeias),
+        # isto são exactamente 3 pedidos, não 6.
+        pedidos.clear()
+        epoca_id = None
+        for i in range(3):
+            url = ("/equipa/x/jogos?page=1" if epoca_id is None
+                   else f"/equipa/x/jogos?epoca_id={epoca_id}&page=1")
+            pagina1 = fc._get_html(url)
+            if epoca_id is None:
+                epoca_id = 156
+            fc.jogos_do_clube("/equipa/x", epoca_id, pagina1)
+        verificar("padrão do main() para 3 clubes: 3 pedidos de página 1, não 6",
+                  len(pedidos) == 3, pedidos)
+    finally:
+        fc._get_html = original
+
+
 def main():
     print("Testes da recolha\n")
     testa_nomes()
@@ -842,6 +928,7 @@ def main():
     testa_calendario_fuso()
     testa_calendario_validacao()
     testa_calendario_epoca()
+    testa_calendario_pedidos()
     print()
     if FALHAS:
         print(f"{len(FALHAS)} teste(s) a falhar: {', '.join(FALHAS)}")
