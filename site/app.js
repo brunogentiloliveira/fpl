@@ -859,6 +859,32 @@ const CAMPOS_COMBINAVEIS = [
  * Sem isto, um avançado com quatro jogos, 1.9 de xG e zero golos continuava a
  * ser julgado pelo que fez em maio — o contrário da premissa do modelo.
  */
+// Uma titularidade: 60 minutos é o limiar que a própria liga usa para os
+// pontos de presença, e é o que separa "jogou o jogo" de "entrou do banco".
+const MIN_TITULAR = 60;
+
+/**
+ * Dos últimos jogos, os que ainda dizem alguma coisa sobre o próximo.
+ *
+ * **Um zero antes de uma sequência ininterrupta de titularidades não conta.**
+ * Medido em 655 jogadores (prever a J3 a partir das J1-J2): depois de uma
+ * titularidade, quem tinha um zero atrás tem 86.5% de probabilidade de ser
+ * titular a seguir e quem não tinha tem 86.6% — iguais. A diferença real de
+ * minutos entre os dois grupos é +4.5 [-3.4, +12.4], quando a média simples
+ * assumia +20.6, fora do intervalo. Esse zero é uma troca de titular já
+ * consumada, não rotação, e o modelo castigava-a em 23.7 minutos.
+ *
+ * Só nesta direção. Um zero **recente** continua a contar por inteiro: é
+ * ambíguo (lesão, castigo, despromoção) e medir a reação a ele piorou o onze.
+ */
+function minutosQueContam(ultimos) {
+  let i = ultimos.length;
+  while (i > 0 && ultimos[i - 1].minutos >= MIN_TITULAR) i -= 1;
+  // `i` marca o fim do que vem antes da sequência final de titularidades.
+  if (i === 0 || i === ultimos.length) return ultimos;
+  return ultimos.slice(0, i).every((u) => u.minutos === 0) ? ultimos.slice(i) : ultimos;
+}
+
 function historicoCombinado(p, hist) {
   const minEpoca = num(p.minutes);
   // Sem retrato congelado, `hist` já é esta época: combinar seria contá-la duas vezes.
@@ -902,7 +928,10 @@ function projecao(p, ignorarAusencia) {
   // estatísticas; aqui só restam os minutos.
   let xmin = xminHist;
   if (jogosObs > 0) {
-    const mediaRecente = ultimos.reduce((s, u) => s + u.minutos, 0) / ultimos.length;
+    // `ultimos` fica inteiro para quem o lê a seguir (o `naoUsado`, e o ecrã);
+    // só a média é que ignora os zeros anteriores a uma tomada de posse.
+    const contam = minutosQueContam(ultimos);
+    const mediaRecente = contam.reduce((s, u) => s + u.minutos, 0) / contam.length;
     xmin = peso * mediaRecente + (1 - peso) * xminHist;
   }
 
@@ -962,7 +991,8 @@ function projecao(p, ignorarAusencia) {
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !indisponivel(p);
   return { pp90, xmin, ppj, ppjCal, calFator, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
-    componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p) };
+    componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p),
+    advCS: efeitoAdversario(p, hist) };
 }
 
 /** "+3%" / "-4%": quanto o calendário mexe na projeção deste jogador. */
@@ -988,7 +1018,78 @@ function amplitudeCalendario() {
 }
 
 /** Texto da decomposição dos pontos por 90, para tooltip. */
-function decomporPP90(c, extra) {
+// Multiplicadores do ritmo de golos sofridos por grau de dificuldade da FPL,
+// medidos nos 380 jogos de 2025/26 (r = +0.78 contra a força atacante do
+// adversário calculada a sério; o casa/fora já vem embutido no próprio grau —
+// a dificuldade 2 é 74% em casa e a 5 nunca é).
+const MULT_DIFICULDADE = { 2: 0.851, 3: 1.0, 4: 1.134, 5: 1.371 };
+// Cada +1 no xGC90 dá +1.384 defesas por 90 a um guarda-redes (19 GR com 900+
+// minutos, R² 0.62), e cada defesa vale um terço de ponto. É ~40% do castigo
+// da baliza a zero a voltar — mostrar só a baliza criaria um número enganador.
+const DEFESAS_POR_XGC = 1.384 / 3;
+
+/**
+ * O que o próximo adversário faz à baliza a zero de um GR ou defesa.
+ *
+ * **Não entra na projeção, de propósito.** O modelo calcula a baliza a zero a
+ * partir do xGC da própria equipa e ignora o adversário — medido, isso extrai
+ * só 19% do sinal disponível, e a separação entre o terço de jogos mais fácil
+ * e o mais difícil fica em +6.3 pp [-17.2, +32.0], indistinguível de zero
+ * (com o adversário: +32.2 pp [+5.3, +58.2]). Mas corrigi-lo no onze foi
+ * medido e **não compensa**: vale 0.9 pontos numa época inteira, e aplicar o
+ * `fatorCalendario` — o remédio óbvio — chega a piorar o onze, porque
+ * multiplica a projeção toda em vez da parcela certa.
+ *
+ * Serve para o ecrã não afirmar o que os seus próprios dados desmentem: sem
+ * isto, um guarda-redes a ir a Anfield e outro a receber o último classificado
+ * aparecem com a mesma baliza a zero.
+ */
+function efeitoAdversario(p, hist) {
+  const pos = p.element_type;
+  // Só GR e defesas: nos médios e avançados o efeito do adversário está quase
+  // todo no ataque, e aí os ±6% por grau do calendário já estão bem medidos.
+  if (pos !== 1 && pos !== 2) return null;
+  const min = hist.minutes || 0;
+  if (min < 90) return null;
+  const proxima = (D.next_event || {}).id;
+  const jogo = ((D.fixtures || {})[String(p.team)] || []).find((f) => f.event === proxima);
+  const mult = jogo && MULT_DIFICULDADE[jogo.difficulty];
+  if (!mult) return null;
+  const xgc90 = (num(hist.expected_goals_conceded) / min) * 90;
+  if (xgc90 <= 0) return null;
+  const ptsCS = regraPos("clean_sheets", pos, 0);
+  const base = Math.exp(-xgc90);
+  const comAdv = Math.exp(-xgc90 * mult);
+  return {
+    jogo: jogo,
+    csBase: base,
+    csAdv: comAdv,
+    deltaBaliza: (comAdv - base) * ptsCS,
+    // Uma equipa que sofre mais também defende mais; nos defesas de campo não
+    // há compensação equivalente (a contribuição defensiva sobe com R² 0.03).
+    deltaDefesas: pos === 1 ? xgc90 * (mult - 1) * DEFESAS_POR_XGC : 0,
+  };
+}
+
+/** A frase do tooltip para o efeito do próximo adversário. */
+function frasePorAdversario(a) {
+  if (!a) return "";
+  // A dificuldade 3 tem multiplicador exactamente 1: a linha sairia a dizer
+  // "47% em vez de 47% (+0.00 pts)", que é ruído com ar de informação. Mesmo
+  // limiar de 0.05 que o resto da decomposição usa para esconder parcelas.
+  if (Math.abs(a.deltaBaliza + a.deltaDefesas) < 0.05) return "";
+  const pct = (v) => Math.round(v * 100) + "%";
+  const sinal = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+  const liquido = a.deltaBaliza + a.deltaDefesas;
+  return " — próximo jogo com " + nomeClube(a.jogo.opponent) +
+    (a.jogo.is_home ? " (casa)" : " (fora)") + ", dificuldade " + a.jogo.difficulty +
+    ": baliza a zero " + pct(a.csAdv) + " em vez de " + pct(a.csBase) +
+    " (" + sinal(a.deltaBaliza) + " pts" +
+    (a.deltaDefesas ? ", " + sinal(a.deltaDefesas) + " em defesas" : "") +
+    ", líquido " + sinal(liquido) + "). Não está na projeção.";
+}
+
+function decomporPP90(c, extra, adv) {
   const partes = [
     "presença " + c.presenca.toFixed(1),
     "golos esperados " + c.golos.toFixed(1),
@@ -1002,8 +1103,9 @@ function decomporPP90(c, extra) {
   if (c.bonus >= 0.05) partes.push("bónus " + c.bonus.toFixed(1));
   if (c.sofridos <= -0.05) partes.push("golos sofridos " + c.sofridos.toFixed(1));
   if (c.penalizacoes <= -0.05) partes.push("cartões " + c.penalizacoes.toFixed(1));
-  const txt = partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
-  return extra >= 0.05 ? txt + " (+" + extra.toFixed(2) + " de bola parada)" : txt;
+  let txt = partes.join(" · ") + " = " + c.total.toFixed(1) + " pts/90 esperados";
+  if (extra >= 0.05) txt += " (+" + extra.toFixed(2) + " de bola parada)";
+  return txt + frasePorAdversario(adv);
 }
 
 function linhaProjecao(p, pr) {
@@ -1032,7 +1134,7 @@ function linhaProjecao(p, pr) {
       (recentes ? " · jogou " + recentes : "") +
       (jogos ? " · " + jogos : "") + "</span></td>" +
     '<td class="num"' + (pr.componentes
-      ? ' title="' + esc(decomporPP90(pr.componentes, pr.extraBP)) + '"' : "") + ">" +
+      ? ' title="' + esc(decomporPP90(pr.componentes, pr.extraBP, pr.advCS)) + '"' : "") + ">" +
       pr.pp90.toFixed(1) + "</td>" +
     '<td class="num">' + Math.round(pr.xmin) + "</td>" +
     '<td class="num forte">' + pr.ppj.toFixed(1) + "</td>" +

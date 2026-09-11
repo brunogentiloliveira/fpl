@@ -1207,6 +1207,105 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   C = guardadoC;
 })();
 
+/* --- Minutos: um zero antes de uma sequência de titularidades não conta --- */
+(function () {
+  // Medido em 655 jogadores (prever a J3 a partir das J1-J2): quem fez (0,1)
+  // tem 86.5% de probabilidade de ser titular a seguir e quem fez (1,1) tem
+  // 86.6% — iguais. A diferença real de minutos é +4.5 [-3.4, +12.4] e o
+  // modelo assumia +20.6, fora do intervalo. Depois de uma titularidade, o
+  // zero anterior não diz nada sobre o jogo seguinte.
+  const guardadoJ = D.jornadas;
+  const sempre = D.players.find(function (p) { return p.web_name === "DEF1"; });
+  const ganhou = D.players.find(function (p) { return p.web_name === "DEF2"; });
+  const perdeu = D.players.find(function (p) { return p.web_name === "DEF3"; });
+  const misto = D.players.find(function (p) { return p.web_name === "DEF4"; });
+  // Mesmo histórico nos quatro, para só os minutos desta época os separarem.
+  [sempre, ganhou, perdeu, misto].forEach(function (p) {
+    D.historico[p.id].minutes = 2700;
+    D.historico[p.id].starts = 30;
+  });
+  const jornada = function (min) {
+    const s = {};
+    [sempre, ganhou, perdeu, misto].forEach(function (p, i) { s[String(p.id)] = [min[i], 3]; });
+    return { finalizada: true, equipas: [], stats: s };
+  };
+  //                     sempre ganhou perdeu misto
+  D.jornadas = { 1: jornada([90, 0, 90, 0]),
+                 2: jornada([90, 90, 0, 45]),
+                 3: jornada([90, 90, 0, 90]) };
+
+  const x = function (p) { return projecao(p).xmin; };
+  verificar("quem ganhou o lugar deixa de ser castigado pelo zero anterior",
+    Math.abs(x(ganhou) - x(sempre)) < 0.01, [x(ganhou), x(sempre)]);
+  verificar("quem perdeu o lugar não é promovido pela regra",
+    x(perdeu) < x(sempre) - 20, [x(perdeu), x(sempre)]);
+  // O 45 quebra a sequência: uma entrada do banco não é tomar posse do lugar,
+  // por isso o zero de antes continua a contar.
+  verificar("um jogo a meio-gás não apaga o zero anterior",
+    x(misto) < x(sempre) - 5, [x(misto), x(sempre)]);
+  // Não chega a 90: o histórico continua a puxar pelo `peso` n/(n+2), e é
+  // suposto continuar — a regra tira um castigo, não acrescenta um bónus.
+  verificar("um titular estabelecido continua perto de um jogo inteiro",
+    x(sempre) > 80, x(sempre));
+
+  D.jornadas = guardadoJ;
+})();
+
+/* --- O adversário no tooltip, e só no tooltip --- */
+(function () {
+  const guardadoF = D.fixtures;
+  const gr = D.players.find(function (p) { return p.web_name === "GR1"; });
+  const def = D.players.find(function (p) { return p.web_name === "DEF1"; });
+  const med = D.players.find(function (p) { return p.web_name === "MED1"; });
+  const prox = D.next_event.id;
+  const comDif = function (d) {
+    const f = {};
+    [gr, def, med].forEach(function (p) {
+      f[String(p.team)] = [{ event: prox, opponent: 9, is_home: false, difficulty: d }];
+    });
+    return f;
+  };
+
+  D.fixtures = comDif(5);
+  const ppjAntes = projecao(gr).ppj;
+  const duro = projecao(gr).advCS;
+  verificar("adversário duro baixa a baliza a zero mostrada",
+    duro && duro.csAdv < duro.csBase, duro && [duro.csAdv, duro.csBase]);
+  verificar("e devolve parte em defesas ao guarda-redes",
+    duro && duro.deltaDefesas > 0 && duro.deltaBaliza < 0,
+    duro && [duro.deltaBaliza, duro.deltaDefesas]);
+  verificar("a compensação das defesas não chega a anular o castigo",
+    duro && duro.deltaBaliza + duro.deltaDefesas < 0);
+
+  D.fixtures = comDif(2);
+  const facil = projecao(gr).advCS;
+  verificar("adversário fácil sobe a baliza a zero mostrada",
+    facil && facil.csAdv > facil.csBase, facil && [facil.csAdv, facil.csBase]);
+
+  // A promessa central: isto é ecrã, não modelo. Medido que mexer no onze por
+  // causa disto vale 0.9 pts numa época e o remédio óbvio até o piora.
+  verificar("o adversário NÃO mexe na projeção",
+    Math.abs(projecao(gr).ppj - ppjAntes) < 1e-9, [projecao(gr).ppj, ppjAntes]);
+
+  D.fixtures = comDif(5);
+  verificar("defesas também recebem o efeito", projecao(def).advCS !== null);
+  // Nos médios e avançados o efeito do adversário está no ataque, não na
+  // baliza a zero — concentrá-lo aqui seria trocar um erro por outro.
+  verificar("médios não recebem, porque neles o efeito está no ataque",
+    projecao(med).advCS === null);
+  verificar("a frase do tooltip diz que não está na projeção",
+    frasePorAdversario(projecao(gr).advCS).indexOf("Não está na projeção") > 0);
+
+  // Dificuldade 3 tem multiplicador 1: a linha sairia "47% em vez de 47%
+  // (+0.00 pts)", que é ruído com ar de informação.
+  D.fixtures = comDif(3);
+  verificar("adversário neutro não gera uma linha que não diz nada",
+    frasePorAdversario(projecao(gr).advCS) === "",
+    frasePorAdversario(projecao(gr).advCS));
+
+  D.fixtures = guardadoF;
+})();
+
 verificar("nenhuma projeção é negativa",
   D.players.every(function (p) { return projecao(p).ppj >= 0; }));
 

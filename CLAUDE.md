@@ -1316,6 +1316,112 @@ recolhas, consola, os dois modos) é determinística e já é script; e tudo o q
 afirmar deve ser teste — o `testa_nomes_funcoes` apanha a colisão de nomes em 50 ms, para
 sempre, sem arrancar do zero.
 
+## O Leno em Anfield: uma queixa certa, com a causa errada (2026-09-11)
+
+Reparo do utilizador sobre o onze sugerido: *"tens o Leno, que joga com o Liverpool, no onze, e
+o Martinez, que joga em casa com o Hull, no banco. Acho que não estás a ter em consideração os
+adversários e só os projected points."*
+
+**O mecanismo que ele descreve existe mesmo**: `melhorXI()` ordena por `pr.ppj`, e
+`ppj = pp90 × xmin / 90` não tem uma única referência ao adversário. O `calFator` existe e é
+usado nos waivers e na tabela, nunca no onze. **Mas não era isso que decidia o caso.** Duas
+medições, uma por hipótese.
+
+### O adversário: medido, e **não compensa** mexer no onze
+
+Poisson multiplicativo sobre os **380 jogos de 2025/26** (grelha validada contra a tabela final,
+20/20 equipas a bater em jogos, golos marcados e sofridos), encolhimento escolhido por validação
+cruzada interna, 12 repetições de 10 folds:
+
+| modelo de golos sofridos | ganho sobre dar a média a todos |
+|---|---|
+| **só a defesa própria — o que o modelo faz hoje** | **+0.35%** |
+| defesa própria + casa/fora | +0.84% |
+| defesa própria × ataque do adversário | +1.30% |
+| **+ casa/fora** | **+1.81%** (vence em 105 de 120 folds) |
+
+**O modelo extrai 19% do sinal disponível.** As duas forças têm a mesma dimensão — amplitude do
+ataque 73%, da defesa 70% — e ele usa uma e ignora a outra. Ao nível do jogador (170 GR/DEF com
+90 minutos nas GW1-3) a separação entre o terço de jogos mais fácil e o mais difícil é **+6.3 pp,
+IC95 [−17.2, +32.0]** com o modelo actual — indistinguível de zero — contra **+32.2 pp
+[+5.3, +58.2]** com o adversário. **O modelo actual praticamente não ordena balizas a zero.**
+
+**E mesmo assim não se mexeu no onze**, porque a medição de decisões o desaconselha. 63 onzes
+reais (7 gestores × 9 jornadas), com o `melhorXI` verdadeiro:
+
+- **Aplicar o `fatorCalendario` ao onze — o remédio óbvio — é pior do que não fazer nada**
+  (+0.0070 pts/jornada, P(pior) = 0.75). Das 14 mudanças que provoca, **5 pioram o onze**: o
+  fator multiplica a projeção **inteira**, logo dá a um defesa do Liverpool com dificuldade 3 um
+  bónus de +0.000 quando o efeito real dele é **−0.262**.
+- O ajuste bem feito é significativamente melhor do que nada (+0.0100, P=0.998) mas vale
+  **0.9 pontos numa época inteira**. A margem entre o melhor onze legal e o segundo é mediana
+  **0.436**, e o efeito por jogador é ±0.2 a ±0.3 — o mesmo argumento que já vale para o seletor
+  de janela.
+- Nos waivers, um fator medido em vez do actual muda 2 nomes nos GR, 1 nos MED e **zero** em DEF
+  e AV.
+
+**Uma compensação que a hipótese não previa**: ~40% do castigo de um guarda-redes volta em
+defesas (19 GR com 900+ min, R² 0.62: cada +1 no xGC90 dá +1.384 defesas/90). O Leno em Anfield
+perde 0.17 na baliza a zero e recupera 0.09 em defesas. Nos defesas de campo não há equivalente
+(R² 0.03) — por isso a compensação só aparece para GR.
+
+**O que se fez em vez disso: o ecrã.** `efeitoAdversario()` mostra no tooltip dos GR e defesas a
+baliza a zero do **próximo jogo**, com a compensação das defesas junto e a dizer explicitamente
+que **não está na projeção**. Os multiplicadores por grau de dificuldade saem da mesma medição
+(dif 2 → ×0.851, 3 → ×1.000, 4 → ×1.134, 5 → ×1.371; r = +0.78 contra a força atacante
+calculada a sério, com o casa/fora embutido — a dificuldade 2 é 74% em casa e a 5 nunca é).
+
+Sem isto o ecrã afirmava o que os seus próprios dados desmentem: o Leno em Anfield e o Martinez
+a receber o Hull apareciam com a mesma baliza a zero (1.085 contra 1.113).
+
+### Os minutos: **é aqui que o modelo estava factualmente errado**
+
+Prever a J3 a partir das J1-J2, 655 jogadores, com porta clínica contemporânea:
+
+| padrão em J1-J2 | N | viés (previsto − real) |
+|---|---|---|
+| sempre titular | 172 | −7.6 min |
+| **ganhou o lugar (0,1)** | **37** | **−23.7 min** |
+| **perdeu o lugar (1,0)** | **38** | **+19.1 min** |
+| nunca titular | 408 | +9.2 min |
+
+O número que fecha a questão: **P(ser titular na J3) é 86.6% depois de (1,1) e 86.5% depois de
+(0,1)** — iguais. A diferença real de minutos é **+4.5 [−3.4, +12.4]** e o modelo assumia
+**+20.6**, fora do intervalo. Depois de uma titularidade, o zero anterior não diz nada.
+
+`minutosQueContam()` desconta os zeros **anteriores a uma sequência ininterrupta de
+titularidades** (limiar de 60 minutos, o mesmo dos pontos de presença). Detalhes que a medição
+obrigou:
+
+- **A versão estreita não serve.** "Descontar o zero quando o concorrente não voltou a jogar"
+  cobre 7 dos 37 casos, e esses 7 não se comportam diferente dos outros 30. A regra que funciona
+  é a larga: uma vez que ele começou, os zeros de antes deixam de contar, seja qual for o motivo.
+- **Só nesta direção.** Reagir a um zero *recente* corrige o viés de +19.1 para +13.0 mas
+  **piora o onze**: um zero recente é ambíguo (lesão, castigo, despromoção); um zero antes de uma
+  titularidade já não é.
+- **A alternativa mais principiada é a única que piora.** Separar P(titular) de
+  minutos-quando-titular perde mais em ruído do que ganha em estrutura (−6.7% no erro).
+- **Guarda-redes**: nas 3 jornadas houve **60 aparições de GR e as 60 foram 90 minutos exactos**.
+  Um `xmin` de 62 não corresponde a nada em campo. Mas o grupo de GR que mudou de estatuto tem
+  **N=2** — a regra específica para GR **não é mensurável** e não se fez.
+- **`ultimos` fica inteiro**; só a média é que ignora os zeros. O `naoUsado` e o ecrã continuam a
+  ver o que aconteceu mesmo.
+
+**A armadilha do erro médio absoluto.** A variante com maior ganho aparente (36.6%, baixando o
+peso do histórico de `n/(n+2)` para `n/(n+0.3)`) **é ruído**: o MAE premia quem prevê a mediana,
+e os minutos são bimodais em 0 e 90. Em erro quadrático cai para 18%, em pontos para **0.2%**, e
+entre jornadas o parâmetro é não-monótono (k=0.3 dá +0.10 na J2, k=1.5 dá −0.22). **Não se mexeu
+no `n/(n+2)`.**
+
+**O limite honesto**: o valor da correção em pontos é **+0.36 ± 0.38 pts/jornada** e **um único
+jogador carrega 95% disso**. Justifica-se pelo viés dos minutos, que está medido e é grande, e
+**não** por um ganho em pontos, que não está. Seriam precisas ~14 jornadas para o erro-padrão
+descer a ±0.10 — por volta da **J17**, que é quando isto se deve remedir.
+
+Efeito real: 17 jogadores em toda a liga mudam de `xmin`. O Martinez passa de 61.9 para **78.8**
+minutos e de 2.83 para **3.61** pts/jornada, ultrapassando o Leno — que era a decisão que
+motivou a pergunta.
+
 ## Decidido, e porquê não (consolidado)
 
 As decisões contra alguma coisa estavam espalhadas por mil linhas, e a consequência era
@@ -1345,6 +1451,9 @@ não uma intuição.
 | **Janela de calendário de 3 jornadas** | 10% de amplitude inverte diferenças de qualidade; 10 jornadas matam o sinal (2.4%). Ficaram **5 com decaimento**. |
 | **Heurística para as trocas 3-por-3** | Desnecessária: 119 130 combinações em ~200 ms. O exaustivo chega. |
 | **Tabela de pontuação escrita à mão** | Deu **dois erros de facto** (golo de GR a 6 em vez de 10; castigo por golos sofridos em falta). Lê-se de `settings.scoring`. |
+| **Ordenar o onze pelo adversário** | Medido em 63 onzes reais: o `ppjCal` é **pior** do que não fazer nada (P=0.75), com 5 de 14 mudanças a piorar; o ajuste bem feito vale **0.9 pontos numa época**. A margem entre o melhor onze e o segundo é 0.436 e o efeito por jogador é ±0.2-0.3. O efeito do adversário **existe** (o modelo extrai 19% do sinal) mas vive no **tooltip**, não na projeção. |
+| **Baixar o peso do histórico nos minutos** (`n/(n+2)` → `n/(n+0.3)`) | Ganho aparente de 36.6% em erro médio absoluto que é **artefacto**: o MAE premia a mediana e os minutos são bimodais. Em erro quadrático cai para 18%, em pontos para 0.2%, e o parâmetro é não-monótono entre jornadas. |
+| **Regra de minutos específica para guarda-redes** | As 60 aparições de GR nas 3 jornadas foram todas de 90 minutos exactos, mas o grupo que mudou de estatuto tem **N=2**. Não é mensurável; o caso geral já o cobre. |
 
 *Nota sobre o win-win nas trocas*: medi zero em 119 130 combinações e escrevi que era estrutural.
 Dias depois, com os planteis mudados, passou a disparar. A conclusão certa é "é raro", não
