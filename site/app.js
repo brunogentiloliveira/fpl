@@ -1483,7 +1483,12 @@ function sugestoesTrocas(meusX, euEntry) {
 
 function chipJogador(x) {
   const est = estadoDe(x.p);
-  return '<span class="chip">' +
+  // A aresta esquerda do cartão leva o estado: verde apto, dourado dúvida,
+  // coral fora. É a mesma linguagem de cor do resto da app, aplicada no
+  // único sítio que já é uma folha de equipa — sem ela os onze cartões eram
+  // idênticos e o relvado não respondia à pergunta "o que exige acção hoje".
+  const sev = est.sev ? " sev-" + est.sev : "";
+  return '<span class="chip' + sev + '" title="' + esc(est.rotulo) + '">' +
     '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
     '<span class="chip-info">' + nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + "</span>" +
     (est.sev ? '<span class="estado ' + est.sev + '">!</span>' : "") +
@@ -1497,8 +1502,15 @@ function desenharOnze(meusX) {
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppj - a.pr.ppj));
 
   const total = xi.reduce((s, x) => s + x.pr.ppj, 0);
-  $("xi-resumo").textContent = porPos[2].length + "-" + porPos[3].length + "-" +
-    porPos[4].length + " · ≈ " + total.toFixed(1) + " pts nesta jornada";
+  // O total é o número que o ecrã inteiro calcula e estava em cinzento, a
+  // reboque do título, com a mesma altura de maiúscula que um rótulo de
+  // separador. Passa a ser a coisa maior da secção: é só peso, tamanho e
+  // tracking — exactamente o que a tese diz que tem de carregar a identidade,
+  // e o que não estava a ser usado em lado nenhum.
+  $("xi-resumo").innerHTML =
+    '<span class="xi-total">' + total.toFixed(1) + "</span>" +
+    '<span class="xi-total-rot">pts nesta jornada<br>' +
+    porPos[2].length + "-" + porPos[3].length + "-" + porPos[4].length + "</span>";
   $("xi-campo").innerHTML = [1, 2, 3, 4]
     .map((pos) => '<div class="linha-campo">' + porPos[pos].map(chipJogador).join("") + "</div>")
     .join("");
@@ -4189,13 +4201,41 @@ const CAL_DIF_ROTULOS = { 2: "fácil", 3: "neutro", 4: "difícil", 5: "muito dif
 /** A legenda só lista o que está mesmo no horizonte mostrado — senão aparecem
  *  cores/marcadores sem explicação, ou explicações para cores que não
  *  aparecem (a dificuldade 1 nunca ocorre nos 380 jogos da época). */
+/**
+ * A legenda leva a **amostra real** antes de cada rótulo.
+ *
+ * Antes era uma frase corrida — "dificuldade 2 (fácil) · dificuldade 3
+ * (neutro) · … · Europa / taças" — a explicar por palavras uma grelha que usa
+ * quatro preenchimentos, duas formas e três letras soltas. Quem não soubesse
+ * já o código não o aprendia dali: uma sequência como `3 Ⓒ2 4 Ⓛ5` continuava
+ * ilegível. Mostrar o marcador é a única forma de uma legenda ensinar a ler.
+ */
+/**
+ * A letra de cada prova no marcador.
+ *
+ * Era a primeira letra do nome, e **Champions League e Conference League dão
+ * as duas "C"** — duas provas diferentes com o mesmo símbolo numa grelha que
+ * não tinha legenda para as separar. O defeito estava lá desde que o separador
+ * nasceu e só apareceu quando a legenda passou a mostrar as amostras a sério.
+ */
+const CAL_LETRA = { UCL: "C", UEL: "E", UECL: "F", LC: "T", FAC: "I", SUP: "S", OUT: "?" };
+const letraProva = (comp) => CAL_LETRA[comp] || (comp || "?")[0];
+
 function legendaCalendario(jogos, trocos) {
   const itens = [];
   const difs = new Set(jogos.filter((j) => j.comp === "PL").map((j) => j.dif));
-  [2, 3, 4, 5].filter((d) => difs.has(d)).forEach((d) =>
-    itens.push("dificuldade " + d + " (" + CAL_DIF_ROTULOS[d] + ")"));
-  if (jogos.some((j) => j.comp !== "PL")) itens.push("Europa / taças");
-  if (trocos.length) itens.push("calendário apertado (3+ jogos em 8 dias)");
+  [2, 3, 4, 5].filter((d) => difs.has(d)).forEach((d) => itens.push(
+    '<span class="cal-leg"><span class="cal-jogo d' + d + '">' + d + "</span>" +
+    CAL_DIF_ROTULOS[d] + "</span>"));
+  // Uma amostra por prova presente, com a letra que a grelha usa de facto.
+  const provas = [...new Set(jogos.filter((j) => j.comp !== "PL").map((j) => j.comp))];
+  provas.forEach((comp) => itens.push(
+    '<span class="cal-leg"><span class="cal-jogo fora-pl">' +
+    esc(letraProva(comp)) + "</span>" +
+    esc((C.competicoes || {})[comp] || comp) + "</span>"));
+  if (trocos.length) itens.push(
+    '<span class="cal-leg"><span class="cal-leg-troco"></span>' +
+    "3+ jogos em 8 dias</span>");
   return itens;
 }
 
@@ -4335,7 +4375,7 @@ function desenharCalendario() {
       // Texto lá dentro: as classes de cor sozinhas dão 1.14:1 de contraste.
       // O aria-label leva a frase toda — sem ele um leitor de ecrã só ouvia
       // o dígito ou a letra, sem clube, adversário nem data.
-      (j.comp === "PL" ? j.dif : C.competicoes[j.comp][0]) + "</button>").join("");
+      (j.comp === "PL" ? j.dif : letraProva(j.comp)) + "</button>").join("");
     linhasGrafico.push('<div class="cal-linha"><span class="cal-rotulo">' +
       '<span class="cal-clube">' + esc(clube.curto) + "</span>" +
       '<span class="cal-num" title="' + resumo.meus + ' jogador(es) meu(s) neste clube">' +
@@ -4420,7 +4460,7 @@ function desenharCalendario() {
   // --- Legenda: só o que está mesmo no horizonte mostrado ---
   if (legenda) {
     const itens = legendaCalendario(todosJogos, todosTrocos);
-    legenda.textContent = itens.length ? "Legenda: " + itens.join(" · ") + "." : "";
+    legenda.innerHTML = itens.length ? itens.join("") : "";
   }
   if (nota) nota.textContent = notaDificuldade(difsMostradas);
 }
