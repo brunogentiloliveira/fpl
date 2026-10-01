@@ -43,11 +43,17 @@ apresentação.
 
 ## Cor
 
-`--fundo #12171a` · `--painel #1b2420` · `--painel-2 #232f28` · `--borda #2c362f`
-`--texto #f4f1e8` · `--texto-2 #99a397`
+`--fundo #121a16` (matiz 150°; esteve a 203°, azul, até à ronda 1) · `--painel #26332d` ·
+`--painel-2 #32443a` · `--borda #425448` · `--texto #f4f1e8` · `--texto-2 #99a397`
+Relvado: `--relva #3b5d4c` · `--relva-clara #4c7762` · cartões `--chip #141f1a`.
 **Acentos com significado**: `--acento #3ecf82` (relva/disponível) · `--aviso #e8b23f` (ouro do
 Hall of Fame/a vigiar) · `--perigo #ef6b57` (coral/fora) · `--foco #6fb8ff` (só o anel de foco,
 fora da paleta de propósito para se destacar).
+
+**Uma exceção assumida**: a dificuldade do adversário usa verde (fácil) e coral (difícil), que é
+a convenção de qualquer tabela de jogos de fantasy. O dourado nunca entra na escala de
+dificuldade — é só "a vigiar" (dúvidas, calendário apertado). Informação sem juízo (valor de uma
+transferência, cargo de bola parada, lugar na tabela) leva o distintivo neutro `.estado.info`.
 
 ## Tipografia
 

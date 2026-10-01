@@ -1195,6 +1195,31 @@ ficheiro com **20 jogos em vez de 865**, sem erro nenhum e com aspeto normal. Um
 fundido. Os testes que precisam de escrever devem apontar para um directório temporário, ou trocar
 a constante `OUT` em memória — nunca para o caminho real.
 
+### O eixo passou a ser por jornada (2026-10-02)
+
+A linha do tempo à escala tinha um defeito que nenhuma cor resolvia. Mapeava 84 dias em 544px,
+ou seja 6.5px por dia, e um marcador de 19px ocupava ~3 dias. O jogo europeu de terça e o da
+liga de sábado, que são precisamente o par que o separador existe para mostrar,
+sobrepunham-se. Passou a **uma coluna por jornada** (`limitesJornadas`, `jogosPorColuna`,
+`pausaAntes`):
+
+- Os jogos da PL vão para a sua jornada, pelo `event` da FPL, que já trata dos adiamentos. Os
+  outros vão para a jornada **seguinte** a eles: um jogo europeu de terça pesa em quem joga no
+  sábado.
+- Os limites de cada jornada saem do primeiro e do último pontapé de saída, sem contar os jogos
+  a mais de 4 dias da mediana. Assim um jogo adiado não arrasta a fronteira. Medido: nenhuma
+  das 38 jornadas tem jogos fora dessa folga.
+- Os jogos da PL **já jogados** da jornada a decorrer ficam, esbatidos. Sem eles, um clube que
+  jogou na sexta parecia não ter jogo.
+- Cada célula tem duas casas fixas, a da Europa/taças e a da liga. O marcador da liga fica na
+  mesma posição em toda a coluna.
+- O marcador da PL leva o adversário, pintado pela dificuldade. A paragem para as seleções é
+  uma coluna estreita.
+
+A grelha de 12 jornadas pedia ~950px, e por isso a largura da app passou de 58rem a **63rem
+em todos os separadores**. Alargar só o Calendário fazia o conteúdo saltar 40px ao mudar de
+separador.
+
 ## Fase 2 das melhorias: medir as constantes (2026-09-01)
 
 Fase de **medição**, não de alteração — o resultado podia perfeitamente ser "fica como está", e

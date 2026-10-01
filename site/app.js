@@ -86,7 +86,7 @@ function initCabecalho() {
     const resta = alvo - Date.now();
     if (resta <= 0) {
       el.textContent = "Deadline da " + D.next_event.name + " já passou";
-      el.classList.remove("urgente");
+      el.classList.remove("urgente", "alerta");
       return;
     }
     const s = Math.floor(resta / 1000);
@@ -98,6 +98,9 @@ function initCabecalho() {
       ? d + "d " + h + "h " + m + "m"
       : h + "h " + m + "m " + String(seg).padStart(2, "0") + "s";
     el.textContent = D.next_event.name + ": " + fmtDataHora.format(alvo) + " · falta " + partes;
+    // Neutro enquanto há tempo: era verde, e o verde quer dizer "disponível".
+    // Dourado ("a vigiar") no último dia, coral nas últimas 3 horas.
+    el.classList.toggle("alerta", resta < 24 * 3600 * 1000 && resta >= 3 * 3600 * 1000);
     el.classList.toggle("urgente", resta < 3 * 3600 * 1000);
     setTimeout(tique, 1000);
   }
@@ -342,14 +345,19 @@ function desenharJogadores() {
       ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>"
       : "";
     const tr = (D.transferencias || {})[p.id];
-    const dinheiro = tr && tr.confirmada
-      ? ' <span class="estado ok">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
+    // Neutro e não verde: o verde quer dizer "disponível", e um valor de
+    // transferência não diz nada sobre se o jogador joga ou não.
+    const dinheiro = tr && tr.confirmada && tr.valor > 0
+      ? ' <span class="estado info">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
     return "<tr>" +
       "<td>" + esc(p.web_name) + marca + dinheiro +
         '<span class="sub">' + nomeClube(p.team) +
           (p.draft_rank ? " · #" + p.draft_rank : "") + "</span></td>" +
       "<td>" + (POSICOES[p.element_type] || "?") + "</td>" +
-      '<td class="num">' + p.total_points + "</td>" +
+      // O total já feito recua e a projeção avança: era ao contrário (o total
+      // a 15.7:1 em creme, a projeção a 9.7:1 em verde), e o número que serve
+      // para decidir era o mais apagado da linha.
+      '<td class="num atras">' + p.total_points + "</td>" +
       '<td class="num forte">' + projecao(p).ppj.toFixed(1) + "</td>" +
       "<td>" + (ehClassica()
         ? (p.now_cost ? precoDe(p).toFixed(1) + "M" +
@@ -1111,7 +1119,10 @@ function decomporPP90(c, extra, adv) {
 function linhaProjecao(p, pr) {
   const est = estadoDe(p);
   const badges =
-    (pr.tr ? '<span class="estado ' + (pr.tr.confirmada ? "ok" : "warn") + '">' +
+    // Sem valor publicado (a fonte oficial confirma mudanças sem dizer o preço)
+    // o distintivo dizia "0M" — 49 jogadores com um número que não quer dizer nada.
+    (pr.tr && pr.tr.valor > 0
+      ? '<span class="estado ' + (pr.tr.confirmada ? "info" : "warn") + '">' +
       esc(pr.tr.moeda) + pr.tr.valor + "M" + (pr.tr.confirmada ? "" : "?") +
       (pr.bump ? " +" + pr.bump + "min" : "") + "</span>" : "") +
     (est.sev ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>" : "");
@@ -1125,7 +1136,7 @@ function linhaProjecao(p, pr) {
   const recentes = minutosRecentes(pr);
   const cargos = etiquetaBolaParada(p);
   const badgeBP = cargos
-    ? ' <span class="estado ok" title="Bola parada: P penáltis, LL livres, C cantos (número = ordem)">' +
+    ? ' <span class="estado info" title="Bola parada: P penáltis, LL livres, C cantos (número = ordem)">' +
       cargos + "</span>" : "";
   return "<tr>" +
     "<td>" + esc(p.web_name) + badges + badgeBP +
@@ -1240,10 +1251,17 @@ function desenharProximosJogos(meusX) {
       ? "o próximo é daqui a " + horas + (horas === 1 ? " hora" : " horas")
       : "o próximo é " + fmtDiaHora.format(primeira.kickoff);
 
-  let diaAtual = "";
+  // A jornada vai no cabeçalho do dia, uma vez, e não em cada linha: num dia
+  // são quase sempre todos da mesma. Só se repete na linha que for de outra.
+  let diaAtual = "", jornadaDoDia = null;
   alvo.innerHTML = partidas.map((m) => {
     const dia = fmtDiaHora.format(m.kickoff);
-    const cabecalho = dia !== diaAtual ? (diaAtual = dia, '<h4 class="dia">' + dia + "</h4>") : "";
+    let cabecalho = "";
+    if (dia !== diaAtual) {
+      diaAtual = dia;
+      jornadaDoDia = m.evento;
+      cabecalho = '<h4 class="dia">' + dia + " · jornada " + m.evento + "</h4>";
+    }
     const jogadores = m.jogadores
       .sort((a, b) => b.pr.ppj - a.pr.ppj)
       .map((x) => {
@@ -1251,9 +1269,7 @@ function desenharProximosJogos(meusX) {
         const ffs = ffsDe(x.p);
         const fora = indisponivel(x.p) || (ffs && ffs.estado === "fora");
         return '<span class="chip">' +
-          '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
-          '<span class="chip-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
-            x.pr.ppj.toFixed(1) + " pts</span>" +
+          mioloChip(x.p, POSICOES[x.p.element_type] || "?", x.pr.ppj) +
           (fora ? '<span class="estado bad">fora</span>'
                 : est.sev === "warn" ? '<span class="estado warn">dúvida</span>' : "") +
         "</span>";
@@ -1264,8 +1280,11 @@ function desenharProximosJogos(meusX) {
         '<div class="jogo-linha">' +
           '<span class="hora">' + fmtHora.format(m.kickoff) + "</span>" +
           '<span class="equipas">' + nomeClube(m.casa) + " – " + nomeClube(m.fora) + "</span>" +
-          '<span class="fx d' + m.dificuldade + '">dif. ' + m.dificuldade + "</span>" +
-          '<span class="gw">GW' + m.evento + "</span>" +
+          // Só a dificuldade que se afasta do neutro. Um "dif. 3" em quase
+          // todas as linhas era ruído que ensinava o olho a saltar a etiqueta.
+          (m.dificuldade !== 3
+            ? '<span class="fx d' + m.dificuldade + '">dif. ' + m.dificuldade + "</span>" : "") +
+          (m.evento !== jornadaDoDia ? '<span class="gw">jornada ' + m.evento + "</span>" : "") +
         "</div>" +
         '<div class="linha-campo jogo-jogadores">' + jogadores + "</div>" +
       "</div>";
@@ -1481,16 +1500,31 @@ function sugestoesTrocas(meusX, euEntry) {
 
 /* --- Onze inicial --- */
 
+/** O miolo de um cartão de jogador, igual no relvado, no banco e nos Próximos
+ *  jogos. Eram duas gramáticas para o mesmo dado — "LEE · 3.6" no relvado e
+ *  "DEF · 3.6 pts" ao lado — e a projeção, que é o número por que se decide,
+ *  ia em letra de legenda. Agora é o mais forte da linha de baixo; o clube ou
+ *  a posição fica a acompanhar. */
+function mioloChip(p, sub, ppj) {
+  // Nomes compridos descem um ponto e, se mesmo assim não couberem, partem no
+  // meio com hífen ("Branth-waite") em vez de onde calhar: saía "Branthwai/te"
+  // a 390px, sem hífen nenhum a dizer que a palavra continuava.
+  const nome = p.web_name.split(" ").map((w) => (w.length >= 9
+    ? w.slice(0, Math.ceil(w.length / 2)) + "\u00AD" + w.slice(Math.ceil(w.length / 2)) : w)).join(" ");
+  return '<span class="chip-nome' + (p.web_name.length >= 10 ? " longo" : "") + '">' +
+    esc(nome) + "</span>" +
+    '<span class="chip-info"><span class="chip-sub">' + esc(sub) + "</span> " +
+    '<span class="chip-ppj">' + ppj.toFixed(1) + "</span></span>";
+}
+
 function chipJogador(x) {
   const est = estadoDe(x.p);
-  // A aresta esquerda do cartão leva o estado: verde apto, dourado dúvida,
-  // coral fora. É a mesma linguagem de cor do resto da app, aplicada no
-  // único sítio que já é uma folha de equipa — sem ela os onze cartões eram
-  // idênticos e o relvado não respondia à pergunta "o que exige acção hoje".
+  // A aresta esquerda do cartão marca só a excepção: dourado dúvida, coral
+  // fora. Apto não leva marca — com o normal em silêncio, uma aresta no meio
+  // de onze cartões limpos é impossível de não ver.
   const sev = est.sev ? " sev-" + est.sev : "";
   return '<span class="chip' + sev + '" title="' + esc(est.rotulo) + '">' +
-    '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
-    '<span class="chip-info">' + nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + "</span>" +
+    mioloChip(x.p, nomeClube(x.p.team), x.pr.ppj) +
     (est.sev ? '<span class="estado ' + est.sev + '">!</span>' : "") +
   "</span>";
 }
@@ -1509,16 +1543,22 @@ function desenharOnze(meusX) {
   // e o que não estava a ser usado em lado nenhum.
   $("xi-resumo").innerHTML =
     '<span class="xi-total">' + total.toFixed(1) + "</span>" +
-    '<span class="xi-total-rot">pts nesta jornada<br>' +
+    // A formação ia por baixo de "PTS NESTA JORNADA", na mesma letra, e lia-se
+    // como uma unidade dos pontos. Fica à parte, como numa folha de equipa.
+    '<span class="xi-total-rot">pts nesta jornada</span>' +
+    '<span class="xi-formacao">' +
     porPos[2].length + "-" + porPos[3].length + "-" + porPos[4].length + "</span>";
   $("xi-campo").innerHTML = [1, 2, 3, 4]
     .map((pos) => '<div class="linha-campo">' + porPos[pos].map(chipJogador).join("") + "</div>")
     .join("");
 
+  // O banco em cartões, como o onze, e não numa frase corrida com "·" a dois
+  // níveis ("Guiu (AV · 1.3) · …"). De caminho passa a mostrar a marca de
+  // quem está lesionado ou em dúvida, que a frase não mostrava.
   const banco = meusX.filter((x) => !xi.includes(x)).sort((a, b) => b.pr.ppj - a.pr.ppj);
-  $("xi-banco").innerHTML = "<strong>Suplentes:</strong> " + banco.map((x) =>
-    esc(x.p.web_name) + " (" + (POSICOES[x.p.element_type] || "?") + " · " +
-    x.pr.ppj.toFixed(1) + ")").join(" · ");
+  $("xi-banco").innerHTML = banco.length
+    ? '<span class="banco-rot">Suplentes</span>' + banco.map(chipJogador).join("")
+    : "";
 }
 
 /* --- Justificações em linguagem corrente --- */
@@ -1829,6 +1869,9 @@ function initDiagnostico() {
   const cal = (typeof C !== "undefined" && C) ? C : null;
   const fontes = (D.diagnostico || []).concat((cal && cal.diagnostico) || []);
   if (fontes.length) {
+    // As que falharam à frente: no fim de uma lista de vinte, um ✗ perdia-se
+    // no meio dos vistos, e é o único item da lista que pede alguma coisa.
+    fontes.sort((a, b) => Number(!!a.ok) - Number(!!b.ok));
     $("estado-fontes").innerHTML = "Fontes: " + fontes.map((f) =>
       '<span class="fonte ' + (f.ok ? "ok" : "falhou") + '" title="' + esc(f.detalhe) + '">' +
       (f.ok ? "✓ " : "✗ ") + esc(f.fonte) + "</span>").join(" · ");
@@ -1845,11 +1888,20 @@ function initDiagnostico() {
   const passouDeadline = deadline && Date.now() > deadline && gerado < deadline;
   if (!passouDeadline && horas < 12) return;
 
-  $("aviso-velho").innerHTML = passouDeadline
-    ? "⚠ Estes dados foram recolhidos antes do deadline da " + esc(D.next_event.name) +
-      ", que já passou. Corre o <strong>atualizar.cmd</strong> para veres a jornada atual."
-    : "⚠ Dados com " + Math.round(horas) + " horas. Corre o <strong>atualizar.cmd</strong> " +
-      "para atualizar lesões, notícias e escolhas da liga.";
+  // Dados só velhos não pedem uma faixa a toda a largura: a faixa dizia o mesmo
+  // que o "Atualizado: 1/10, 22:11" quarenta píxeis acima, e era a coisa mais
+  // forte do ecrã sem ser uma decisão. Fica a idade, a dourado, ao lado da
+  // hora. A faixa guarda-se para o caso que muda decisões: o deadline passou e
+  // as escolhas da liga já não são as destes dados.
+  if (!passouDeadline) {
+    $("atualizado").insertAdjacentHTML("beforeend",
+      ' <span class="velho" title="Corre o atualizar.cmd para atualizar lesões, notícias e ' +
+      'escolhas da liga.">· há ' + Math.round(horas) + " h</span>");
+    return;
+  }
+  $("aviso-velho").innerHTML =
+    "Estes dados foram recolhidos antes do deadline da " + esc(D.next_event.name) +
+    ", que já passou. Corre o <strong>atualizar.cmd</strong> para veres a jornada atual.";
   $("aviso-velho").hidden = false;
 }
 
@@ -2086,7 +2138,7 @@ function initEquipasClassica() {
       "<summary>" +
         '<span class="nome">' + esc(p.nome) + (p.entry === eu ? " ★" : "") + "</span>" +
         '<span class="clube">' + esc(p.gestor) + " · " + (p.total ?? 0) + " pts</span>" +
-        '<span class="badges"><span class="estado ok">' + (p.rank ?? "–") + "º</span></span>" +
+        '<span class="badges"><span class="estado info">' + (p.rank ?? "–") + "º</span></span>" +
       "</summary>" +
       '<div class="corpo">' + (corpo || '<p class="nota">Sem escolhas nesta jornada.</p>') +
       "</div></details>";
@@ -2569,9 +2621,8 @@ function desenharPlaneadorWC() {
     (((D.regras || {}).squad || {}).total_spend / 10 || 100).toFixed(1) + "M";
 
   const chip = (x, novo) => '<span class="chip' + (novo ? " chip-novo" : "") + '">' +
-    '<span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
-    '<span class="chip-info">' + nomeClube(x.p.team) + " · " +
-      precoDe(x.p).toFixed(1) + "M · " + x.pr.ppjCal.toFixed(1) + "</span></span>";
+    mioloChip(x.p, nomeClube(x.p.team) + " · " + precoDe(x.p).toFixed(1) + "M", x.pr.ppjCal) +
+    "</span>";
 
   // Insistir em jogadores caros pode empurrar um deles para o banco: aí o
   // dinheiro fica parado, e isso não se vê olhando só para o onze.
@@ -2904,9 +2955,9 @@ function chipsPorPosicao(lista) {
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppjCal - a.pr.ppjCal));
   return [1, 2, 3, 4].map((pos) =>
     '<div class="linha-campo">' + porPos[pos].map((x) =>
-      '<span class="chip"><span class="chip-nome">' + esc(x.p.web_name) + "</span>" +
-      '<span class="chip-info">' + nomeClube(x.p.team) + " · " + precoDe(x.p).toFixed(1) + "M</span>" +
-      '<span class="chip-info">' + x.pr.ppjCal.toFixed(1) + " pts</span></span>").join("") +
+      '<span class="chip">' +
+      mioloChip(x.p, nomeClube(x.p.team) + " · " + precoDe(x.p).toFixed(1) + "M", x.pr.ppjCal) +
+      "</span>").join("") +
     "</div>").join("");
 }
 
@@ -3070,7 +3121,7 @@ function linhaEscolha(x) {
   const cargos = etiquetaBolaParada(x.p);
   return '<label class="escolha"><input type="checkbox" value="' + x.p.id + '">' +
     '<span class="escolha-nome">' + esc(x.p.web_name) + "</span>" +
-    (cargos ? ' <span class="estado ok" title="Bola parada: P penáltis, LL livres, C cantos">' +
+    (cargos ? ' <span class="estado info" title="Bola parada: P penáltis, LL livres, C cantos">' +
       cargos + "</span>" : "") +
     '<span class="escolha-info">' + (POSICOES[x.p.element_type] || "?") + " · " +
       nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + " pts/J</span>" +
@@ -3570,9 +3621,8 @@ function desenharJornada() {
   document.querySelector("#tabela-jornada tbody").innerHTML = estado.linhas.map((l) => {
     const meu = eu && l.entrada.id === eu.id;
     const quem = l.faltam.length === 0 ? ""
-      : l.faltam.map((x) => '<span class="chip"><span class="chip-nome">' +
-          esc(x.p.web_name) + '</span><span class="chip-info">' +
-          nomeClube(x.p.team) + " · " + x.pr.ppj.toFixed(1) + "</span></span>").join("");
+      : l.faltam.map((x) => '<span class="chip">' +
+          mioloChip(x.p, nomeClube(x.p.team), x.pr.ppj) + "</span>").join("");
     // Os nomes vão por baixo da equipa, e não numa coluna própria: numa coluna
     // desapareceriam no telemóvel, que é onde isto mais se olha.
     return '<tr class="' + (meu ? "eu" : "") + '">' +
@@ -3930,11 +3980,6 @@ function trocosApertados(jogos) {
   return trocos;
 }
 
-// px por semana da faixa do gráfico — só entra em jogo a partir de 40rem,
-// onde há sempre largura de sobra; abaixo disso usa-se a lista por clube
-// (Tarefa 9), não este valor.
-const CAL_PX_SEMANA = 42;
-
 /**
  * Os jogos de um clube dentro do horizonte, já em milissegundos.
  *
@@ -4140,31 +4185,93 @@ function clubesRecusados() {
   }));
 }
 
-// Um intervalo normal entre jornadas é ~7 dias; 10+ dias sem jogo nenhum, de
-// nenhum dos 20 clubes, só acontece na paragem para as seleções.
+/* --- Uma coluna por jornada, não um eixo contínuo ---
+ *
+ * O gráfico era uma linha do tempo à escala: 84 dias em 544px dão 6.5px por
+ * dia, e um marcador tem 19px, ou seja ~3 dias. Um jogo europeu de terça e o
+ * da liga de sábado — exactamente o par que o separador existe para mostrar —
+ * sobrepunham-se e tapavam os algarismos um do outro. Nenhum ajuste de cor
+ * resolvia isto: o eixo é que estava errado. Por jornada, cada célula leva os
+ * jogos com que o clube chega a essa jornada, lado a lado e sem colisões. */
+
+// Um intervalo normal entre jornadas é ~7 dias; 10+ dias sem jogo da PL só
+// acontece na paragem para as seleções.
 const CAL_LIMIAR_PAUSA_DIAS = 10;
 
-/** {inicio, fim} do maior intervalo sem jogo nenhum (de nenhum clube) dentro
- *  do horizonte, ou null se não houver — a paragem para as seleções. Sem
- *  isto o gráfico fica com uma faixa em branco que parece avaria.
- *
- *  `inicio`/`fim` são o primeiro e o último dia SEM jogo nenhum — não os
- *  dias dos jogos que rodeiam a pausa. Devolver esses (como uma versão
- *  anterior fazia) produzia texto que se contradizia: "sem jogos entre
- *  20/09 e 10/10" quando havia 8 jogos precisamente a 20/09. */
-function pausaSeleccoes(ate) {
-  const dias = new Set();
-  Object.values((C || {}).clubes || {}).forEach((clube) => {
-    jogosNoHorizonte(clube, ate).forEach((j) => dias.add(Math.floor(j.t / 864e5)));
+// Jogos a mais de 4 dias da mediana da sua jornada não lhe marcam os limites:
+// um jogo adiado para meio da época arrastaria a fronteira consigo. Medido a
+// 2026-10-02: nenhuma das 38 jornadas tem jogos fora desta folga, mas a FPL
+// reagenda jogos durante a época.
+const CAL_JORNADA_FOLGA_DIAS = 4;
+
+/** {jornada: {inicio, fim}} — primeiro e último pontapé de saída da PL em
+ *  cada jornada, sem os jogos adiados (ver CAL_JORNADA_FOLGA_DIAS). */
+function limitesJornadas() {
+  const por = {};
+  Object.values((C || {}).clubes || {}).forEach((clube) =>
+    (clube.jogos || []).forEach((j) => {
+      const t = Date.parse(j.data);
+      if (j.comp !== "PL" || j.jornada == null || isNaN(t)) return;
+      (por[j.jornada] = por[j.jornada] || []).push(t);
+    }));
+  const lim = {};
+  Object.keys(por).forEach((n) => {
+    const ts = por[n].sort((a, b) => a - b);
+    const med = ts[Math.floor(ts.length / 2)];
+    const dentro = ts.filter((t) => Math.abs(t - med) <= CAL_JORNADA_FOLGA_DIAS * 864e5);
+    lim[n] = { inicio: dentro[0], fim: dentro[dentro.length - 1] };
   });
-  const ordenados = [...dias].sort((a, b) => a - b);
-  for (let i = 1; i < ordenados.length; i += 1) {
-    const gap = ordenados[i] - ordenados[i - 1];
-    if (gap >= CAL_LIMIAR_PAUSA_DIAS) {
-      return { inicio: (ordenados[i - 1] + 1) * 864e5, fim: (ordenados[i] - 1) * 864e5 };
+  return lim;
+}
+
+/** As jornadas que o horizonte mostra — uma coluna cada. */
+function colunasCalendario() {
+  const jornadas = jornadasFuturas();
+  const h = horizonteAtual();
+  return h === "resto" ? jornadas : jornadas.slice(0, Number(h));
+}
+
+/**
+ * Os jogos de um clube repartidos pelas colunas: {jornada: [jogos]}.
+ *
+ * Os da PL vão para a sua jornada — é o `event` da FPL, que já trata dos
+ * adiamentos. Os outros vão para a jornada **seguinte** a eles: um jogo
+ * europeu de terça pesa em quem chega ao fim de semana com ele nas pernas,
+ * que é a pergunta da rotação. Os da PL já jogados ficam, marcados como
+ * `passado`: sem eles, um clube que jogou na sexta parecia não ter jogo na
+ * jornada que ainda decorre. Os outros já jogados saem — já não pesam em
+ * nada que o ecrã mostre, e a congestão mede-se à parte (jogosParaApertado).
+ */
+function jogosPorColuna(clube, colunas, lim) {
+  const agora = Date.now();
+  const cols = {};
+  colunas.forEach((n) => { cols[n] = []; });
+  ((clube || {}).jogos || []).forEach((j0) => {
+    const t = Date.parse(j0.data);
+    if (isNaN(t)) return;
+    const j = Object.assign({}, j0, { t: t, passado: t < agora });
+    if (j.comp === "PL") {
+      if (j.jornada != null && cols[j.jornada]) cols[j.jornada].push(j);
+      return;
     }
-  }
-  return null;
+    if (j.passado) return;
+    const n = colunas.find((c) => lim[c] && t < lim[c].inicio);
+    if (n != null) cols[n].push(j);
+  });
+  colunas.forEach((n) => cols[n].sort((a, b) => a.t - b.t));
+  return cols;
+}
+
+/** {inicio, fim} dos dias sem PL antes da jornada `n`, se forem 10 ou mais —
+ *  a paragem para as seleções — ou null. Os extremos são os dias SEM jogo,
+ *  não os dos jogos que a rodeiam: uma versão antiga devolvia esses e o texto
+ *  dizia "sem jogos entre 20/09 e 10/10" com 8 jogos precisamente a 20/09. */
+function pausaAntes(n, lim) {
+  const antes = lim[n - 1], este = lim[n];
+  if (!antes || !este) return null;
+  const diaFim = Math.floor(antes.fim / 864e5), diaIni = Math.floor(este.inicio / 864e5);
+  if (diaIni - diaFim < CAL_LIMIAR_PAUSA_DIAS) return null;
+  return { inicio: (diaFim + 1) * 864e5, fim: (diaIni - 1) * 864e5 };
 }
 
 // Provas em que TODOS os 20 clubes entram mais cedo ou mais tarde, sem
@@ -4218,24 +4325,40 @@ const CAL_DIF_ROTULOS = { 2: "fácil", 3: "neutro", 4: "difícil", 5: "muito dif
  * não tinha legenda para as separar. O defeito estava lá desde que o separador
  * nasceu e só apareceu quando a legenda passou a mostrar as amostras a sério.
  */
-const CAL_LETRA = { UCL: "C", UEL: "E", UECL: "F", LC: "T", FAC: "I", SUP: "S", OUT: "?" };
-const letraProva = (comp) => CAL_LETRA[comp] || (comp || "?")[0];
+//
+// Duas letras, não uma: com uma só, a Conference ficava com um "F" que ninguém
+// adivinha. Na coluna por jornada há largura para isso, que no eixo contínuo
+// não havia.
+const CAL_LETRA = { UCL: "CH", UEL: "LE", UECL: "CO", LC: "TL", FAC: "TI", SUP: "ST", OUT: "?" };
+const letraProva = (comp) => CAL_LETRA[comp] || (comp || "?").slice(0, 2);
 
-function legendaCalendario(jogos, trocos) {
+/** `extra.passados` e `extra.vazios` dizem se a grelha tem jogos já jogados
+ *  (esbatidos) e células sem jogo — só então a legenda os explica. */
+function legendaCalendario(jogos, trocos, extra) {
   const itens = [];
   const difs = new Set(jogos.filter((j) => j.comp === "PL").map((j) => j.dif));
   [2, 3, 4, 5].filter((d) => difs.has(d)).forEach((d) => itens.push(
     '<span class="cal-leg"><span class="cal-jogo d' + d + '">' + d + "</span>" +
     CAL_DIF_ROTULOS[d] + "</span>"));
-  // Uma amostra por prova presente, com a letra que a grelha usa de facto.
+  // Na grelha o marcador da PL leva o adversário, não o algarismo: a cor é
+  // que diz a dificuldade, e sem este rótulo a legenda mostrava "2 fácil"
+  // ao lado de uma grelha onde nenhum "2" aparece.
+  if (itens.length) itens.unshift('<span class="cal-leg-rot">Adversário na PL:</span>');
+  // Uma amostra por prova presente, com as letras que a grelha usa de facto.
+  // `(C || {})`: chamada sem calendário carregado (os testes fazem-no), não
+  // pode rebentar — uma versão sem esta guarda abortava o resto da suite.
   const provas = [...new Set(jogos.filter((j) => j.comp !== "PL").map((j) => j.comp))];
   provas.forEach((comp) => itens.push(
     '<span class="cal-leg"><span class="cal-jogo fora-pl">' +
     esc(letraProva(comp)) + "</span>" +
-    esc((C.competicoes || {})[comp] || comp) + "</span>"));
+    esc(((C || {}).competicoes || {})[comp] || comp) + "</span>"));
   if (trocos.length) itens.push(
     '<span class="cal-leg"><span class="cal-leg-troco"></span>' +
-    "3+ jogos em 8 dias</span>");
+    "calendário apertado: 3+ jogos em 8 dias</span>");
+  if ((extra || {}).vazios) itens.push(
+    '<span class="cal-leg"><span class="cal-vazio">–</span>sem jogo da liga nessa jornada</span>');
+  if ((extra || {}).passados) itens.push(
+    '<span class="cal-leg"><span class="cal-jogo d3 jogado">3</span>já jogado</span>');
   return itens;
 }
 
@@ -4275,11 +4398,23 @@ function fmtDif(v) {
   return v != null ? v.toFixed(1) : "–";
 }
 
-/** O separador Calendário: a linha do tempo à escala em ecrã largo (≥40rem)
- *  e a lista por clube em ecrã estreito — abaixo disso o gráfico não cabe
- *  sem dar scroll ao body (medido e recusado no separador Transferências,
- *  "438 contra 375"). As duas ficam sempre construídas; é o CSS que escolhe
- *  qual se vê. */
+/** O marcador de um jogo na grelha. Na PL leva o **adversário**, com a cor da
+ *  dificuldade — é a convenção de qualquer tabela de jogos de fantasy, e o
+ *  algarismo sozinho obrigava a clicar para saber contra quem. Fora da PL leva
+ *  as letras da prova. O `aria-label` leva a frase inteira. */
+function marcadorJogo(id, clube, j) {
+  const texto = j.comp === "PL" ? nomeClube(j.adv) : letraProva(j.comp);
+  return '<button type="button" class="cal-jogo' +
+    (j.comp === "PL" ? " d" + j.dif : " fora-pl") + (j.passado ? " jogado" : "") +
+    '" data-clube="' + id + '" data-jogo="' + j.t + '" aria-label="' +
+    esc(descricaoJogo(clube, j) + (j.passado ? " · já jogado" : "")) + '">' +
+    esc(texto) + "</button>";
+}
+
+/** O separador Calendário: uma coluna por jornada em ecrã largo (≥40rem) e a
+ *  lista por clube em ecrã estreito — abaixo disso a grelha não cabe sem dar
+ *  scroll ao body (medido e recusado no separador Transferências, "438 contra
+ *  375"). As duas ficam sempre construídas; é o CSS que escolhe qual se vê. */
 function desenharCalendario() {
   const intro = $("cal-intro");
   const aviso = $("cal-aviso");
@@ -4287,138 +4422,155 @@ function desenharCalendario() {
   const lista = $("cal-lista");
   const legenda = $("cal-legenda");
   const nota = $("cal-nota");
-  const semDados = !C || !C.clubes;
-  if (semDados) {
-    if (intro) intro.textContent = "";
+  const limpar = () => {
     if (aviso) aviso.hidden = true;
-    if (alvo) {
-      alvo.innerHTML = '<p class="nota">Sem calendário. Corre o <code>atualizar.cmd</code>.</p>';
-    }
     if (lista) lista.innerHTML = "";
     if (legenda) legenda.textContent = "";
     if (nota) nota.textContent = "";
+  };
+  if (!C || !C.clubes) {
+    limpar();
+    if (intro) intro.textContent = "";
+    if (alvo) {
+      alvo.innerHTML = '<p class="nota">Sem calendário. Corre o <code>atualizar.cmd</code>.</p>';
+    }
     return;
   }
   const ate = fimDoHorizonte();
-  const inicio = Date.now();
   const ids = clubesOrdenados(ate);
   const meus = meusPorClube();
   // Reflecte o filtro "só os meus" (por omissão): sem isto a intro dizia
-  // sempre "dos 20 clubes" por cima de só 11 linhas, sem avisar que a vista
-  // estava filtrada.
+  // sempre "dos 20 clubes" por cima de só 11 linhas.
   const filtrado = !calMostrarTodos && Object.keys(meus).length > 0;
   if (intro) {
     intro.textContent = filtrado
-      ? "Jogos de todas as competições dos " + ids.length + " clube" +
-        (ids.length === 1 ? "" : "s") + " com jogadores meus (de " +
-        Object.keys(C.clubes).length + " na Premier League) — vista filtrada; " +
-        "«Mostrar os 20 clubes» vê todos."
-      : "Jogos de todas as competições dos " + Object.keys(C.clubes).length +
-        " clubes da Premier League.";
+      ? (ids.length === 1 ? "Só o clube com jogadores meus."
+                          : "Só os " + ids.length + " clubes com jogadores meus.")
+      : "Os " + Object.keys(C.clubes).length + " clubes da Premier League.";
   }
+  const colunas = colunasCalendario();
   // Fim da época, ou artefacto publicado há meses e aberto muito depois: não
-  // há jogo nenhum à frente de "agora" em horizonte nenhum, e `ate` cai no
-  // passado. Sem esta guarda `largura` ficava negativa e cada clube
-  // desenhava uma faixa com `width:-Npx` — pior do que a linha vazia que a
-  // especificação já proíbe, por se ler como "clube tranquilo".
-  if (ate <= inicio) {
-    if (aviso) aviso.hidden = true;
+  // há jornada nenhuma à frente de "agora". Uma grelha sem colunas leria-se
+  // como "nenhum clube tem jogos", que não é o mesmo que "não sei".
+  if (ate <= Date.now() || colunas.length === 0) {
+    limpar();
     const vazio = '<p class="nota">Sem jogos conhecidos neste horizonte.</p>';
     if (alvo) alvo.innerHTML = vazio;
     if (lista) lista.innerHTML = vazio;
-    if (legenda) legenda.textContent = "";
-    if (nota) nota.textContent = "";
     return;
   }
-  const largura = ((ate - inicio) / 6048e5) * CAL_PX_SEMANA;
+  const lim = limitesJornadas();
+  const pausas = {};
+  colunas.forEach((n) => { pausas[n] = pausaAntes(n, lim); });
+  const celPausa = (n, tag, conteudo) => pausas[n]
+    ? "<" + tag + ' class="cal-c-pausa"' + conteudo + "</" + tag + ">" : "";
 
   const todosJogos = [];
   const todosTrocos = [];
   const difsMostradas = [];
-  const linhasGrafico = ['<div class="cal-linha cal-cabecalho"><span class="cal-rotulo">' +
-    '<span class="cal-clube">Clube</span>' +
-    '<span class="cal-num" title="Jogadores meus">Meus</span>' +
-    '<span class="cal-num" title="Dias dentro de um calendário apertado (3+ jogos em 8 dias)">Aper.</span>' +
-    '<span class="cal-num" title="Dificuldade média dos adversários da PL, 1 fácil a 5 difícil">Dif.</span>' +
-    "</span></div>"];
+  let passados = false, vazios = false;
+
+  const cabecalho = "<thead><tr>" +
+    '<th scope="col" class="cal-c-clube">Clube</th>' +
+    '<th scope="col" class="cal-c-num cal-c-meus" title="Jogadores meus">Meus</th>' +
+    '<th scope="col" class="cal-c-num cal-c-aper" title="Dias dentro de um calendário apertado (3+ jogos em 8 dias)">Aper.</th>' +
+    '<th scope="col" class="cal-c-num cal-c-dif" title="Dificuldade média dos adversários da PL, 1 fácil a 5 difícil">Dif.</th>' +
+    colunas.map((n) => {
+      const p = pausas[n];
+      return celPausa(n, "th", ' scope="col" title="Paragem para as seleções: sem jogos da PL de ' +
+          (p ? fmtDataCurta.format(new Date(p.inicio)) + " a " + fmtDataCurta.format(new Date(p.fim)) : "") +
+          '"><span>seleções</span>') +
+        '<th scope="col" class="cal-c-j"><span class="cal-j">J' + n + "</span>" +
+        (lim[n] ? '<span class="cal-j-data">' + fmtDataCurta.format(new Date(lim[n].inicio)) + "</span>" : "") +
+        "</th>";
+    }).join("") + "</tr></thead>";
+
+  const linhas = [];
   const itensLista = [];
 
   ids.forEach((id) => {
     const clube = C.clubes[id];
     const jogos = jogosNoHorizonte(clube, ate);
-    // Janela alargada para trás: mede a congestão de quem acabou de sair de
-    // uma sequência apertada (ver jogosParaApertado). `trocos` sai dela, não
-    // de `jogos` — senão o número "Aper." e a ordenação ignoravam-na na
-    // mesma, mesmo com resumoClube já corrigido.
+    // A congestão mede-se numa janela que olha 8 dias para trás (ver
+    // jogosParaApertado): quem acabou de sair de uma sequência apertada não
+    // pode aparecer tranquilo.
     const jogosApertado = jogosParaApertado(clube, ate);
     const resumo = resumoClube(Number(id), jogos, meus, jogosApertado);
     const trocos = trocosApertados(jogosApertado);
     todosJogos.push(...jogos);
     todosTrocos.push(...trocos);
     difsMostradas.push(resumo.dificuldade);
+    // Intensidade do troço apertado em que um jogo cai (0 = nenhum).
+    const aperto = (j) => trocos.reduce(
+      (m, tr) => (tr.inicio <= j.t && j.t <= tr.fim ? Math.max(m, tr.jogos) : m), 0);
 
-    // --- Linha do tempo (ecrã largo) ---
-    const pos = (t) => ((t - inicio) / (ate - inicio)) * largura;
-    const faixaTrocos = trocos.map((tr) => {
-      // Um troço pode começar antes de "agora" (a janela alargada olha para
-      // trás): desenha-se só a partir do início do horizonte, senão pos()
-      // fica negativo e pede uma posição/largura impossível no eixo.
-      const trIni = Math.max(tr.inicio, inicio);
-      return '<span class="cal-troco n' + Math.min(tr.jogos, 5) + '" style="left:' +
-        pos(trIni).toFixed(1) + "px;width:" + (pos(tr.fim) - pos(trIni)).toFixed(1) +
-        'px"></span>';
+    // --- Grelha por jornada (ecrã largo) ---
+    const porColuna = jogosPorColuna(clube, colunas, lim);
+    const celulas = colunas.map((n) => {
+      const js = porColuna[n];
+      if (js.some((j) => j.passado)) passados = true;
+      const nivel = js.reduce((m, j) => Math.max(m, aperto(j)), 0);
+      // Duas casas fixas por célula: a da Europa/taças à esquerda e a da liga à
+      // direita. Centrado ao sabor do conteúdo, o marcador da liga saltava ~8px
+      // conforme houvesse jogo europeu antes dele, e descer uma coluna com os
+      // olhos tremia — pouco para se ler como data, muito para parecer alinhado.
+      const copas = js.filter((j) => j.comp !== "PL");
+      const liga = js.filter((j) => j.comp === "PL");
+      if (!liga.length) vazios = true;
+      return celPausa(n, "td", ">") +
+        '<td class="cal-c-j' + (nivel ? " aperta n" + Math.min(nivel, 5) : "") + '">' +
+        '<span class="cal-celula"><span class="cal-casa-copa">' +
+          copas.map((j) => marcadorJogo(id, clube, j)).join("") + "</span>" +
+        '<span class="cal-casa-pl">' +
+          (liga.length
+            ? liga.map((j) => marcadorJogo(id, clube, j)).join("")
+            : '<span class="cal-vazio" title="Sem jogo da Premier League nesta jornada">–</span>') +
+        "</span></span></td>";
     }).join("");
-    const marcas = jogos.map((j) =>
-      '<button type="button" class="cal-jogo' + (j.comp === "PL" ? " d" + j.dif : " fora-pl") +
-      '" style="left:' + pos(j.t).toFixed(1) + 'px" data-clube="' + id +
-      '" data-jogo="' + j.t + '" aria-label="' + esc(descricaoJogo(clube, j)) + '">' +
-      // Texto lá dentro: as classes de cor sozinhas dão 1.14:1 de contraste.
-      // O aria-label leva a frase toda — sem ele um leitor de ecrã só ouvia
-      // o dígito ou a letra, sem clube, adversário nem data.
-      (j.comp === "PL" ? j.dif : letraProva(j.comp)) + "</button>").join("");
-    linhasGrafico.push('<div class="cal-linha"><span class="cal-rotulo">' +
-      '<span class="cal-clube">' + esc(clube.curto) + "</span>" +
-      '<span class="cal-num" title="' + resumo.meus + ' jogador(es) meu(s) neste clube">' +
-        resumo.meus + "</span>" +
-      '<span class="cal-num" title="' + resumo.apertado +
+    linhas.push('<tr' + (resumo.meus > 0 ? ' class="meu"' : "") + ">" +
+      '<th scope="row" class="cal-c-clube" title="' + esc(clube.nome) + '">' +
+        esc(clube.curto) + "</th>" +
+      '<td class="cal-c-num cal-c-meus" title="' + resumo.meus +
+        ' jogador(es) meu(s) neste clube">' + (resumo.meus || "") + "</td>" +
+      '<td class="cal-c-num cal-c-aper" title="' + resumo.apertado +
         ' dias dentro de um calendário apertado (3+ jogos em 8 dias)">' + resumo.apertado +
-        "</span>" +
-      '<span class="cal-num" title="Dificuldade média: ' + fmtDif(resumo.dificuldade) +
-        ' em 5 (1 fácil, 5 difícil)">' + fmtDif(resumo.dificuldade) + "</span>" +
-      '</span><span class="cal-faixa" style="width:' + largura.toFixed(0) + 'px">' +
-      faixaTrocos + marcas + "</span></div>");
+        '<span class="cal-unid">d</span></td>' +
+      '<td class="cal-c-num cal-c-dif" title="Dificuldade média: ' + fmtDif(resumo.dificuldade) +
+        ' em 5 (1 fácil, 5 difícil)">' + fmtDif(resumo.dificuldade) + "</td>" +
+      celulas + "</tr>");
 
     // --- Lista por clube (ecrã estreito) ---
-    const dentroDeTroco = (j) => trocos.some((tr) => tr.inicio <= j.t && j.t <= tr.fim);
     const itensJogos = jogos.map((j) =>
-      '<li' + (dentroDeTroco(j) ? ' class="cal-apertado"' : "") + ">" +
+      "<li" + (aperto(j) ? ' class="cal-apertado"' : "") + ">" +
       esc(descricaoJogo(clube, j)) + "</li>").join("");
     itensLista.push('<li class="cal-lista-item"><div class="cal-lista-cab">' +
       '<span class="cal-lista-nome">' + esc(clube.nome) + "</span>" +
       '<span class="cal-lista-nums">' + resumo.meus + " meus · " + resumo.apertado +
-        " apertado · " + fmtDif(resumo.dificuldade) + " dif.</span></div>" +
+        " dias apertado · " + fmtDif(resumo.dificuldade) + " dif.</span></div>" +
       (itensJogos
         ? '<ul class="cal-lista-jogos">' + itensJogos + "</ul>"
         : '<p class="nota">Sem jogos conhecidos neste horizonte.</p>') +
       "</li>");
   });
 
-  // --- Clubes recusados na validação: nunca uma linha vazia ---
+  // --- Clubes recusados na validação: nunca uma linha vazia, que se leria
+  // como "clube tranquilo" ---
+  const largura = 4 + colunas.length + Object.values(pausas).filter(Boolean).length;
   clubesRecusados().forEach((r) => {
-    linhasGrafico.push('<div class="cal-linha cal-sem-dados"><span class="cal-rotulo">' +
-      '<span class="cal-clube">' + esc(r.nome) + "</span></span>" +
-      '<span class="nota">Sem dados: ' + esc(r.motivo) + "</span></div>");
+    linhas.push('<tr class="cal-sem-dados"><th scope="row" class="cal-c-clube">' +
+      esc(r.nome) + '</th><td colspan="' + (largura - 1) + '">Sem dados: ' +
+      esc(r.motivo) + "</td></tr>");
     itensLista.push('<li class="cal-lista-item cal-sem-dados"><div class="cal-lista-cab">' +
       '<span class="cal-lista-nome">' + esc(r.nome) + "</span></div>" +
       '<p class="nota">Sem dados: ' + esc(r.motivo) + "</p></li>");
   });
 
   if (alvo) {
-    // Detalhe por baixo da linha do tempo ao clicar num marcador — não em
-    // `title`, que em ecrã tátil nunca aparece. `aria-live` avisa quem usa
-    // leitor de ecrã que o texto por baixo mudou, já que o clique em si não
-    // move o foco para lá.
-    alvo.innerHTML = linhasGrafico.join("") +
+    // Detalhe por baixo da grelha ao clicar num marcador — não em `title`,
+    // que em ecrã tátil nunca aparece. `aria-live` avisa quem usa leitor de
+    // ecrã, já que o clique não move o foco para lá.
+    alvo.innerHTML = '<table class="cal-tabela">' + cabecalho +
+      "<tbody>" + linhas.join("") + "</tbody></table>" +
       '<p class="nota cal-detalhe" id="cal-detalhe" aria-live="polite" hidden></p>';
     alvo.onclick = (ev) => {
       const btn = ev.target.closest(".cal-jogo");
@@ -4428,30 +4580,23 @@ function desenharCalendario() {
       const t = Number(btn.dataset.jogo);
       const jogo = (clube.jogos || []).find((j) => Date.parse(j.data) === t);
       if (!jogo) return;
-      det.textContent = descricaoJogo(clube, jogo);
+      det.textContent = descricaoJogo(clube, jogo) + (t < Date.now() ? " · já jogado" : "");
       det.hidden = false;
     };
   }
   if (lista) lista.innerHTML = itensLista.join("");
 
-  // --- Avisos: paragem para seleções, provas por sortear, horas provisórias ---
+  // --- Ressalvas: provas por sortear e horas provisórias. A paragem para as
+  // seleções já não precisa de frase: é uma coluna própria na grelha. Texto
+  // corrido e não caixa dourada — o dourado quer dizer "a vigiar", e uma
+  // ressalva que está lá sempre não é coisa a vigiar. ---
   if (aviso) {
     const partes = [];
-    const pausa = pausaSeleccoes(ate);
-    if (pausa) {
-      // Data só, sem hora: a grandeza é um dia (o "01:00" era só a meia-noite
-      // UTC vista de Lisboa, e não dizia nada). fmtDataCurta é o mesmo
-      // formatador já usado nas Transferências.
-      partes.push("Sem jogos entre " + fmtDataCurta.format(new Date(pausa.inicio)) + " e " +
-        fmtDataCurta.format(new Date(pausa.fim)) + ": é a paragem para as seleções.");
-    }
     provasPorSortear().forEach((nomeProva) => {
-      partes.push(nomeProva + ": ronda ainda por sortear (entra tipicamente mais tarde " +
-        "na época) — não aparece no calendário até lá.");
+      partes.push(nomeProva + ": ronda ainda por sortear, não aparece até lá.");
     });
     if (temHorasProvisorias(ate)) {
-      partes.push("Jogos a mais de 6 semanas ainda não têm hora confirmada pelas " +
-        "televisões: a hora mostrada é um valor por omissão que pode mudar.");
+      partes.push("A mais de 6 semanas a hora ainda não está fixada pelas televisões.");
     }
     aviso.hidden = partes.length === 0;
     if (partes.length) aviso.textContent = partes.join(" ");
@@ -4459,8 +4604,8 @@ function desenharCalendario() {
 
   // --- Legenda: só o que está mesmo no horizonte mostrado ---
   if (legenda) {
-    const itens = legendaCalendario(todosJogos, todosTrocos);
-    legenda.innerHTML = itens.length ? itens.join("") : "";
+    legenda.innerHTML = legendaCalendario(todosJogos, todosTrocos,
+      { passados: passados, vazios: vazios }).join("");
   }
   if (nota) nota.textContent = notaDificuldade(difsMostradas);
 }

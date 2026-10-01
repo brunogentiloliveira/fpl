@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=57">
+<link rel="stylesheet" href="styles.css?v=58">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#12171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -131,7 +131,7 @@
     </form>
     <p class="nota" id="contagem-jogadores" role="status"></p>
     <table class="tabela" id="tabela-jogadores">
-      <thead><tr><th>Jogador</th><th>Pos</th><th class="num">Pts</th><th class="num">Pts/J</th><th>Dono</th></tr></thead>
+      <thead><tr><th>Jogador</th><th>Pos</th><th class="num" title="Pontos já feitos esta época">Total</th><th class="num" title="Pontos esperados por jornada">Pts/J</th><th>Dono</th></tr></thead>
       <tbody></tbody>
     </table>
     <button type="button" class="mostrar-mais" id="mostrar-mais" hidden>Mostrar mais</button>
@@ -140,6 +140,10 @@
     <h2 class="sec-titulo" id="sug-titulo">Sugestões</h2>
     <p class="nota" id="sug-contexto"></p>
     <p class="aviso-jornada" id="sug-jornada" hidden></p>
+
+    <h3 class="sub-titulo">Onze inicial sugerido <span id="xi-resumo" class="sub-total"></span></h3>
+    <div class="campo" id="xi-campo"></div>
+    <div class="banco" id="xi-banco"></div>
 
     <form class="filtros" id="form-janela" autocomplete="off">
       <label class="visually-hidden" for="janela">Janela do calendário</label>
@@ -150,10 +154,6 @@
       </select>
     </form>
     <p class="nota" id="janela-nota"></p>
-
-    <h3 class="sub-titulo">Onze inicial sugerido <span id="xi-resumo" class="sub-total"></span></h3>
-    <div class="campo" id="xi-campo"></div>
-    <p class="nota" id="xi-banco"></p>
 
     <div data-modo="classica" hidden>
       <p class="aviso-jornada" id="aviso-plantel" hidden></p>
@@ -208,7 +208,6 @@
     </div>
 
     <h3 class="sub-titulo">Próximos jogos <span id="proximos-resumo" class="sub-total"></span></h3>
-    <p class="nota">Quando é que os teus jogadores entram em campo, hora de Lisboa.</p>
     <div id="proximos-jogos"></div>
 
     <h3 class="sub-titulo">Utilização recente <span id="uso-resumo" class="sub-total"></span></h3>
@@ -371,7 +370,6 @@
   <section id="painel-cal" role="tabpanel" aria-labelledby="tab-cal" hidden>
     <h2 class="sec-titulo">Calendário</h2>
     <p class="nota" id="cal-intro"></p>
-    <p class="aviso-jornada" id="cal-aviso" hidden></p>
     <div class="filtros" id="cal-filtros">
       <div class="filtros-linha">
         <label class="visually-hidden" for="cal-horizonte">Horizonte do calendário</label>
@@ -389,10 +387,11 @@
       </div>
       <label class="check"><input type="checkbox" id="cal-todos"> Mostrar os 20 clubes</label>
     </div>
-    <p class="nota" id="cal-nota"></p>
     <div class="cal-grafico" id="cal-grafico"></div>
     <ul class="cal-lista" id="cal-lista"></ul>
     <p class="nota" id="cal-legenda"></p>
+    <p class="nota" id="cal-nota"></p>
+    <p class="nota" id="cal-aviso" hidden></p>
   </section>
 </main>
 
@@ -401,7 +400,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=57"></script>
+<script src="app.js?v=58"></script>
 
 </body>
 </html>

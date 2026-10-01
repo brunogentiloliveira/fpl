@@ -759,31 +759,68 @@ verificar("sem calendário, o separador não rebenta",
     resumoClube(1, tranquiloFuturo, {}, tranquiloAlargado).apertado);
 })();
 
-/* --- Calendário: o gráfico não desenha à esquerda do início do horizonte,
-   mesmo quando um troço apertado começa no passado (jogosParaApertado) --- */
+/* --- Calendário: uma coluna por jornada --- */
 (function () {
-  if (typeof desenharCalendario !== "function" || typeof definirMostrarTodos !== "function") return;
-  const guardadoC = C, guardadoMostrar = calMostrarTodos;
-  definirMostrarTodos(true); // não depender de quem tem jogadores meus aqui
+  if (typeof jogosPorColuna !== "function" || typeof limitesJornadas !== "function") return;
+  const guardadoC = C;
   const agora = Date.now();
   const d = (n) => new Date(agora + n * 864e5).toISOString();
-  // 3 jogos em 6 dias, dois já passados: o troço (medido com a janela
-  // alargada) começa antes de "agora", que é o início do eixo do gráfico.
+  // Jornada 6 a decorrer (o Chelsea já jogou, o Arsenal ainda não), jornada 7
+  // daqui a uma semana e a 8 depois de uma paragem de duas semanas. O Arsenal
+  // tem um jogo europeu a meio da semana entre a 6 e a 7.
   C = { clubes: {
-    "1": { nome: "Chelsea", curto: "CHE", jogos: [
-      { data: d(-3), comp: "PL", dif: 3, casa: true, jogado: true },
-      { data: d(-0.5), comp: "LC", dif: null, casa: true, jogado: true },
-      { data: d(3), comp: "PL", dif: 3, casa: false, jogado: false },
+    "1": { nome: "Arsenal", curto: "ARS", jogos: [
+      { data: d(1), comp: "PL", jornada: 6, dif: 3, adv: 2 },
+      { data: d(4), comp: "UCL", jornada: null, dif: null, adv_nome: "Bayern" },
+      { data: d(7), comp: "PL", jornada: 7, dif: 4, adv: 2 },
+      { data: d(28), comp: "PL", jornada: 8, dif: 2, adv: 2 },
     ] },
-  }, competicoes: { PL: "Premier League", LC: "Taça da Liga" }, recusados: {} };
-  const div = document.createElement("div");
-  div.id = "cal-grafico";
-  document.body.appendChild(div);
-  desenharCalendario();
-  verificar("um troço com início no passado não desenha 'left:' negativo",
-    div.innerHTML.indexOf("left:-") < 0, div.innerHTML);
-  document.body.removeChild(div);
-  definirMostrarTodos(guardadoMostrar);
+    "2": { nome: "Chelsea", curto: "CHE", jogos: [
+      { data: d(-1), comp: "PL", jornada: 6, dif: 3, adv: 1 },
+      { data: d(-3), comp: "LC", jornada: null, dif: null, adv_nome: "Hull" },
+      { data: d(8), comp: "PL", jornada: 7, dif: 3, adv: 1 },
+    ] },
+  }, competicoes: { PL: "Premier League", UCL: "Champions League", LC: "Taça da Liga" },
+  recusados: {} };
+  const lim = limitesJornadas();
+  const cols = [6, 7, 8];
+  const ars = jogosPorColuna(C.clubes["1"], cols, lim);
+  const che = jogosPorColuna(C.clubes["2"], cols, lim);
+  verificar("o jogo europeu de meio da semana vai para a jornada seguinte, ao lado do da liga",
+    ars[7].length === 2 && ars[7][0].comp === "UCL" && ars[7][1].comp === "PL", ars[7]);
+  verificar("um jogo da liga já jogado fica na jornada a decorrer, marcado como passado",
+    che[6].length === 1 && che[6][0].passado === true, che[6]);
+  verificar("um jogo de taça já jogado não aparece em coluna nenhuma",
+    cols.every((n) => che[n].every((j) => j.comp !== "LC")), che);
+  verificar("um clube sem jogo numa jornada fica com a coluna vazia, não com a de outro",
+    che[8].length === 0, che[8]);
+  verificar("a paragem de 2 semanas aparece antes da jornada 8",
+    pausaAntes(8, lim) !== null, pausaAntes(8, lim));
+  verificar("uma semana normal entre jornadas não é paragem",
+    pausaAntes(7, lim) === null, pausaAntes(7, lim));
+  const p = pausaAntes(8, lim);
+  // Os extremos são os dias SEM jogo, não os dos jogos que rodeiam a pausa —
+  // uma versão antiga dizia "sem jogos entre 20/09 e 10/10" com 8 jogos a 20/09.
+  verificar("a paragem começa no dia a seguir ao último jogo, não no dia dele",
+    p && p.inicio === (Math.floor(lim[7].fim / 864e5) + 1) * 864e5, [p, lim[7]]);
+  verificar("...e acaba no dia antes do jogo seguinte, não no dia dele",
+    p && p.fim === (Math.floor(lim[8].inicio / 864e5) - 1) * 864e5, [p, lim[8]]);
+  C = guardadoC;
+})();
+
+/* --- Calendário: um jogo adiado não arrasta a fronteira da jornada --- */
+(function () {
+  if (typeof limitesJornadas !== "function") return;
+  const guardadoC = C;
+  const base = Date.parse("2026-11-07T15:00:00Z");
+  const d = (n) => new Date(base + n * 864e5).toISOString();
+  const jogos = [];
+  for (let i = 0; i < 9; i += 1) jogos.push({ data: d(i % 2), comp: "PL", jornada: 11 });
+  jogos.push({ data: d(40), comp: "PL", jornada: 11 }); // adiado para dezembro
+  C = { clubes: { "1": { nome: "A", jogos: jogos } }, competicoes: {}, recusados: {} };
+  const lim = limitesJornadas();
+  verificar("um jogo adiado 40 dias não estica o fim da jornada",
+    lim[11].fim < base + 2 * 864e5, lim[11]);
   C = guardadoC;
 })();
 
@@ -997,45 +1034,6 @@ verificar("sem calendário, o separador não rebenta",
   C = guardado;
 })();
 
-/* --- Calendário: paragem para seleções --- */
-(function () {
-  if (typeof pausaSeleccoes !== "function") return;
-  const guardado = C;
-  const agora = Date.now();
-  const d = (n) => new Date(agora + n * 864e5).toISOString();
-
-  C = { clubes: { "1": { nome: "A", jogos: [{ data: d(1) }, { data: d(8) }, { data: d(15) }] } },
-    competicoes: {}, recusados: {} };
-  verificar("jogos toda semana (intervalos de 7 dias) não acusam paragem",
-    pausaSeleccoes(agora + 20 * 864e5) === null);
-
-  // Só juntando os dois clubes é que o intervalo de 22 dias (jogo a jogo,
-  // o que dispara o limiar CAL_LIMIAR_PAUSA_DIAS) aparece — mas a pausa
-  // DEVOLVIDA é 2 dias mais estreita (20), porque começa e acaba nos dias
-  // SEM jogo nenhum, não nos dias dos jogos que a rodeiam. Afirmar só a
-  // duração não apanha isto: uma versão que devolvesse os dias dos jogos
-  // (3 e 25) em vez dos dias vazios (4 e 24) tinha a mesma duração "redonda"
-  // que se poderia calcular mal (22, não 20) e produzia no ecrã "sem jogos
-  // entre [dia com jogo] e [dia com jogo]" — a frase que a revisão apanhou.
-  // Por isso os extremos, não a duração, é que se afirmam a seguir.
-  C = { clubes: {
-    "1": { nome: "A", jogos: [{ data: d(1) }, { data: d(3) }] },
-    "2": { nome: "B", jogos: [{ data: d(25) }, { data: d(27) }] },
-  }, competicoes: {}, recusados: {} };
-  const p = pausaSeleccoes(agora + 30 * 864e5);
-
-  // `Math.floor` replica o que a própria função faz para
-  // não depender da hora do dia em que este teste corre.
-  const diaUltimoJogoAntes = Math.floor((agora + 3 * 864e5) / 864e5);
-  const diaPrimeiroJogoDepois = Math.floor((agora + 25 * 864e5) / 864e5);
-  verificar("a paragem começa a seguir ao último jogo, não no dia dele",
-    p && p.inicio === (diaUltimoJogoAntes + 1) * 864e5, [p, diaUltimoJogoAntes]);
-  verificar("...e acaba antes do jogo seguinte, não no dia dele",
-    p && p.fim === (diaPrimeiroJogoDepois - 1) * 864e5, [p, diaPrimeiroJogoDepois]);
-
-  C = guardado;
-})();
-
 /* --- Calendário: prova universal (Taça de Inglaterra) ainda por sortear --- */
 (function () {
   if (typeof provasPorSortear !== "function") return;
@@ -1066,24 +1064,36 @@ verificar("sem calendário, o separador não rebenta",
     temHorasProvisorias(agora + 50 * 864e5));
 })();
 
-/* --- Calendário: a legenda só lista o que está no horizonte mostrado --- */
+/* --- Calendário: a legenda só lista o que está no horizonte mostrado ---
+   Estes testes faziam `array.indexOf("texto")`, que procura um elemento IGUAL
+   e não um pedaço de texto: passavam sempre, dissesse a legenda o que
+   dissesse. E a chamada com C nulo rebentava e abortava o resto da suite. */
 (function () {
   if (typeof legendaCalendario !== "function") return;
+  const guardado = C;
+  C = null;
+  const txt = (jogos, trocos, extra) => legendaCalendario(jogos, trocos, extra).join("");
   verificar("sem jogos de dificuldade 5 no horizonte, a legenda não a lista",
-    legendaCalendario([{ comp: "PL", dif: 3 }], []).indexOf("dificuldade 5 (muito difícil)") < 0);
+    txt([{ comp: "PL", dif: 3 }], []).indexOf("muito difícil") < 0);
   verificar("com um jogo de dificuldade 5, a legenda passa a listá-la",
-    legendaCalendario([{ comp: "PL", dif: 5 }], []).some((s) => s.indexOf("dificuldade 5") >= 0));
+    txt([{ comp: "PL", dif: 5 }], []).indexOf("muito difícil") >= 0);
   verificar("dificuldade 1 nunca aparece na legenda (não existe nos 380 jogos da época)",
     legendaCalendario([{ comp: "PL", dif: 1 }], []).length === 0,
     legendaCalendario([{ comp: "PL", dif: 1 }], []));
-  verificar("sem jogos fora da PL, a legenda não menciona Europa/taças",
-    legendaCalendario([{ comp: "PL", dif: 3 }], []).indexOf("Europa / taças") < 0);
-  verificar("com um jogo fora da PL, a legenda passa a mencionar Europa/taças",
-    legendaCalendario([{ comp: "UCL", dif: null }], []).indexOf("Europa / taças") >= 0);
+  verificar("sem jogos fora da PL, a legenda não tem amostra de prova",
+    txt([{ comp: "PL", dif: 3 }], []).indexOf("fora-pl") < 0);
+  verificar("com um jogo fora da PL e sem calendário carregado, a legenda não rebenta e mostra-o",
+    txt([{ comp: "UCL", dif: null }], []).indexOf("CH") >= 0);
+  verificar("Champions e Conference já não partilham a mesma letra",
+    letraProva("UCL") !== letraProva("UECL"), [letraProva("UCL"), letraProva("UECL")]);
   verificar("sem troços apertados, a legenda não os menciona",
-    legendaCalendario([], []).some((s) => s.indexOf("apertado") >= 0) === false);
+    txt([], []).indexOf("apertado") < 0);
   verificar("com um troço, a legenda passa a mencionar o calendário apertado",
-    legendaCalendario([], [{ jogos: 3 }]).some((s) => s.indexOf("apertado") >= 0));
+    txt([], [{ jogos: 3 }]).indexOf("apertado") >= 0);
+  verificar("a legenda só explica 'já jogado' quando a grelha os tem",
+    txt([], [], {}).indexOf("já jogado") < 0 &&
+    txt([], [], { passados: true }).indexOf("já jogado") >= 0);
+  C = guardado;
 })();
 
 /* --- Calendário: a nota da dificuldade mostra a amplitude real --- */
@@ -1118,19 +1128,23 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   const agora = Date.now();
   C = { clubes: {
     "1": { nome: "Arsenal", curto: "ARS", jogos: [
-      { data: new Date(agora + 2 * 864e5).toISOString(), comp: "PL", dif: 3,
+      { data: new Date(agora + 2 * 864e5).toISOString(), comp: "PL", dif: 3, jornada: 6,
         adv: 2, adv_nome: null, casa: true, jogado: false, hora_incerta: false },
-      { data: new Date(agora + 6 * 864e5).toISOString(), comp: "PL", dif: 4,
+      { data: new Date(agora + 6 * 864e5).toISOString(), comp: "PL", dif: 4, jornada: 7,
         adv: 3, adv_nome: null, casa: false, jogado: false, hora_incerta: false },
       { data: new Date(agora + 9 * 864e5).toISOString(), comp: "UCL", dif: null,
         adv: null, adv_nome: "Bayern", casa: true, jogado: false, hora_incerta: true },
     ] },
   }, competicoes: { PL: "Premier League", UCL: "Champions League" } };
-  // Sem #cal-grafico neste harness: só prova que a lógica (ordenar clubes,
-  // filtrar o horizonte, agrupar troços apertados, montar os marcadores) não
-  // rebenta com dados verdadeiros. O conteúdo visual verifica-se no browser.
-  verificar("com calendário real também não rebenta",
-    (desenharCalendario(), true));
+  const div = document.createElement("div");
+  div.id = "cal-grafico";
+  document.body.appendChild(div);
+  desenharCalendario();
+  verificar("com calendário real desenha uma tabela com uma coluna por jornada",
+    div.querySelectorAll("thead .cal-c-j").length === 2, div.innerHTML);
+  verificar("...e o jogo europeu depois da jornada 7 fica fora do horizonte de 2 jornadas",
+    div.innerHTML.indexOf(">CH<") < 0, div.innerHTML);
+  document.body.removeChild(div);
   C = guardado;
 })();
 
@@ -1167,8 +1181,8 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   div.id = "cal-grafico";
   document.body.appendChild(div);
   desenharCalendario();
-  verificar("sem jogo nenhum à frente, o gráfico mostra o aviso, não 'width:-'",
-    div.innerHTML.indexOf("width:-") < 0 && div.innerHTML.indexOf("Sem jogos conhecidos") >= 0,
+  verificar("sem jogo nenhum à frente, a grelha mostra o aviso e não uma tabela sem colunas",
+    div.innerHTML.indexOf("<table") < 0 && div.innerHTML.indexOf("Sem jogos conhecidos") >= 0,
     div.innerHTML);
   document.body.removeChild(div);
   C = guardado;
@@ -1191,14 +1205,13 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
 
   definirMostrarTodos(false);
   desenharCalendario();
-  verificar("filtrado 'só os meus': a intro conta só os clubes mostrados e avisa do filtro",
-    div.textContent.indexOf("1 clube ") >= 0 && div.textContent.indexOf("filtrada") >= 0,
-    div.textContent);
+  verificar("filtrado 'só os meus': a intro diz que é só o clube com jogadores meus",
+    div.textContent.indexOf("Só o clube") === 0, div.textContent);
 
   definirMostrarTodos(true);
   desenharCalendario();
   verificar("'mostrar os 20': a intro volta ao total, sem falar em filtro",
-    div.textContent.indexOf("2 clubes") >= 0 && div.textContent.indexOf("filtrada") < 0,
+    div.textContent.indexOf("2 clubes") >= 0 && div.textContent.indexOf("Só") < 0,
     div.textContent);
 
   document.body.removeChild(div);
