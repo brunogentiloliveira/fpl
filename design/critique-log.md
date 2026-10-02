@@ -179,3 +179,44 @@ utilizador.
 | Ticker estático: três alertas, os meus primeiro, traduzidos | 4 | Muda o comportamento do ticker |
 | Menos separadores, com Sugestões primeiro e por omissão | 3, 4 | Muda a navegação |
 | Tabela de Jogadores: linhas de 40px, ordenação por Pts/J, dono em cinzento e "Livre" a creme | 3, 4 | Fora do que estava registado |
+
+## As decisões em aberto, feitas — 2026-10-02
+
+O utilizador mandou avançar com todas. As sete, cada uma verificada no ecrã:
+
+| Decisão | O que ficou |
+|---|---|
+| Primeiro ecrã como veredicto | "Para fazer": até três ordens ao lado do relvado (no telemóvel, antes dele), juntando o que as secções de baixo já calculam. Um jogador usado numa ação não entra noutra — a primeira versão mandava largar o Belloumi e dá-lo numa troca na linha a seguir. |
+| O número grande como diferença | Contra o último onze publicado (`picks_jornada`, ou as picks da clássica), que é o que joga se não se mexer em nada: "+1.9 contra o teu onze da J5 · 2 mudanças". |
+| Relvado em meio-campo | 1.30:1 fixo (544×418 no largo, 358×275 no telemóvel), grande área, pequena área, meia-lua, meio-círculo, uma faixa por linha de jogadores, cartões da mesma largura. |
+| Dificuldade sem cor | Rampa de luminosidade. A cor fica só para o estado. |
+| Ticker estático | Até três alertas, só dos meus, traduzidos; sem alertas, a faixa não aparece. |
+| Menos separadores | Cinco à vista, Sugestões primeiro e por omissão, o resto em "Mais". |
+| Tabela de Jogadores | Linhas de 37px (eram 61), ordenada por projeção, dono a cinzento e "Livre" a creme, valor da transferência em texto. |
+
+## Ronda 5 — 2026-10-02 — **5 / 10** (era 5.5): oscilação, fim
+
+A nota desceu meio ponto depois de se fazer o que a ronda 4 pediu, e o crítico **inverteu três
+pedidos dela**: a rampa de dificuldade (a ronda 4 especificou o fácil mais claro; esta quer o
+muito difícil mais claro), o número grande (a ronda 4 pediu a diferença como herói; esta quer
+apagá-la) e o relvado (a ronda 4 queria-o mais claro e mais à vista; esta quer relva mais escura).
+Pela regra da skill isto é **oscilação**: o briefing deixa estas escolhas em aberto, e mais
+rondas não as fecham. Não se mexeu em nenhuma delas.
+
+### Feito (defeitos verificados que não contradizem decisões tomadas)
+
+| Achado | Verificação | O que se fez |
+|---|---|---|
+| Três unidades diferentes nos ganhos das ações | "contra o onze da J5", "por jornada", "no teu onze" — não se ordenavam | Uma só: **pts/jornada no teu onze**. O waiver passou a medir o que o onze sobe (`ganhoNoOnze`), e não jogador contra jogador: o Xhaka vale +1.0 no onze, não +1.6. Um livre que só melhorasse o banco deixa de aparecer como ação. |
+| Verde para "entra no onze" | Verde quer dizer "disponível" | Anel creme para quem entra; tracejado para quem sai (no banco). |
+| Separador cortado a meio ("Li") por baixo do "Mais" no telemóvel | Confirmado | Esbatido à direita e um traço a separar o "Mais". |
+| "Para fazer" 20px acima de "Onze inicial sugerido" | Medido | Mesma linha de base (0.5px de diferença). |
+| Faixa "Sem alertas no teu plantel" | Uma banda a toda a largura para um não-acontecimento | Sem alertas, não aparece. No telemóvel a primeira ação subiu de 474px para 409px. |
+| A linha de cinco a 10px da linha lateral | Confirmado | 16px. |
+
+### Rejeitado
+
+- **As três inversões acima** (oscilação).
+- **Cartões claros sobre a relva, cabeçalho numa só linha, Draft/Clássica dentro de "Mais",
+  ordenar pelos cabeçalhos, tirar as letras das provas, dourado só a partir de 4 jogos em 8
+  dias.** São pedidos novos de reestruturação, não defeitos do que foi pedido.

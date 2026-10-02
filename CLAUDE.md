@@ -1220,6 +1220,40 @@ A grelha de 12 jornadas pedia ~950px, e por isso a largura da app passou de 58re
 em todos os separadores**. Alargar só o Calendário fazia o conteúdo saltar 40px ao mudar de
 separador.
 
+## O primeiro ecrã passou a ser uma decisão (2026-10-02, pedido do utilizador)
+
+Revisão visual com a skill standout-design. As sete decisões que o crítico pediu e eu tinha
+deixado em aberto foram todas para a frente, por decisão do utilizador. O registo completo está
+em `design/critique-log.md`.
+
+- **"Para fazer"** (`desenharAcoes`), ao lado do relvado no ecrã largo e antes dele no
+  telemóvel: até três ordens. Pela ordem, são mexer no onze, confirmar uma dúvida que está no
+  onze, o capitão (só na clássica), um waiver ou transferência que compense e uma troca. **Não
+  calcula nada de novo**: junta o que as secções de baixo já calculam. Se discordar delas, é
+  defeito. Um jogador usado numa ação não entra noutra: a primeira versão mandava largar o
+  Belloumi no waiver e dá-lo numa troca na linha a seguir.
+- **O número grande é a diferença para o onze que já lá está** (`onzeAnterior`), e não o
+  total. A API não publica o onze da jornada seguinte antes do deadline, mas publica o último
+  (`picks_jornada` no Draft, `picks` com `posicao ≤ 11` na clássica). Esse é o onze que joga se
+  não se mexer em nada. Quem entra no onze leva anel creme no relvado, e quem sai fica com anel
+  tracejado no banco (verde não, porque verde quer dizer "disponível"). As três ações dão o ganho
+  na mesma unidade, pts/jornada no teu onze (`ganhoNoOnze`). Com o plantel escrito
+  à mão na clássica não há comparação, e o ecrã volta ao total.
+- **O relvado é um meio-campo a 1.30:1** (68 × 52.5 m), com grande área, pequena área, meia-lua
+  e meio-círculo central. As marcas estão num SVG embutido no CSS, sem pedido de rede. Há uma
+  faixa por linha de jogadores e todos os cartões têm a largura dos da linha de cinco.
+- **Dificuldade numa rampa de luminosidade, sem cor**: a cor ficou só para o estado (ver o
+  briefing).
+- **O ticker deixou de desfilar.** Mostra até três alertas, **só do meu plantel**, traduzidos
+  (`traduzirNoticia`, que cobre as 213 notícias de 2026-10-02), com a cor do estado na
+  percentagem e uma ligação para o Boletim.
+- **Cinco separadores à vista**: Sugestões (primeiro e por omissão), Jogadores, Calendário, Liga
+  e Mercado. O resto fica em "Mais". As setas do teclado só percorrem os separadores visíveis, e
+  a lista refaz-se a cada uso.
+- **Jogadores**: uma linha por jogador (37px; eram 61) e ordenação por projeção por omissão. A
+  projeção passou a calcular-se uma vez por jogador, e não dentro do comparador (~13 mil
+  chamadas). O dono fica a cinzento e "Livre" a creme.
+
 ## Fase 2 das melhorias: medir as constantes (2026-09-01)
 
 Fase de **medição**, não de alteração — o resultado podia perfeitamente ser "fica como está", e

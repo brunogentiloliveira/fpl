@@ -115,16 +115,90 @@ function comNoticias() {
     .sort((a, b) => (b.news_added || "").localeCompare(a.news_added || ""));
 }
 
-function initTicker(noticias) {
-  if (noticias.length === 0) return;
-  const track = $("ticker-track");
-  const itens = noticias.slice(0, 20).map((p) =>
-    '<span class="ticker-item"><span class="nome">' + esc(p.web_name) + "</span> " +
-    '<span class="clube">(' + nomeClube(p.team) + ")</span> — " + esc(p.news) + "</span>"
-  ).join("");
-  const reduzido = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  // Com animação, duplica o conteúdo para o desfile ser contínuo.
-  track.innerHTML = reduzido ? itens : itens + itens;
+// As notícias da API são muito regulares: "<parte> injury - <prazo>",
+// "Suspended until <data>", "Has joined <clube> …". Medido nas 213 de
+// 2026-10-02, estas regras cobrem todas; o que escapar fica no original.
+const PARTES_CORPO = {
+  hamstring: "posterior da coxa", knee: "joelho", ankle: "tornozelo", groin: "virilha",
+  calf: "gémeo", thigh: "coxa", foot: "pé", back: "costas", hip: "anca",
+  shoulder: "ombro", leg: "perna", muscular: "muscular", muscle: "muscular",
+  achilles: "tendão de Aquiles", head: "cabeça", toe: "dedo do pé", hand: "mão",
+  wrist: "pulso", arm: "braço", chest: "peito", neck: "pescoço", rib: "costela",
+  heel: "calcanhar", unspecified: "não especificada", knock: "pancada",
+};
+const MESES_PT = { jan: "jan", feb: "fev", mar: "mar", apr: "abr", may: "mai", jun: "jun",
+  jul: "jul", aug: "ago", sep: "set", oct: "out", nov: "nov", dec: "dez" };
+
+function traduzirData(txt) {
+  return txt.replace(/(\d{1,2}) ([A-Za-z]{3})/, (m, d, mes) =>
+    d + " " + (MESES_PT[mes.toLowerCase()] || mes));
+}
+
+/** A causa da notícia em português, sem a percentagem (que vai à parte). */
+function traduzirNoticia(news) {
+  const n = (news || "").trim();
+  let m = n.match(/^([A-Za-z]+) injury\s*-\s*(.*)$/i);
+  if (m) {
+    const parte = PARTES_CORPO[m[1].toLowerCase()];
+    const causa = parte ? "lesão (" + parte + ")" : "lesão";
+    const prazo = m[2];
+    if (/unknown return date/i.test(prazo)) return causa + ", regresso incerto";
+    const volta = prazo.match(/expected back (.*)$/i);
+    if (volta) return causa + ", volta a " + traduzirData(volta[1]);
+    return causa;
+  }
+  m = n.match(/^(Knock|Illness)\s*-/i);
+  if (m) return m[1].toLowerCase() === "knock" ? "pancada" : "doença";
+  m = n.match(/^Suspended until (.*)$/i);
+  if (m) return "castigado até " + traduzirData(m[1]);
+  if (/^has joined|has departed/i.test(n)) return "saiu do clube";
+  return n;
+}
+
+/**
+ * Alertas do meu plantel, parados e não a desfilar.
+ *
+ * Era um letreiro com as 20 notícias mais recentes da liga inteira, em inglês,
+ * a passar — e era o único sítio das Sugestões com percentagens de lesão, a
+ * fugir do ecrã. Agora são até três, **só dos meus**, por gravidade, com a
+ * percentagem na cor do estado. O resto está no Boletim, a um clique.
+ */
+function initTicker() {
+  const alvo = $("ticker-track");
+  if (!alvo) return;
+  const eu = ehClassica()
+    ? ((minhaEquipaClassica() || {}).id)
+    : ((D.entries.find((e) => MEU_GESTOR.test(e.manager)) || {}).entry_id);
+  const todas = noticiasBoletim();
+  const minhas = todas.filter((p) => eu != null && p.owner === eu && !saiuDoClube(p))
+    .sort((a, b) => pesoGravidade(a) - pesoGravidade(b) ||
+      (b.news_added || "").localeCompare(a.news_added || ""));
+  const mostradas = minhas.slice(0, 3);
+  const itens = mostradas.map((p) => {
+    const ffs = ffsDe(p);
+    const foraScout = !!(ffs && ffs.estado === "fora");
+    const fora = indisponivel(p) || foraScout;
+    const chance = p.chance_of_playing_next_round;
+    const sev = fora ? "bad" : "warn";
+    const marca = fora ? (foraScout && !indisponivel(p) ? "fora (Scout)" : "fora")
+      : chance != null ? chance + "%" : "dúvida";
+    return '<span class="ticker-item"><span class="ticker-ponto ' + sev + '" aria-hidden="true"></span>' +
+      '<span class="nome">' + esc(p.web_name) + "</span> · " + nomeClube(p.team) +
+      ' · <span class="ticker-pct ' + sev + '">' + esc(marca) + "</span>" +
+      (p.news ? ' <span class="ticker-causa">' + esc(traduzirNoticia(p.news)) + "</span>" : "") +
+      "</span>";
+  });
+  const resto = todas.length - mostradas.length;
+  const ligacao = resto > 0
+    ? '<button type="button" class="ticker-mais" data-separador="tab-boletim">' +
+      (mostradas.length ? "+" + resto + " no Boletim" : resto + " no Boletim") + "</button>"
+    : "";
+  // Sem alertas, a faixa não aparece: era uma banda a toda a largura para
+  // dizer "Sem alertas no teu plantel", e o Boletim continua em "Mais".
+  if (!itens.length) { $("ticker").hidden = true; return; }
+  alvo.innerHTML = itens.join("") + ligacao;
+  const botao = alvo.querySelector(".ticker-mais");
+  if (botao) botao.onclick = () => { const t = $(botao.dataset.separador); if (t) t.click(); };
   $("ticker").hidden = false;
 }
 
@@ -324,7 +398,10 @@ function aplicarFiltros() {
   if (ordem === "preco") {
     filtrados.sort((a, b) => (b.now_cost || 0) - (a.now_cost || 0));
   } else if (ordem === "proj") {
-    filtrados.sort((a, b) => projecao(b).ppj - projecao(a).ppj);
+    // Uma projeção por jogador, não uma por comparação: no comparador eram
+    // ~13 mil chamadas para 667 jogadores, e esta passou a ser a ordem por omissão.
+    const ppj = new Map(filtrados.map((p) => [p.id, projecao(p).ppj]));
+    filtrados.sort((a, b) => ppj.get(b.id) - ppj.get(a.id));
   } else if (ordem === "pontos") {
     filtrados.sort((a, b) => b.total_points - a.total_points);
   } else {
@@ -345,25 +422,30 @@ function desenharJogadores() {
       ? ' <span class="estado ' + est.sev + '">' + esc(est.rotulo) + "</span>"
       : "";
     const tr = (D.transferencias || {})[p.id];
-    // Neutro e não verde: o verde quer dizer "disponível", e um valor de
-    // transferência não diz nada sobre se o jogador joga ou não.
+    // Texto simples e não pílula: a pílula é a forma do estado ("dúvida 75%"),
+    // e um valor de transferência ao lado lia-se como mais um estado.
+    // Sem valor publicado (a fonte oficial confirma sem preço) não aparece nada.
     const dinheiro = tr && tr.confirmada && tr.valor > 0
-      ? ' <span class="estado info">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
+      ? ' <span class="valor-tr">' + esc(tr.moeda) + tr.valor + "M</span>" : "";
+    // Uma linha por jogador, com o clube e o rank logo a seguir ao nome: em
+    // duas linhas cabiam 7 jogadores no ecrã, de 667.
     return "<tr>" +
-      "<td>" + esc(p.web_name) + marca + dinheiro +
-        '<span class="sub">' + nomeClube(p.team) +
-          (p.draft_rank ? " · #" + p.draft_rank : "") + "</span></td>" +
+      "<td>" + esc(p.web_name) +
+        ' <span class="sub-linha">' + nomeClube(p.team) +
+          (p.draft_rank ? " · #" + p.draft_rank : "") + "</span>" + marca + dinheiro + "</td>" +
       "<td>" + (POSICOES[p.element_type] || "?") + "</td>" +
       // O total já feito recua e a projeção avança: era ao contrário (o total
       // a 15.7:1 em creme, a projeção a 9.7:1 em verde), e o número que serve
       // para decidir era o mais apagado da linha.
       '<td class="num atras">' + p.total_points + "</td>" +
       '<td class="num forte">' + projecao(p).ppj.toFixed(1) + "</td>" +
-      "<td>" + (ehClassica()
+      // No Draft quem interessa é quem está livre — dá para o ir buscar. O dono
+      // recua para cinzento; "Livre" fica a creme.
+      '<td class="col-dono">' + (ehClassica()
         ? (p.now_cost ? precoDe(p).toFixed(1) + "M" +
-            '<span class="sub">' + (p.selected_by_percent || "0") + "% têm</span>" : "—")
-        : (dono ? esc(dono) : '<span class="sub">Livre</span>')) + "</td>" +
-    "</tr>";
+            ' <span class="sub-linha">' + (p.selected_by_percent || "0") + "% têm</span>" : "—")
+        : (dono ? '<span class="dono">' + esc(dono) + "</span>" : '<span class="livre">Livre</span>')) +
+      "</td></tr>";
   }).join("");
   $("contagem-jogadores").textContent =
     filtrados.length + " jogador" + (filtrados.length === 1 ? "" : "es") +
@@ -1517,13 +1599,19 @@ function mioloChip(p, sub, ppj) {
     '<span class="chip-ppj">' + ppj.toFixed(1) + "</span></span>";
 }
 
-function chipJogador(x) {
+function chipJogador(x, entra, sai) {
   const est = estadoDe(x.p);
   // A aresta esquerda do cartão marca só a excepção: dourado dúvida, coral
   // fora. Apto não leva marca — com o normal em silêncio, uma aresta no meio
   // de onze cartões limpos é impossível de não ver.
   const sev = est.sev ? " sev-" + est.sev : "";
-  return '<span class="chip' + sev + '" title="' + esc(est.rotulo) + '">' +
+  // A diferença para o último onze publicado, a creme e não a verde: o verde
+  // quer dizer "disponível", e um jogador que entra no onze não é mais
+  // disponível do que os outros. Quem entra leva anel cheio; quem sai, no
+  // banco, anel tracejado.
+  const titulo = est.rotulo + (entra ? " · entra no onze" : sai ? " · sai do onze" : "");
+  return '<span class="chip' + sev + (entra ? " chip-novo" : "") + (sai ? " chip-sai" : "") +
+    '" title="' + esc(titulo) + '">' +
     mioloChip(x.p, nomeClube(x.p.team), x.pr.ppj) +
     (est.sev ? '<span class="estado ' + est.sev + '">!</span>' : "") +
   "</span>";
@@ -1536,20 +1624,40 @@ function desenharOnze(meusX) {
   [1, 2, 3, 4].forEach((pos) => porPos[pos].sort((a, b) => b.pr.ppj - a.pr.ppj));
 
   const total = xi.reduce((s, x) => s + x.pr.ppj, 0);
-  // O total é o número que o ecrã inteiro calcula e estava em cinzento, a
-  // reboque do título, com a mesma altura de maiúscula que um rótulo de
-  // separador. Passa a ser a coisa maior da secção: é só peso, tamanho e
-  // tracking — exactamente o que a tese diz que tem de carregar a identidade,
-  // e o que não estava a ser usado em lado nenhum.
-  $("xi-resumo").innerHTML =
-    '<span class="xi-total">' + total.toFixed(1) + "</span>" +
-    // A formação ia por baixo de "PTS NESTA JORNADA", na mesma letra, e lia-se
-    // como uma unidade dos pontos. Fica à parte, como numa folha de equipa.
-    '<span class="xi-total-rot">pts nesta jornada</span>' +
-    '<span class="xi-formacao">' +
-    porPos[2].length + "-" + porPos[3].length + "-" + porPos[4].length + "</span>";
+  const formacao = porPos[2].length + "-" + porPos[3].length + "-" + porPos[4].length;
+
+  // O total sozinho não pedia ação nenhuma: 42.8 pontos, e então? O número que
+  // decide é a diferença para o onze que já lá está. A API não publica o onze
+  // da jornada seguinte antes do deadline, mas publica o último — e é esse que
+  // joga se não se mexer em nada.
+  const ant = onzeAnterior();
+  const naSugestao = new Set(xi.map((x) => x.p.id));
+  const entram = ant ? xi.filter((x) => !ant.ids.includes(x.p.id)) : [];
+  const saem = ant ? ant.ids.filter((id) => !naSugestao.has(id))
+    .map((id) => jogadoresPorId[id]).filter(Boolean) : [];
+  const antTotal = ant ? meusX.filter((x) => ant.ids.includes(x.p.id))
+    .reduce((s, x) => s + x.pr.ppj, 0) : null;
+  const delta = ant ? total - antTotal : null;
+
+  // A formação ia por baixo de "PTS NESTA JORNADA", na mesma letra, e lia-se
+  // como uma unidade dos pontos. Fica à parte, como numa folha de equipa.
+  const rodape = '<span class="xi-formacao">' + formacao + "</span>";
+  if (ant && entram.length) {
+    $("xi-resumo").innerHTML =
+      '<span class="xi-total">' + (delta >= 0.05 ? "+" + delta.toFixed(1) : "=") + "</span>" +
+      '<span class="xi-total-rot">contra o teu onze da J' + ant.jornada + "<br>" +
+        entram.length + (entram.length === 1 ? " mudança" : " mudanças") + " · " +
+        total.toFixed(1) + " pts</span>" + rodape;
+  } else {
+    $("xi-resumo").innerHTML =
+      '<span class="xi-total">' + total.toFixed(1) + "</span>" +
+      '<span class="xi-total-rot">pts nesta jornada' +
+        (ant ? "<br>é o teu onze da J" + ant.jornada : "") + "</span>" + rodape;
+  }
+  const idsEntram = new Set(entram.map((x) => x.p.id));
   $("xi-campo").innerHTML = [1, 2, 3, 4]
-    .map((pos) => '<div class="linha-campo">' + porPos[pos].map(chipJogador).join("") + "</div>")
+    .map((pos) => '<div class="linha-campo">' +
+      porPos[pos].map((x) => chipJogador(x, idsEntram.has(x.p.id))).join("") + "</div>")
     .join("");
 
   // O banco em cartões, como o onze, e não numa frase corrida com "·" a dois
@@ -1557,8 +1665,30 @@ function desenharOnze(meusX) {
   // quem está lesionado ou em dúvida, que a frase não mostrava.
   const banco = meusX.filter((x) => !xi.includes(x)).sort((a, b) => b.pr.ppj - a.pr.ppj);
   $("xi-banco").innerHTML = banco.length
-    ? '<span class="banco-rot">Suplentes</span>' + banco.map(chipJogador).join("")
+    ? '<span class="banco-rot">Suplentes</span>' +
+      banco.map((x) => chipJogador(x, false, saem.some((p) => p.id === x.p.id))).join("")
     : "";
+  return { xi, total, ant, entram, saem, delta };
+}
+
+/**
+ * O último onze que a FPL publicou, e de que jornada — ou null.
+ *
+ * No Draft vem das escolhas da jornada (`picks_jornada`, posições 1-11); na
+ * clássica, das picks da equipa. Com o plantel escrito à mão na clássica não
+ * há comparação honesta a fazer: o plantel é outro e a FPL não diz o onze dele.
+ */
+function onzeAnterior() {
+  if (ehClassica()) {
+    const eq = minhaEquipaClassica();
+    if (!eq || eq.manual || !eq.picks || !eq.jornada_picks) return null;
+    const ids = eq.picks.filter((x) => x.posicao <= 11).map((x) => x.id);
+    return ids.length ? { ids: ids, jornada: eq.jornada_picks } : null;
+  }
+  const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
+  const pj = D.picks_jornada || {};
+  const minha = eu && (pj.equipas || {})[String(eu.entry_id)];
+  return minha && (minha.xi || []).length ? { ids: minha.xi, jornada: pj.evento } : null;
 }
 
 /* --- Justificações em linguagem corrente --- */
@@ -1741,7 +1871,7 @@ function initSugestoes() {
   const eu = D.entries.find((e) => MEU_GESTOR.test(e.manager));
   if (!eu) { $("sug-contexto").textContent = "Não encontrei a tua equipa na liga."; return; }
   const meusX = comProjecao(D.players.filter((p) => p.owner === eu.entry_id));
-  desenharOnze(meusX);
+  const onze = desenharOnze(meusX);
   desenharProximosJogos(meusX);
   desenharUtilizacao(meusX);
 
@@ -1860,6 +1990,141 @@ function initSugestoes() {
       "</li>";
     }).join("");
   }
+
+  desenharAcoes(meusX, onze, ehClassica() ? [] : livres, trocas);
+}
+
+// As três ações falavam três unidades ("contra o onze da J5", "por jornada",
+// "no teu onze") e não se podiam pôr por ordem. Agora é sempre o mesmo número:
+// quanto sobe o meu onze, por jornada.
+const UNIDADE_ACAO = " pts/jornada no teu onze";
+
+/** Quanto sobe o meu onze se `sai` der lugar a `entra`. */
+function ganhoNoOnze(meusX, sai, entra) {
+  const depois = meusX.filter((x) => x.p.id !== sai.p.id).concat([entra]);
+  return valorXI(depois) - valorXI(meusX);
+}
+
+/** "A e B", "A, B e C" — nomes a negrito. */
+function listaNomes(jogadores) {
+  const n = jogadores.map((p) => "<strong>" + esc(p.web_name) + "</strong>");
+  return n.length <= 1 ? (n[0] || "") : n.slice(0, -1).join(", ") + " e " + n[n.length - 1];
+}
+
+/**
+ * O que fazer nesta jornada, em até três ordens — ao lado do relvado.
+ *
+ * O primeiro ecrã mostrava o modelo (um total, um relvado, um seletor) e
+ * deixava a decisão para baixo, espalhada por secções. Isto junta o que já é
+ * calculado lá em baixo, pela ordem do que custa mais deixar por fazer:
+ * mexer no onze, confirmar uma dúvida que está no onze, o capitão (clássica),
+ * um waiver ou transferência que compense, e uma troca. Não calcula nada de
+ * novo — se discordar de uma secção de baixo, é defeito.
+ */
+function desenharAcoes(meusX, onze, livres, trocas) {
+  const alvo = $("acoes");
+  if (!alvo) return;
+  const acoes = [];
+  // Quem sai do plantel numa ação não pode entrar noutra. A primeira versão
+  // mandava largar o Belloumi no waiver e, na linha a seguir, dá-lo numa troca.
+  const usados = new Set();
+  const livreDe = (ids) => ids.every((id) => !usados.has(id));
+  const fmtGanho = (v) => '<span class="ganho-num">+' + v.toFixed(1) + "</span>";
+
+  // 1. O onze.
+  if (onze && onze.ant && onze.entram.length) {
+    // Também contam como usados: mandar pô-lo no onze e, duas linhas abaixo,
+    // dá-lo numa troca lia-se como uma contradição.
+    onze.entram.forEach((x) => usados.add(x.p.id));
+    acoes.push({
+      texto: "Põe " + listaNomes(onze.entram.map((x) => x.p)) + " no onze" +
+        (onze.saem.length ? ", tira " + listaNomes(onze.saem) : ""),
+      detalhe: fmtGanho(Math.max(0, onze.delta)) + UNIDADE_ACAO + " · contra o da J" + onze.ant.jornada,
+    });
+  }
+
+  // 2. Uma dúvida que ficou no onze sugerido: é o que pode mudar até ao deadline.
+  const duvida = ((onze && onze.xi) || [])
+    .filter((x) => x.p.status === "d" && (x.p.chance_of_playing_next_round ?? 100) < 100)
+    .sort((a, b) => (a.p.chance_of_playing_next_round ?? 100) -
+      (b.p.chance_of_playing_next_round ?? 100))[0];
+  if (duvida) {
+    acoes.push({
+      sev: "warn",
+      texto: "Confirma " + listaNomes([duvida.p]) + " antes do deadline",
+      detalhe: "dúvida " + (duvida.p.chance_of_playing_next_round ?? "?") + "% · " +
+        esc(traduzirNoticia(duvida.p.news || "")) + " · está no onze sugerido",
+    });
+  }
+
+  // 3. Clássica: o capitão é a maior decisão da jornada.
+  const equipa = ehClassica() ? minhaEquipaClassica() : null;
+  if (ehClassica() && meusX.length) {
+    const cap = meusX.filter((x) => !indisponivel(x.p))
+      .sort((a, b) => b.pr.ppjCal - a.pr.ppjCal)[0];
+    if (cap) {
+      const mesmo = equipa && equipa.capitao === cap.p.id;
+      acoes.push({
+        texto: (mesmo ? "Mantém " : "Capitão: ") + listaNomes([cap.p]) +
+          (mesmo ? " como capitão" : ""),
+        detalhe: '<span class="ganho-num">' + (cap.pr.ppjCal * 2).toFixed(1) + "</span>" +
+          " pts com a braçadeira",
+      });
+    }
+    const custo = (D.classica || {}).custo_transferencia || 4;
+    const livresTr = equipa && equipa.transferencias_livres != null ? equipa.transferencias_livres : 1;
+    const tr = melhoresTransferencias(meusX, 5).find((t) => livreDe([t.meu.p.id]) &&
+      !(cap && t.meu.p.id === cap.p.id) && ganhoNoOnze(meusX, t.meu, t.entra) >= 0.1);
+    if (tr && (livresTr > 0 || tr.ganho * 3 > custo)) {
+      usados.add(tr.meu.p.id);
+      acoes.push({
+        texto: "Transfere " + listaNomes([tr.meu.p]) + " → " + listaNomes([tr.entra.p]),
+        detalhe: fmtGanho(ganhoNoOnze(meusX, tr.meu, tr.entra)) + UNIDADE_ACAO + " · " +
+          (livresTr > 0 ? "cabe na transferência livre" : "custa −" + custo + ", paga-se"),
+      });
+    }
+  }
+
+  // 4. Draft: o melhor livre que compense.
+  // Só um livre que suba o onze: o ganho da secção de baixo é jogador contra
+  // jogador, e um reforço que fica no banco não dá pontos nenhuns esta jornada.
+  const livre = (livres || []).find((l) => livreDe([l.meu.p.id, l.livre.p.id]) &&
+    ganhoNoOnze(meusX, l.meu, l.livre) >= 0.1);
+  if (livre) {
+    usados.add(livre.meu.p.id);
+    const wt = (D.next_event || {}).waivers_time;
+    const antesWaivers = wt && Date.now() < Date.parse(wt);
+    acoes.push({
+      texto: (antesWaivers ? "Pede " : "Contrata ") + listaNomes([livre.livre.p]) +
+        (antesWaivers ? " no waiver" : "") + " e larga " + listaNomes([livre.meu.p]),
+      detalhe: fmtGanho(ganhoNoOnze(meusX, livre.meu, livre.livre)) + UNIDADE_ACAO +
+        (antesWaivers ? " · waivers até " + fmtDataHora.format(new Date(wt)) : ""),
+    });
+  }
+
+  // 5. Draft: uma troca, se ainda houver lugar.
+  const troca = (trocas || []).find((t) =>
+    livreDe(t.saem.concat(t.entram).map((x) => x.p.id)));
+  if (troca) {
+    acoes.push({
+      texto: "Propõe a " + esc(troca.outro.entry_name) + ": dás " +
+        listaNomes(troca.saem.map((x) => x.p)) + ", recebes " +
+        listaNomes(troca.entram.map((x) => x.p)),
+      detalhe: fmtGanho(troca.ganhoMeu) + UNIDADE_ACAO + " · " +
+        (troca.tipo === "ambos" ? "também lhe serve" : "o argumento é a qualidade a mais"),
+    });
+  }
+
+  const dl = (D.next_event || {}).deadline_time;
+  const resumo = $("acoes-resumo");
+  if (resumo) resumo.textContent = dl ? "até " + fmtDataHora.format(new Date(dl)) : "";
+  alvo.innerHTML = acoes.length
+    ? acoes.slice(0, 3).map((a) => '<li class="' + (a.sev || "") + '">' +
+        '<span class="acao-texto">' + a.texto + "</span>" +
+        '<span class="acao-detalhe">' + a.detalhe + "</span></li>").join("")
+    : '<li class="acao-nada"><span class="acao-texto">Nada a fazer</span>' +
+      '<span class="acao-detalhe">O onze sugerido é o que já tens, e nenhum movimento ' +
+      "compensa.</span></li>";
 }
 
 /** Estado da última recolha e aviso quando os dados já não servem. */
@@ -2328,6 +2593,7 @@ function initMeuPlantel() {
     desenharMeuPlantel();
     initSugestoes();
     desenharClassica();
+    initTicker();
   };
 
   form.addEventListener("submit", (ev) => {
@@ -3885,30 +4151,57 @@ function initMercado() {
 /* ---------- Separadores ---------- */
 
 function initTabs() {
-  // Os separadores só do Draft ficam `hidden` no modo clássico. Sem os tirar
-  // daqui, a seta para a direita abre o painel Conferências na clássica — e o
-  // foco vai para um botão escondido, que não o aceita.
-  const tabs = [...document.querySelectorAll('[role="tab"]')]
+  const nav = $("tabs");
+  const mais = $("tabs-mais");
+  // Calculada a cada uso e não uma vez só: os separadores de "Mais" só contam
+  // para as setas quando estão à vista, e isso muda. Os do outro modo ficam
+  // `hidden` — sem os tirar daqui, a seta para a direita abria o painel
+  // Conferências na clássica, e o foco ia para um botão escondido.
+  const visiveis = () => [...document.querySelectorAll('[role="tab"]')]
     .filter((t) => !t.hidden && t.offsetParent !== null);
+  const todos = [...document.querySelectorAll('[role="tab"]')];
+  const abrirMais = (abrir) => {
+    if (!nav || !mais) return;
+    nav.classList.toggle("mostrar-extra", abrir);
+    mais.setAttribute("aria-expanded", String(abrir));
+    mais.textContent = abrir ? "Menos" : "Mais";
+  };
   function ativar(tab) {
-    tabs.forEach((t) => {
+    todos.forEach((t) => {
       const ativo = t === tab;
       t.setAttribute("aria-selected", String(ativo));
       t.tabIndex = ativo ? 0 : -1;
       $(t.getAttribute("aria-controls")).hidden = !ativo;
     });
+    // Escolhido um separador, o menu fecha; um extra escolhido fica à vista
+    // sozinho (pela regra do aria-selected no CSS), para se saber onde se está.
+    abrirMais(false);
     tab.focus();
+    tab.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
-  tabs.forEach((tab, i) => {
+  todos.forEach((tab) => {
     tab.addEventListener("click", () => ativar(tab));
     tab.addEventListener("keydown", (ev) => {
       const delta = { ArrowRight: 1, ArrowLeft: -1 }[ev.key];
-      if (delta) {
-        ev.preventDefault();
-        ativar(tabs[(i + delta + tabs.length) % tabs.length]);
-      }
+      if (!delta) return;
+      ev.preventDefault();
+      const lista = visiveis();
+      const i = lista.indexOf(tab);
+      ativar(lista[(i + delta + lista.length) % lista.length]);
     });
   });
+  // O aplicarModo() destapa tudo o que é `data-modo` do modo atual, painéis
+  // incluídos; quem manda em que painel se vê é o separador selecionado.
+  todos.forEach((t) => {
+    $(t.getAttribute("aria-controls")).hidden = t.getAttribute("aria-selected") !== "true";
+  });
+  if (mais) {
+    // Sem extras visíveis neste modo, o botão não tem nada para mostrar.
+    const extras = todos.filter((t) => t.classList.contains("tab-extra") && !t.hidden);
+    mais.hidden = extras.length === 0;
+    mais.addEventListener("click", () =>
+      abrirMais(mais.getAttribute("aria-expanded") !== "true"));
+  }
 }
 
 /* ---------- Arranque ---------- */
@@ -4666,14 +4959,15 @@ async function main() {
   entradasPorId = Object.fromEntries(D.entries.map((e) => [e.id, e]));
   entradasPorEntryId = Object.fromEntries(D.entries.map((e) => [e.entry_id, e]));
   jogadoresPorId = Object.fromEntries(D.players.map((p) => [p.id, p]));
-  const noticias = comNoticias();
   initCabecalho();
   initDiagnostico();
-  initTicker(noticias);
   initBoletim(ordenarBoletim(noticiasBoletim()));
   initSeletorModo();
   meuPlantel = lerPlantelManual();
   aplicarPlantelManual();
+  // Depois do plantel manual: os alertas são dos meus, e na clássica quem são
+  // "os meus" pode ter sido indicado à mão.
+  initTicker();
   if (ehClassica()) {
     initLigaClassica();
     initEquipasClassica();

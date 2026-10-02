@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haaland of Fame · FPL Draft</title>
 <meta name="description" content="Dashboard da liga de FPL Draft">
-<link rel="stylesheet" href="styles.css?v=58">
+<link rel="stylesheet" href="styles.css?v=59">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#12171a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -33,25 +33,28 @@
 
 <p class="aviso-velho" id="aviso-velho" role="alert" hidden></p>
 
-<div class="ticker" id="ticker" hidden aria-label="Últimas notícias dos jogadores">
+<div class="ticker" id="ticker" hidden aria-label="Alertas do teu plantel">
   <div class="ticker-track" id="ticker-track"></div>
 </div>
 
-<nav class="tabs" role="tablist" aria-label="Secções">
-  <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="true">Liga</button>
-  <button role="tab" data-modo="draft" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
-  <button role="tab" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
-  <button role="tab" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
+<div class="tabs-barra">
+<nav class="tabs" id="tabs" role="tablist" aria-label="Secções">
+  <button role="tab" id="tab-sug" aria-controls="painel-sug" aria-selected="true" aria-label="Sugestões e projeções">Sugestões</button>
   <button role="tab" id="tab-jogadores" aria-controls="painel-jogadores" aria-selected="false" tabindex="-1">Jogadores</button>
-  <button role="tab" id="tab-sug" aria-controls="painel-sug" aria-selected="false" tabindex="-1" aria-label="Sugestões e projeções">Sugestões</button>
-  <button role="tab" data-modo="draft" id="tab-troca" aria-controls="painel-troca" aria-selected="false" tabindex="-1" aria-label="Analisar uma troca">Analisar troca</button>
-  <button role="tab" data-modo="draft" id="tab-transf" aria-controls="painel-transf" aria-selected="false" tabindex="-1" aria-label="Transferências concluídas">Transferências</button>
-  <button role="tab" id="tab-mercado" aria-controls="painel-mercado" aria-selected="false" tabindex="-1">Mercado</button>
   <button role="tab" id="tab-cal" aria-controls="painel-cal" aria-selected="false" tabindex="-1" aria-label="Calendário de todas as competições">Calendário</button>
+  <button role="tab" id="tab-liga" aria-controls="painel-liga" aria-selected="false" tabindex="-1">Liga</button>
+  <button role="tab" id="tab-mercado" aria-controls="painel-mercado" aria-selected="false" tabindex="-1">Mercado</button>
+  <button role="tab" class="tab-extra" id="tab-boletim" aria-controls="painel-boletim" aria-selected="false" tabindex="-1">Boletim</button>
+  <button role="tab" class="tab-extra" id="tab-equipas" aria-controls="painel-equipas" aria-selected="false" tabindex="-1" aria-label="Todas as equipas">Equipas</button>
+  <button role="tab" class="tab-extra" data-modo="draft" id="tab-conf" aria-controls="painel-conf" aria-selected="false" tabindex="-1" aria-label="Conferências de imprensa e riscos">Conferências</button>
+  <button role="tab" class="tab-extra" data-modo="draft" id="tab-troca" aria-controls="painel-troca" aria-selected="false" tabindex="-1" aria-label="Analisar uma troca">Analisar troca</button>
+  <button role="tab" class="tab-extra" data-modo="draft" id="tab-transf" aria-controls="painel-transf" aria-selected="false" tabindex="-1" aria-label="Transferências concluídas">Transferências</button>
 </nav>
+<button type="button" class="tabs-mais" id="tabs-mais" aria-expanded="false" aria-controls="tabs">Mais</button>
+</div>
 
 <main>
-  <section id="painel-liga" role="tabpanel" aria-labelledby="tab-liga">
+  <section id="painel-liga" role="tabpanel" aria-labelledby="tab-liga" hidden>
     <div data-modo="draft" id="bloco-jornada" hidden>
       <h2 class="sec-titulo">A jornada <span id="jornada-resumo" class="sub-total"></span></h2>
       <p class="nota" id="jornada-legenda"></p>
@@ -123,9 +126,9 @@
       <div class="filtros-linha">
         <label class="visually-hidden" for="ordenar">Ordenar por</label>
         <select id="ordenar">
+          <option value="proj" selected>Ordenar por projeção</option>
           <option value="rank">Ordenar por draft rank</option>
-          <option value="proj">Ordenar por projeção</option>
-          <option value="pontos">Ordenar por pontos da época passada</option>
+          <option value="pontos">Ordenar por pontos já feitos</option>
         </select>
       </div>
     </form>
@@ -136,14 +139,22 @@
     </table>
     <button type="button" class="mostrar-mais" id="mostrar-mais" hidden>Mostrar mais</button>
   </section>
-  <section id="painel-sug" role="tabpanel" aria-labelledby="tab-sug" hidden>
+  <section id="painel-sug" role="tabpanel" aria-labelledby="tab-sug">
     <h2 class="sec-titulo" id="sug-titulo">Sugestões</h2>
     <p class="nota" id="sug-contexto"></p>
     <p class="aviso-jornada" id="sug-jornada" hidden></p>
 
-    <h3 class="sub-titulo">Onze inicial sugerido <span id="xi-resumo" class="sub-total"></span></h3>
-    <div class="campo" id="xi-campo"></div>
-    <div class="banco" id="xi-banco"></div>
+    <div class="xi-grelha">
+      <section class="acoes-bloco" aria-labelledby="acoes-titulo">
+        <h3 class="sub-titulo" id="acoes-titulo">Para fazer <span id="acoes-resumo" class="sub-total"></span></h3>
+        <ol class="acoes" id="acoes"></ol>
+      </section>
+      <div class="xi-coluna">
+        <h3 class="sub-titulo">Onze inicial sugerido <span id="xi-resumo" class="sub-total"></span></h3>
+        <div class="campo" id="xi-campo"></div>
+        <div class="banco" id="xi-banco"></div>
+      </div>
+    </div>
 
     <form class="filtros" id="form-janela" autocomplete="off">
       <label class="visually-hidden" for="janela">Janela do calendário</label>
@@ -400,7 +411,7 @@
   <p class="fontes" id="estado-fontes"></p>
 </footer>
 
-<script src="app.js?v=58"></script>
+<script src="app.js?v=59"></script>
 
 </body>
 </html>

@@ -28,8 +28,8 @@ ANTI-GOALS
 - Nothing decorative outside the pitch. No ornamental gradients, no glows, no
   background blobs. The pitch is the exception because it is literal.
 - Colour is never decoration. Green, gold and coral have fixed meanings.
-- Nothing that hides a number behind an animation. Mobile-first at 375px, no
-  horizontal scroll on the body, prefers-reduced-motion honoured.
+- Nothing that hides a number behind an animation. Used on a desktop browser;
+  at phone width only require no horizontal scroll on the body, prefers-reduced-motion honoured.
 - No text that contradicts the number beside it.
 
 Produce exactly these five sections.

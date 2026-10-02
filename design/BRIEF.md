@@ -29,14 +29,15 @@ antes do deadline, não de quem quer admirar gráficos.
   fundo. O relvado é a exceção, e é exceção porque é literal.
 - **A cor nunca é decoração.** Verde, dourado e coral têm significado fixo. Usar coral porque
   "fica bem" estraga a leitura em toda a app.
-- **Nada que esconda um número atrás de uma animação.** Mobile-first a 375px, sem scroll
-  horizontal no `body`, `prefers-reduced-motion` respeitado.
+- **Nada que esconda um número atrás de uma animação.** Usa-se no ecrã largo do
+  computador (decisão do utilizador); no telemóvel basta não haver scroll horizontal no `body`, `prefers-reduced-motion` respeitado.
 - **Nenhum texto a contradizer o número ao lado.** É o erro que este projeto comete mais
   (está documentado três vezes no `CLAUDE.md`) e o que mais lhe custa.
 
 ## Estrutura
 
-Cabeçalho fino → faixa de avisos → ticker de notícias → 10 separadores → painel. O esqueleto por
+Cabeçalho fino → alertas do meu plantel (parados) → 5 separadores e "Mais" → painel. As
+Sugestões abrem primeiro, com "Para fazer" ao lado do relvado. O esqueleto por
 omissão que seria de recusar: barra fixa, herói centrado, três cartões de features. Nada disso
 existe aqui, e não deve passar a existir — isto é uma ferramenta densa, não uma página de
 apresentação.
@@ -50,10 +51,13 @@ Relvado: `--relva #3b5d4c` · `--relva-clara #4c7762` · cartões `--chip #141f1
 Hall of Fame/a vigiar) · `--perigo #ef6b57` (coral/fora) · `--foco #6fb8ff` (só o anel de foco,
 fora da paleta de propósito para se destacar).
 
-**Uma exceção assumida**: a dificuldade do adversário usa verde (fácil) e coral (difícil), que é
-a convenção de qualquer tabela de jogos de fantasy. O dourado nunca entra na escala de
-dificuldade — é só "a vigiar" (dúvidas, calendário apertado). Informação sem juízo (valor de uma
-transferência, cargo de bola parada, lugar na tabela) leva o distintivo neutro `.estado.info`.
+**Cor só para o estado de um jogador** (decisão do utilizador, 2026-10-02). A dificuldade do
+adversário é uma **rampa de luminosidade sem cor**: fácil cheio a creme, neutro cheio e
+discreto, difícil só em contorno, muito difícil a tracejado. Havia uma exceção verde/coral pela
+convenção da FPL, e foi retirada: um jogo difícil a coral lia-se como uma lesão. O dourado fica
+para "a vigiar" (dúvidas, calendário apertado, dados velhos, último dia antes do deadline).
+Informação sem juízo (valor de uma transferência, cargo de bola parada, lugar na tabela) leva o
+distintivo neutro `.estado.info` ou texto simples.
 
 ## Tipografia
 

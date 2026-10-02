@@ -1220,6 +1220,62 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   C = guardadoC;
 })();
 
+/* --- Alertas: a notícia da API em português --- */
+(function () {
+  if (typeof traduzirNoticia !== "function") return;
+  const casos = [
+    ["Knee injury - Unknown return date", "lesão (joelho), regresso incerto"],
+    ["Hamstring injury - Expected back 18 Oct", "lesão (posterior da coxa), volta a 18 out"],
+    ["Unspecified injury - 75% chance of playing", "lesão (não especificada)"],
+    ["Suspended until 25 Oct", "castigado até 25 out"],
+    ["Has joined Juventus on loan for the rest of the season", "saiu do clube"],
+    ["Algo que a API ainda não disse", "Algo que a API ainda não disse"],
+  ];
+  casos.forEach(([api, pt]) => verificar("tradução: " + api, traduzirNoticia(api) === pt,
+    traduzirNoticia(api)));
+})();
+
+/* --- Para fazer: um jogador não aparece em duas ações --- */
+(function () {
+  if (typeof desenharAcoes !== "function") return;
+  const ol = document.createElement("ol");
+  ol.id = "acoes";
+  document.body.appendChild(ol);
+  const P = (id, nome) => ({ id: id, web_name: nome, element_type: 3, status: "a", team: 1 });
+  const X = (p) => ({ p: p, pr: { ppj: 3, ppjCal: 3 } });
+  const alfa = X(P(9001, "Alfa")), beta = X(P(9002, "Beta"));
+  const gama = X(P(9003, "Gama")), delta = X(P(9004, "Delta"));
+  const livres = [{ meu: alfa, livre: beta, ganho: 0.9, ganhoCal: 0.9 }];
+  const trocas = [
+    { outro: { entry_name: "Com Alfa" }, saem: [alfa], entram: [gama], ganhoMeu: 1, tipo: "adocante" },
+    { outro: { entry_name: "Sem Alfa" }, saem: [delta], entram: [gama], ganhoMeu: 0.5, tipo: "adocante" },
+  ];
+  desenharAcoes([], null, livres, trocas);
+  verificar("quem se larga no waiver não volta a aparecer numa troca",
+    ol.textContent.indexOf("Com Alfa") < 0 && ol.textContent.indexOf("Sem Alfa") >= 0, ol.textContent);
+  desenharAcoes([], null, [], []);
+  verificar("sem nada que compense, diz que não há nada a fazer",
+    ol.textContent.indexOf("Nada a fazer") >= 0, ol.textContent);
+  document.body.removeChild(ol);
+})();
+
+/* --- O onze anterior vem das escolhas publicadas da minha equipa --- */
+(function () {
+  if (typeof onzeAnterior !== "function") return;
+  const guardado = D.picks_jornada;
+  D.picks_jornada = { evento: 5, equipas: {
+    "100": { xi: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], banco: [12, 13, 14, 15] },
+    "200": { xi: [21, 22], banco: [] },
+  } };
+  const ant = onzeAnterior();
+  verificar("o onze anterior é o meu (entry 100), e de que jornada é",
+    ant && ant.jornada === 5 && ant.ids.length === 11 && ant.ids[0] === 1, ant);
+  D.picks_jornada = {};
+  verificar("sem escolhas publicadas não há comparação (null, não um onze vazio)",
+    onzeAnterior() === null, onzeAnterior());
+  D.picks_jornada = guardado;
+})();
+
 /* --- Minutos: um zero antes de uma sequência de titularidades não conta --- */
 (function () {
   // Medido em 655 jogadores (prever a J3 a partir das J1-J2): quem fez (0,1)
