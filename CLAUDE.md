@@ -1220,6 +1220,46 @@ A grelha de 12 jornadas pedia ~950px, e por isso a largura da app passou de 58re
 em todos os separadores**. Alargar só o Calendário fazia o conteúdo saltar 40px ao mudar de
 separador.
 
+## Lesões: quem herda os minutos, e o peso de uma ausência curta (2026-10-08)
+
+Reparo do utilizador, em dois pontos. (1) Quando um titular se lesiona, alguém entra no lugar
+dele, e isso muda o valor desse jogador para o onze. (2) Um titular lesionado não pode ser pesado
+como se não jogasse nunca, sobretudo nas transferências. Medido antes de mexer, a prever a
+jornada t a partir das anteriores (t = 3 a 5), com o estado clínico de cada jornada e a data de
+cada notícia. A data é o que separa quem já estava lesionado antes do jogo de quem se lesionou
+nele.
+
+**(1) Existe, e entrou no modelo** (`mapaReforco`, `FRACAO_REFORCO = 0.75`). Quando um titular
+recente (60+ min num dos dois últimos jogos) fica de fora, os colegas da mesma posição e do mesmo
+clube jogam, somados, **+35 min** acima do previsto (mediana +30). Nos grupos sem ausências o
+desvio é +5. A forma de repartir também foi medida:
+
+| Regra | Erro dos colegas (eram 21.3 min) |
+|---|---|
+| tudo para o suplente com mais minutos | **24.3**, pior |
+| 75% repartido pela folga de cada um, (90 − x)·x | **19.5**, viés −1.2, ganho +1.8 [+0.7, +2.8] |
+| 100% repartido pela folga | 19.0, mas viés positivo e erro quadrático pior |
+
+O efeito por jogador é modesto: em 2026-10-08 eram 34 jogadores com +4 a +8 minutos (+0.2 a
++0.3 pts/jornada), quase todos livres. Os guarda-redes ficam à parte e o suplente herda tudo,
+porque joga exatamente um. Isso não é mensurável (houve um caso: Henderson fora, o Benítez
+previsto com 61 jogou 90), mas é a regra do jogo. Quem está fora há mais de dois jogos não liberta
+nada, porque a ausência já está nos minutos recentes dos colegas.
+
+**(2) Metade estava certa e metade não.**
+
+- **Tirar da média os zeros de quando estava lesionado: piora, e não entrou.** Nos 16 casos de
+  quem voltava, o erro sobe de 25.8 para 31.0 minutos (pior em 95% das reamostragens). Quem
+  regressa entra aos poucos (o Sangaré seria previsto com 41 minutos e jogou 7), e os zeros
+  acabam por dizer isso mesmo. É a mesma conclusão do historial de lesões.
+- **A percentagem de dúvida pesava a janela inteira: corrigido** (`disponibilidadeJanela`,
+  `ppjJanela`). A API dá `chance_of_playing_next_round`, só da próxima jornada, e os waivers e as
+  transferências, que são decisões permanentes, aplicavam-na às cinco. O João Pedro, com 75%,
+  levava 25% de castigo em todas, e a sugestão "Transfere João Pedro → Thiago" vinha daí (passou
+  de primeira a terceira, com o ganho a meio). Com data de regresso na notícia ("Expected back 18
+  Oct", "Suspended until…") só contam as jornadas antes dela. Sem data fica a janela toda de fora,
+  como antes. O onze da jornada não muda, porque é de uma jornada só.
+
 ## O primeiro ecrã passou a ser uma decisão (2026-10-02, pedido do utilizador)
 
 Revisão visual com a skill standout-design. As sete decisões que o crítico pediu e eu tinha
@@ -1512,6 +1552,7 @@ não uma intuição.
 | **Tabela de pontuação escrita à mão** | Deu **dois erros de facto** (golo de GR a 6 em vez de 10; castigo por golos sofridos em falta). Lê-se de `settings.scoring`. |
 | **Ordenar o onze pelo adversário** | Medido em 63 onzes reais: o `ppjCal` é **pior** do que não fazer nada (P=0.75), com 5 de 14 mudanças a piorar; o ajuste bem feito vale **0.9 pontos numa época**. A margem entre o melhor onze e o segundo é 0.436 e o efeito por jogador é ±0.2-0.3. O efeito do adversário **existe** (o modelo extrai 19% do sinal) mas vive no **tooltip**, não na projeção. |
 | **Baixar o peso do histórico nos minutos** (`n/(n+2)` → `n/(n+0.3)`) | Ganho aparente de 36.6% em erro médio absoluto que é **artefacto**: o MAE premia a mediana e os minutos são bimodais. Em erro quadrático cai para 18%, em pontos para 0.2%, e o parâmetro é não-monótono entre jornadas. |
+| **Tirar da média de minutos os jogos em que estava lesionado** | Nos 16 casos de regresso de lesão (jornadas 3-5), o erro sobe de 25.8 para 31.0 min, pior em 95% das reamostragens. Quem volta entra aos poucos; os zeros dizem isso. |
 | **Regra de minutos específica para guarda-redes** | As 60 aparições de GR nas 3 jornadas foram todas de 90 minutos exactos, mas o grupo que mudou de estatuto tem **N=2**. Não é mensurável; o caso geral já o cobre. |
 
 *Nota sobre o win-win nas trocas*: medi zero em 119 130 combinações e escrevi que era estrutural.

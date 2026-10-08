@@ -1276,6 +1276,71 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   D.picks_jornada = guardado;
 })();
 
+/* --- Lesões nas decisões permanentes: só pesam as jornadas em que ele falta --- */
+(function () {
+  if (typeof disponibilidadeJanela !== "function") return;
+  const guardadoFx = D.fixtures;
+  const n = janelaAtual();
+  let soma = 0;
+  for (let i = 0; i < n; i += 1) soma += Math.pow(DECAIMENTO, i);
+  const duvida = { id: 9991, team: 5, status: "d", chance_of_playing_next_round: 75,
+    news: "Knee injury - 75% chance of playing" };
+  verificar("uma dúvida de 75% só pesa na próxima jornada, não na janela toda",
+    Math.abs(disponibilidadeJanela(duvida) - (1 - 0.25 / soma)) < 1e-9, disponibilidadeJanela(duvida));
+  D.fixtures = { "5": [
+    { event: 1, kickoff: "2026-10-10T14:00:00Z" },
+    { event: 2, kickoff: "2026-10-18T14:00:00Z" },
+    { event: 3, kickoff: "2026-10-25T14:00:00Z" },
+  ] };
+  const volta = { id: 9992, team: 5, status: "i", chance_of_playing_next_round: 0,
+    news: "Hamstring injury - Expected back 20 Oct", news_added: "2026-10-01T10:00:00Z" };
+  const esperado = (soma - 1 - DECAIMENTO) / soma; // falha as jornadas 1 e 2
+  verificar("com data de regresso, só faltam as jornadas antes dela",
+    Math.abs(disponibilidadeJanela(volta) - esperado) < 1e-9, disponibilidadeJanela(volta));
+  const longa = { id: 9993, team: 5, status: "i", chance_of_playing_next_round: 0,
+    news: "Knee injury - Unknown return date" };
+  verificar("sem data de regresso, fica de fora a janela toda (como antes)",
+    disponibilidadeJanela(longa) === 0, disponibilidadeJanela(longa));
+  verificar("data de regresso em janeiro numa notícia de dezembro passa para o ano seguinte",
+    dataRegresso({ news: "Ankle injury - Expected back 3 Jan", news_added: "2026-12-20T10:00:00Z" }) ===
+      Date.UTC(2027, 0, 3));
+  const apto = D.players.find((p) => p.status === "a");
+  const xApto = { p: apto, pr: projecao(apto) };
+  verificar("para quem está apto, o valor na janela é o ppj de sempre",
+    ppjJanela(xApto) === xApto.pr.ppj);
+  D.fixtures = guardadoFx;
+})();
+
+/* --- Quem entra quando um titular fica de fora --- */
+(function () {
+  if (typeof mapaReforco !== "function") return;
+  const guardadoJ = D.jornadas;
+  const o4 = D.players.find((p) => p.id === 104), def5 = D.players.find((p) => p.id === 7);
+  const o0 = D.players.find((p) => p.id === 100), gr1 = D.players.find((p) => p.id === 1);
+  const guardado = [o4, o0].map((p) => [p.status, p.chance_of_playing_next_round]);
+  // Jornada 1: o O4 (DEF, clube 5) e o O0 (GR, clube 1) jogaram 90; o DEF5 jogou 30 e o GR1 nada.
+  D.jornadas = { 1: { finalizada: true, equipas: [1, 5],
+    stats: { "104": [90, 2], "7": [30, 1], "100": [90, 2], "1": [0, 0] } } };
+  limparCacheReforco();
+  const semAusencia = projecao(def5).xmin;
+  o4.status = "i"; o4.chance_of_playing_next_round = 0;
+  o0.status = "i"; o0.chance_of_playing_next_round = 0;
+  limparCacheReforco();
+  const mapa = mapaReforco();
+  const perdidoDef = projecao(o4, true, true).xmin;
+  verificar("titular de fora: o colega da mesma posição herda 75% dos minutos dele",
+    Math.abs((mapa[7] || 0) - 0.75 * perdidoDef) < 1e-6, [mapa[7], perdidoDef]);
+  verificar("...e a projeção do colega sobe",
+    projecao(def5).xmin > semAusencia, [semAusencia, projecao(def5).xmin]);
+  const perdidoGr = projecao(o0, true, true).xmin;
+  verificar("guarda-redes de fora: o suplente herda os minutos todos",
+    Math.abs((mapa[1] || 0) - perdidoGr) < 1e-6, [mapa[1], perdidoGr]);
+  verificar("quem está de fora não herda nada de ninguém", mapa[104] === undefined && mapa[100] === undefined);
+  [o4, o0].forEach((p, i) => { p.status = guardado[i][0]; p.chance_of_playing_next_round = guardado[i][1]; });
+  D.jornadas = guardadoJ;
+  limparCacheReforco();
+})();
+
 /* --- Minutos: um zero antes de uma sequência de titularidades não conta --- */
 (function () {
   // Medido em 655 jogadores (prever a J3 a partir das J1-J2): quem fez (0,1)

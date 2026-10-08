@@ -988,7 +988,86 @@ function historicoCombinado(p, hist) {
   return saida;
 }
 
-function projecao(p, ignorarAusencia) {
+/* --- Quem entra quando um titular fica de fora ---
+ *
+ * Medido nas jornadas 3-5 (prever a jornada t a partir das anteriores, com o
+ * estado clínico guardado em cada uma): quando um titular recente fica de
+ * fora, os colegas da mesma posição e do mesmo clube jogam, somados, +35
+ * minutos acima do que o modelo previa (mediana +30), contra +5 nos grupos sem
+ * ausências. O modelo só dava por isso depois de o substituto jogar.
+ *
+ * Como repartir também foi medido, nos 64 colegas dos 15 casos:
+ *  - tudo para o suplente com mais minutos: o erro sobe de 21.3 para 24.3;
+ *  - repartido pela folga de cada um, (90 − x)·x: desce para 19.0-20.6,
+ *    conforme a fração. A 75% o viés fica a −1.2 e o ganho é +1.8 min por
+ *    colega, IC95 [+0.7, +2.8], pior em 0% das reamostragens. A 100% o ganho
+ *    médio é maior mas o viés passa a positivo e o erro quadrático piora.
+ * Quem não joga nada (x = 0) não recebe: a folga dele pesa zero.
+ *
+ * Guarda-redes à parte: joga exatamente um, por isso vai tudo para o
+ * suplente com mais minutos. Não é mensurável (houve um caso: Henderson fora,
+ * o Benítez previsto com 61 jogou 90) — é a regra do jogo, não um ajuste.
+ */
+const FRACAO_REFORCO = 0.75;
+let cacheReforco = { chave: null, mapa: null };
+
+/** Fica de fora na próxima jornada (como o próprio modelo o zera). */
+function ausenteProxima(q) {
+  const f = ffsDe(q);
+  return indisponivel(q) || !!(f && f.estado === "fora") ||
+    (q.status === "d" && (q.chance_of_playing_next_round ?? 100) <= 25);
+}
+
+/** Foi titular (60+ min) num dos dois últimos jogos do clube. Só esses libertam
+ *  minutos que o modelo ainda não deu a ninguém: quem está fora há mais tempo já
+ *  tem a ausência dentro dos minutos recentes dos colegas. */
+function titularRecente(q) {
+  return utilizacao(q).filter((u) => u.finalizada).slice(-2)
+    .some((u) => u.minutos >= MIN_TITULAR);
+}
+
+/** {id: minutos a mais} para quem herda os minutos de um titular de fora. */
+function mapaReforco() {
+  // Os estados não mudam com a página aberta; só os dados novos os mudam.
+  const chave = [D, D.players, D.jornadas];
+  const c = cacheReforco.chave;
+  if (c && c[0] === chave[0] && c[1] === chave[1] && c[2] === chave[2]) return cacheReforco.mapa;
+  const grupos = {};
+  D.players.forEach((q) => {
+    const k = q.team + "-" + q.element_type;
+    (grupos[k] = grupos[k] || []).push(q);
+  });
+  const mapa = {};
+  Object.values(grupos).forEach((qs) => {
+    const vagos = qs.filter((q) => ausenteProxima(q) && titularRecente(q))
+      .reduce((s, q) => {
+        const chance = q.status === "d" ? (q.chance_of_playing_next_round ?? 0) : 0;
+        return s + projecao(q, true, true).xmin * (1 - chance / 100);
+      }, 0);
+    if (vagos <= 0) return;
+    const base = qs.filter((q) => !ausenteProxima(q))
+      .map((q) => ({ id: q.id, x: projecao(q, false, true).xmin }));
+    if (!base.length) return;
+    if (qs[0].element_type === 1) {
+      const suplente = base.slice().sort((a, b) => b.x - a.x)[0];
+      mapa[suplente.id] = vagos;
+      return;
+    }
+    const folga = base.map((b) => ({ id: b.id, w: Math.max(0, 90 - b.x) * b.x }));
+    const total = folga.reduce((s, f) => s + f.w, 0);
+    if (total <= 0) return;
+    folga.forEach((f) => { mapa[f.id] = FRACAO_REFORCO * vagos * f.w / total; });
+  });
+  cacheReforco = { chave: chave, mapa: mapa };
+  return mapa;
+}
+
+/** Para os testes, que mexem nos estados sem trocar os dados. */
+function limparCacheReforco() {
+  cacheReforco = { chave: null, mapa: null };
+}
+
+function projecao(p, ignorarAusencia, semReforco) {
   const prior = priorDe(p);
   const hist = historicoDe(p);
   // Taxa combinada (esperado + realizado) sobre as duas épocas.
@@ -1057,6 +1136,12 @@ function projecao(p, ignorarAusencia) {
       xmin *= 1 - 0.15 * forca;
     }
   }
+  // Minutos herdados de um titular que fica de fora (ver mapaReforco).
+  let reforco = 0;
+  if (!semReforco) {
+    reforco = mapaReforco()[p.id] || 0;
+    xmin = Math.min(90, xmin + reforco);
+  }
   // O Scout costuma saber da conferência de imprensa antes de a API atualizar.
   const ffs = ffsDe(p);
   if (ignorarAusencia) {
@@ -1081,6 +1166,7 @@ function projecao(p, ignorarAusencia) {
   const naoUsado = jogosObs >= 2 && ultimos.every((u) => u.minutos === 0) &&
     !indisponivel(p);
   return { pp90, xmin, ppj, ppjCal, calFator, jogos, tr, bump, ultimos, jogosObs, naoUsado, pe, ffs,
+    reforco,
     componentes: componentesPP90(p, hist), extraBP, bp: bolaParadaDe(p),
     advCS: efeitoAdversario(p, hist) };
 }
@@ -1418,16 +1504,99 @@ function ppjSaudavel(p) {
   return projecao(p, true).ppj;
 }
 
+const MESES_EN = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+/** A data em que a notícia diz que ele volta ("Expected back 18 Oct",
+ *  "Suspended until 25 Oct"), ou null. O ano é o da notícia, e passa para o
+ *  seguinte se a data ficasse antes dela (uma notícia de dezembro a dizer
+ *  "Expected back 3 Jan"). */
+function dataRegresso(p) {
+  const m = (p.news || "").match(/(?:expected back|suspended until) (\d{1,2}) ([a-z]{3})/i);
+  if (!m || MESES_EN[m[2].toLowerCase()] == null) return null;
+  const base = p.news_added ? new Date(p.news_added) : new Date();
+  let data = Date.UTC(base.getUTCFullYear(), MESES_EN[m[2].toLowerCase()], Number(m[1]));
+  if (data < base.getTime() - 864e5) {
+    data = Date.UTC(base.getUTCFullYear() + 1, MESES_EN[m[2].toLowerCase()], Number(m[1]));
+  }
+  return data;
+}
+
+/**
+ * Que parte da janela de decisão é que ele joga, ponderada como o calendário
+ * (a próxima jornada pesa mais). 1 para quem está apto.
+ *
+ * Existe porque as decisões permanentes (waivers, transferências) pesavam uma
+ * ausência curta como se fosse a janela inteira. A percentagem da API é
+ * `chance_of_playing_next_round` — **só da próxima jornada** —, e o modelo
+ * aplicava-a às cinco: o João Pedro, com 75% para uma jornada, levava 25% de
+ * castigo em todas. Com data de regresso na notícia, contam só as jornadas
+ * antes dela. Sem data (lesão longa, "Unknown return date"), fica a janela
+ * toda de fora, como antes — é o caso conservador e não há como saber mais.
+ *
+ * Não se tiram da média os zeros da lesão: medido, piora (o erro em quem volta
+ * sobe de 25.8 para 31.0 minutos) — quem regressa entra aos poucos, e os
+ * zeros acabam a dizer isso mesmo.
+ */
+function disponibilidadeJanela(p) {
+  const proxima = (D.next_event || {}).id;
+  if (proxima == null) return 1;
+  if (saiuDaLiga(p) || p.status === "u") return 0;
+  const janela = janelaAtual();
+  const regresso = dataRegresso(p);
+  const f = ffsDe(p);
+  const foraScout = !!(f && f.estado === "fora");
+  const fixtures = (D.fixtures || {})[String(p.team)] || [];
+  let soma = 0, pesos = 0;
+  for (let i = 0; i < janela; i += 1) {
+    const ev = proxima + i;
+    const peso = Math.pow(DECAIMENTO, i);
+    let d;
+    if (regresso != null) {
+      const jogo = fixtures.find((j) => j.event === ev);
+      d = !jogo || !jogo.kickoff || Date.parse(jogo.kickoff) >= regresso ? 1 : 0;
+    } else if (indisponivel(p)) {
+      d = 0;
+    } else if (i === 0 && foraScout) {
+      d = 0;
+    } else if (i === 0 && p.status === "d" && p.chance_of_playing_next_round != null) {
+      d = p.chance_of_playing_next_round / 100;
+    } else {
+      d = 1;
+    }
+    soma += peso * d;
+    pesos += peso;
+  }
+  return pesos > 0 ? soma / pesos : 1;
+}
+
+/** Pts/jornada para uma decisão permanente: o que ele rende apto, vezes a
+ *  parte da janela em que joga. Para quem está apto é o ppj de sempre. */
+function ppjJanela(x) {
+  const temBandeira = x.p.status !== "a" || (ffsDe(x.p) || {}).estado === "fora";
+  if (!temBandeira) return x.pr.ppj;
+  return ppjSaudavel(x.p) * disponibilidadeJanela(x.p);
+}
+
 function sugestoesLivres(meusX) {
   const livresX = comProjecao(D.players.filter((p) => p.owner == null && !indisponivel(p)));
+  // Um waiver é para ficar: compara-se o que cada um rende na janela, e não
+  // só na próxima jornada. Sem isto, largava-se um titular por causa de uma
+  // dúvida de uma jornada (ver disponibilidadeJanela).
+  const valor = new Map();
+  const v = (x) => {
+    if (!valor.has(x.p.id)) valor.set(x.p.id, ppjJanela(x));
+    return valor.get(x.p.id);
+  };
   const pares = [];
   meusX.forEach((meu) => {
     livresX
       .filter((l) => l.p.element_type === meu.p.element_type)
       .forEach((livre) => {
-        const ganho = livre.pr.ppj - meu.pr.ppj;
+        const ganho = v(livre) - v(meu);
         if (ganho >= GANHO_MIN_LIVRE) {
-          pares.push({ meu, livre, ganho, ganhoCal: livre.pr.ppjCal - meu.pr.ppjCal });
+          pares.push({ meu, livre, ganho,
+            ganhoCal: v(livre) * livre.pr.calFator - v(meu) * meu.pr.calFator });
         }
       });
   });
@@ -2688,6 +2857,13 @@ function melhoresTransferencias(meusX, maximo) {
   const candidatos = comProjecao(D.players.filter((p) =>
     !meusX.some((x) => x.p.id === p.id) && !indisponivel(p) && p.now_cost));
 
+  // Uma transferência é para ficar: o valor é o da janela, e uma dúvida de uma
+  // jornada só pesa nessa jornada (ver disponibilidadeJanela).
+  const valor = new Map();
+  const v = (x) => {
+    if (!valor.has(x.p.id)) valor.set(x.p.id, ppjJanela(x) * x.pr.calFator);
+    return valor.get(x.p.id);
+  };
   const ideias = [];
   meusX.forEach((meu) => {
     const orcamento = banco + precoDe(meu.p);
@@ -2696,7 +2872,7 @@ function melhoresTransferencias(meusX, maximo) {
       .filter((c) => precoDe(c.p) <= orcamento + 1e-9)
       .filter((c) => c.p.team === meu.p.team || (porClube[c.p.team] || 0) < limiteClube)
       .forEach((c) => {
-        const ganho = c.pr.ppjCal - meu.pr.ppjCal;
+        const ganho = v(c) - v(meu);
         if (ganho > 0.2) {
           ideias.push({ meu, entra: c, ganho, sobra: orcamento - precoDe(c.p) });
         }
