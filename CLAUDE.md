@@ -1220,6 +1220,60 @@ A grelha de 12 jornadas pedia ~950px, e por isso a largura da app passou de 58re
 em todos os separadores**. Alargar só o Calendário fazia o conteúdo saltar 40px ao mudar de
 separador.
 
+## A precisão do modelo, medida a cada jornada (2026-10-13, pedido do utilizador)
+
+Pergunta do utilizador: "tendo em conta a precisão do modelo, há ajustes a fazer?". O
+"Precisão do modelo" do site só vê as projeções que o browser guardou, por isso
+**`scripts/precisao.mjs`** reconstrói-as. Corre o próprio `app.js` no Node, com um `vm` e sem
+browser, para cada jornada já jogada, usando só o que se sabia antes dela, e compara com os
+pontos reais. Leva meio segundo.
+
+- **Reconstrução, para não deixar o futuro entrar.**
+  - Os totais da época (minutos, pontos, xG, xA, xG sofrido) são somados jornada a jornada.
+  - Os outros totais, que a API não dá por jornada, ficam proporcionais aos minutos. É uma
+    aproximação declarada.
+  - O estado clínico é o guardado nessa jornada, mas só se a notícia for anterior ao jogo.
+  - O Scout e as escolhas da liga ficam de fora, porque são de hoje.
+- **Contra o quê.** Compara com três previsores ingénuos (época passada, esta época, e a
+  mistura das duas) e com o onze escolhido por cada um nos planteis da liga.
+- **Duas armadilhas na escolha de quem se avalia**, ambas apanhadas a meio:
+  - "Projetados a 1.5+" tirava da avaliação quem um ajuste passasse a projetar abaixo disso.
+  - "Com dono hoje" escolhia jogadores pelos resultados das próprias jornadas avaliadas, e dava
+    +0.45 de viés que não era do modelo.
+
+  Ficou "quem já tinha jogado 60+ minutos antes, ou 900+ na época passada".
+- **O MAE engana aqui também.** A mistura simples chegou a ganhar em MAE com o modelo melhor em
+  RMSE, em ordenação e no onze. A decisão olha para o RMSE, para o ρ e para o onze.
+- `--app outro/app.js` mede uma versão do modelo contra a atual sobre os mesmos dados, e a
+  secção "a vigiar" só lista os desvios cujo IC95 não inclui o zero.
+
+**Resultado em 2026-10-13 (jornadas 2-6, 1805 casos):** o modelo ganha aos três ingénuos em
+tudo. No Draft o MAE é 1.77 contra 2.00 da mistura, o ρ 0.60 contra 0.39 e o viés zero. No onze
+fez 49.4 contra 48.1 do melhor ingénuo (o teto é 54.9). Saíram do ruído dois defeitos, e
+ambos foram corrigidos:
+
+- **Guarda-redes** (`guardaRedesDoUltimoJogo`). A mistura de minutos dava aos suplentes valores
+  que não existem em campo: os GR previstos com 30-60 min jogaram 1 vez em 59 (previsão 1.89,
+  real 0.03). "O GR que jogou o último jogo do clube é o do jogo seguinte" acerta 97.8% de 365
+  casos. O erro dos minutos dos GR passa de 22.1 para 2.2 e, em todos os jogadores, o MAE de
+  1.22 para 1.16 e o ρ de 0.692 para 0.720. Saltar os jogos em que ele estava lesionado acerta
+  menos (97.3%). O onze quase não mexe (já escolhia o titular), mas os suplentes deixam de
+  aparecer nos waivers e nas tabelas com ~1.9 pts fantasma.
+- **Estreantes na clássica** (`rankPrior`). A referência de quem não tem histórico vem dos
+  vizinhos por draft rank, e a clássica não tem draft rank (0 de 667). Ficavam todos iguais, e
+  um estreante herdava a referência dos 15 primeiros da posição no ficheiro, que são titulares
+  estabelecidos. Isso dava ~+1 pt por 90 (Moore 3.5 no Draft, 4.6 na clássica). Passa a usar-se
+  o preço. O viés da clássica passa de −0.13 para −0.03, e as projeções de 2-3 pts de −0.38 ±0.24
+  para −0.12. O onze da clássica subiu de 61.2 para 64.8 (5 onzes, pouco para concluir).
+
+**Ficam a vigiar**, dentro do ruído com 5 jornadas: o valor por 90 dos GR 10% acima do real
+(−0.39 ±0.58), as projeções de 5+ pts 0.9 acima (só 28 casos) e os avançados +0.2.
+
+**Fica recorrente.** A skill `.claude/skills/precisao-modelo` corre o script, lê-o com estes
+critérios e só propõe um ajuste medido antes e depois. Nunca funde nem faz push sozinha. Uma
+tarefa agendada chama-a às terças e sextas de manhã. Se não houver jornada nova acabada, pára.
+Os números de cada verificação ficam em `docs/precisao-registo.md`.
+
 ## Lesões: quem herda os minutos, e o peso de uma ausência curta (2026-10-08)
 
 Reparo do utilizador, em dois pontos. (1) Quando um titular se lesiona, alguém entra no lugar
@@ -1553,7 +1607,6 @@ não uma intuição.
 | **Ordenar o onze pelo adversário** | Medido em 63 onzes reais: o `ppjCal` é **pior** do que não fazer nada (P=0.75), com 5 de 14 mudanças a piorar; o ajuste bem feito vale **0.9 pontos numa época**. A margem entre o melhor onze e o segundo é 0.436 e o efeito por jogador é ±0.2-0.3. O efeito do adversário **existe** (o modelo extrai 19% do sinal) mas vive no **tooltip**, não na projeção. |
 | **Baixar o peso do histórico nos minutos** (`n/(n+2)` → `n/(n+0.3)`) | Ganho aparente de 36.6% em erro médio absoluto que é **artefacto**: o MAE premia a mediana e os minutos são bimodais. Em erro quadrático cai para 18%, em pontos para 0.2%, e o parâmetro é não-monótono entre jornadas. |
 | **Tirar da média de minutos os jogos em que estava lesionado** | Nos 16 casos de regresso de lesão (jornadas 3-5), o erro sobe de 25.8 para 31.0 min, pior em 95% das reamostragens. Quem volta entra aos poucos; os zeros dizem isso. |
-| **Regra de minutos específica para guarda-redes** | As 60 aparições de GR nas 3 jornadas foram todas de 90 minutos exactos, mas o grupo que mudou de estatuto tem **N=2**. Não é mensurável; o caso geral já o cobre. |
 
 *Nota sobre o win-win nas trocas*: medi zero em 119 130 combinações e escrevi que era estrutural.
 Dias depois, com os planteis mudados, passou a disparar. A conclusão certa é "é raro", não

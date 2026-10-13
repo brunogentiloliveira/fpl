@@ -772,6 +772,23 @@ function taxaBase(p, hist) {
   return PESO_ESPERADO * comp.total + (1 - PESO_ESPERADO) * realizada;
 }
 
+/**
+ * A ordem por que se escolhem os vizinhos de referência: o draft rank no
+ * Draft, o preço na clássica.
+ *
+ * A clássica não tem draft rank (0 de 667 jogadores), e todos ficavam com o
+ * mesmo 1e9: a referência de um estreante acabava por ser a dos primeiros 15
+ * da posição pela ordem do ficheiro — titulares estabelecidos —, e quem subiu
+ * do Championship saía com ~+1 pt por 90 a mais (Moore 3.5 no Draft, 4.6 na
+ * clássica). Medido no backtest das jornadas 2-6: isso dava +0.25 pts/90 em
+ * média à clássica e um viés de −0.38 nas projeções de 2-3 pts. O preço é a
+ * avaliação de qualidade que a clássica tem, e serve para o mesmo.
+ */
+function rankPrior(p) {
+  if (p.draft_rank != null) return p.draft_rank;
+  return p.now_cost ? 1000 - p.now_cost : 1e9;
+}
+
 function construirPriors() {
   calibrarEsperado();
   priorsPos = {};
@@ -781,7 +798,7 @@ function construirPriors() {
       .map((p) => {
         const h = historicoDe(p);
         return {
-          rank: p.draft_rank ?? 1e9,
+          rank: rankPrior(p),
           pp90: taxaBase(p, h),
           minJogo: Math.min(90, h.minutes / JOGOS_EPOCA),
         };
@@ -790,11 +807,11 @@ function construirPriors() {
   });
 }
 
-/** Referência de quem tem draft rank parecido na mesma posição. */
+/** Referência de quem tem draft rank (ou preço, na clássica) parecido na mesma posição. */
 function priorDe(p) {
   const lista = priorsPos[p.element_type] || [];
   if (lista.length === 0) return { pp90: 3, minJogo: 45 };
-  const rank = p.draft_rank ?? 1e9;
+  const rank = rankPrior(p);
   let i = lista.findIndex((x) => x.rank >= rank);
   if (i < 0) i = lista.length - 1;
   const ini = Math.max(0, Math.min(i - Math.floor(K_VIZINHOS / 2), lista.length - K_VIZINHOS));
@@ -1065,6 +1082,53 @@ function mapaReforco() {
 /** Para os testes, que mexem nos estados sem trocar os dados. */
 function limparCacheReforco() {
   cacheReforco = { chave: null, mapa: null };
+  cacheGR = { chave: null, mapa: null };
+}
+
+/* --- Guarda-redes: joga um, e joga 90 ---
+ *
+ * O modelo misturava os minutos recentes com os da época passada, e num
+ * guarda-redes isso dava valores que não existem em campo. Medido no backtest
+ * das jornadas 2-6 (scripts/precisao.mjs): os GR a quem dava 30-60 minutos
+ * jogaram 1 vez em 59 — previsão de 1.89 pts por jornada, realidade 0.03 —, e
+ * os GR no seu todo saíam 0.85 pts acima do real, quando as outras posições
+ * estavam calibradas.
+ *
+ * "O guarda-redes que jogou o último jogo do clube é o do jogo seguinte"
+ * acerta em 97.8% de 365 casos. Com isso, o erro dos minutos dos GR passa de
+ * 22.1 para 2.2 e o dos pontos de 1.66 para 0.93 (viés de −0.85 para −0.14).
+ * A variante que salta os jogos em que ele estava lesionado acerta menos
+ * (97.3%) e só muda o caso de quem ainda não voltou.
+ *
+ * O estado clínico aplica-se por cima (um titular em dúvida leva 90 × chance),
+ * e quando o titular fica de fora é o mapaReforco que dá os 90 ao suplente.
+ * Antes do primeiro jogo da época não há último jogo, e fica o modelo geral.
+ */
+let cacheGR = { chave: null, mapa: null };
+
+/** {clube: id do GR que jogou o último jogo do clube} (60+ min). */
+function guardaRedesDoUltimoJogo() {
+  const chave = [D, D.players, D.jornadas];
+  const c = cacheGR.chave;
+  if (c && c[0] === chave[0] && c[1] === chave[1] && c[2] === chave[2]) return cacheGR.mapa;
+  const grs = {};
+  D.players.forEach((q) => {
+    if (q.element_type === 1) (grs[q.team] = grs[q.team] || []).push(q.id);
+  });
+  const evs = Object.keys(D.jornadas || {}).map(Number).sort((a, b) => b - a);
+  const mapa = {};
+  Object.keys(grs).forEach((team) => {
+    const ev = evs.find((e) => {
+      const eq = D.jornadas[e].equipas || [];
+      return eq.length ? eq.includes(Number(team)) : !!D.jornadas[e].finalizada;
+    });
+    if (ev == null) return;
+    const stats = D.jornadas[ev].stats || {};
+    const quem = grs[team].find((id) => ((stats[String(id)] || [0])[0]) >= MIN_TITULAR);
+    if (quem != null) mapa[team] = quem;
+  });
+  cacheGR = { chave: chave, mapa: mapa };
+  return mapa;
 }
 
 function projecao(p, ignorarAusencia, semReforco) {
@@ -1136,6 +1200,13 @@ function projecao(p, ignorarAusencia, semReforco) {
       xmin *= 1 - 0.15 * forca;
     }
   }
+  // Guarda-redes: quem jogou o último jogo do clube joga, os outros não (ver
+  // guardaRedesDoUltimoJogo). Substitui a mistura, que dava minutos a suplentes.
+  if (p.element_type === 1) {
+    const gr = guardaRedesDoUltimoJogo()[p.team];
+    if (gr != null) xmin = gr === p.id ? 90 : 0;
+  }
+
   // Minutos herdados de um titular que fica de fora (ver mapaReforco).
   let reforco = 0;
   if (!semReforco) {

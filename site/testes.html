@@ -1311,6 +1311,34 @@ verificar("initCalendario não rebenta quando os controlos do separador não exi
   D.fixtures = guardadoFx;
 })();
 
+/* --- Referência dos estreantes: draft rank no Draft, preço na clássica --- */
+(function () {
+  if (typeof rankPrior !== "function") return;
+  verificar("com draft rank, é ele que manda", rankPrior({ draft_rank: 7, now_cost: 120 }) === 7);
+  verificar("sem draft rank (clássica), o mais caro fica à frente",
+    rankPrior({ now_cost: 120 }) < rankPrior({ now_cost: 45 }),
+    [rankPrior({ now_cost: 120 }), rankPrior({ now_cost: 45 })]);
+  verificar("sem nenhum dos dois, fica no fim", rankPrior({}) === 1e9);
+})();
+
+/* --- Guarda-redes: quem jogou o último jogo do clube joga, os outros não --- */
+(function () {
+  if (typeof guardaRedesDoUltimoJogo !== "function") return;
+  const guardadoJ = D.jornadas;
+  const gr1 = D.players.find((p) => p.id === 1), o0 = D.players.find((p) => p.id === 100);
+  D.jornadas = { 1: { finalizada: true, equipas: [1], stats: { "100": [90, 2] } } };
+  limparCacheReforco();
+  verificar("o GR que jogou o último jogo do clube leva 90 minutos", projecao(o0).xmin === 90,
+    projecao(o0).xmin);
+  verificar("o outro GR do clube leva 0, e não uma mistura com a época passada",
+    projecao(gr1).xmin === 0, projecao(gr1).xmin);
+  D.jornadas = {};
+  limparCacheReforco();
+  verificar("antes do primeiro jogo fica o modelo geral", projecao(gr1).xmin > 0, projecao(gr1).xmin);
+  D.jornadas = guardadoJ;
+  limparCacheReforco();
+})();
+
 /* --- Quem entra quando um titular fica de fora --- */
 (function () {
   if (typeof mapaReforco !== "function") return;
