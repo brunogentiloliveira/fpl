@@ -74,3 +74,27 @@ py scripts/estudo_indices/parte_b4.py <pasta> <trabalho> "2:clean_sheets"   # fo
 `<trabalho>` tem de conter `comum.py` e `feats.py` (ou aponta-se para `scripts/estudo_indices`,
 copiando para lá o `linhas.json`). Os scripts assumem 10 jornadas: o `n=10` de `carregar` e de
 `construir` tem de subir com a época.
+
+## 2026-11-10 — jornadas 2 a 10 (verificação feita à mão)
+
+Feita à mão porque a tarefa agendada não completou nenhuma verificação desde 13/10: as 7
+execuções pararam todas no primeiro comando, à espera de uma permissão que ninguém aprovou.
+
+**Conjunto avaliado**: 3400 jogador-jornada de quem já se sabia que joga.
+
+| Draft | MAE | RMSE | ρ | viés |
+|---|---|---|---|---|
+| modelo | **1.75** | **2.60** | **0.591** | −0.02 |
+| mistura (época passada + esta) | 1.95 | 2.81 | 0.381 | +0.10 |
+
+No onze, o modelo fez **48.2**, contra 45.9 do melhor ingénuo e 54.4 do oráculo.
+
+**Clássica**: MAE 1.76, RMSE 2.59, ρ 0.596, viés −0.06. No onze, 62.9 contra 61.8 do melhor
+ingénuo e 73.1 do oráculo.
+
+**Sinal**: projeções de 0 a 1 pts com viés +0.12 ±0.08 (N=829; +0.10 na clássica). São os
+suplentes que entram: previsto 0.60, real 0.84, jogam 44% das vezes e ~35 minutos. **Sem
+ajustes**: são jogadores projetados abaixo de 1 ponto, que não entram em onzes nem em waivers.
+
+Os três pontos a vigiar de 13/10 (valor por 90 dos GR, projeções de 5+ pts, avançados)
+continuam dentro do ruído.
