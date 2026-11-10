@@ -35,3 +35,42 @@ contra 61.2 do melhor ingénuo e 71.0 do oráculo (só 5 onzes: o meu plantel).
 - O valor por 90 dos GR está 10% acima do real (−0.39 ±0.58).
 - As projeções de 5+ pts saem 0.88 acima do real, mas são só 28 casos (±1.82).
 - Os avançados estão 0.21 abaixo (±0.41).
+
+## 2026-11-10 — estudo dos índices da página do Draft (jornadas 4 a 10)
+
+Pedido do utilizador: ver o que os 6 melhores de cada posição têm em comum nos índices por que a
+página ordena, e se isso serve para escolher. **Veredicto: não serve como método à parte, e o
+modelo não foi alterado.** O que os melhores partilham são os próprios resultados (balizas a
+zero, bónus, BPS, titularidades), e os índices da FPL (Influence, Creativity, Threat, ICT) não
+melhoram a ordem que o modelo já dá. O método do perfil, simulado em três cortes, empata com o
+modelo (2.96 contra 2.85 pts por jornada nas escolhas entre livres).
+
+### Pistas a vigiar (remedir a cada verificação a partir da jornada 15)
+
+Duas famílias saíram do ruído (16 testes em 106, contra ~5 esperados por acaso), mas nenhuma
+melhorou o onze, por isso não entraram no modelo.
+
+| Pista | Medição em 2026-11-10 (além do modelo, entre titulares esperados, IC95 por clube) | Fora da amostra |
+|---|---|---|
+| **DEF e GR: resultados desta época e multidão da clássica** | DEF balizas a zero +0.155 [+0.04, +0.27]; DEF subida de preço desde a J1 +0.159 [+0.08, +0.24]; GR equipas que o têm +0.28 [+0.11, +0.42] | DEF + balizas a zero: ordem 0.193 para 0.234; onze 48.5 para 48.2 (6 mudados: 2 melhor, 4 pior) |
+| **MED: força do adversário esta época** | xG por jogo do adversário −0.144 [−0.21, −0.06] | ordem 0.118 para 0.141; onze 48.5 para 48.4 |
+
+**Regra para entrarem:** o sinal manter-se com mais jornadas, e o onze não piorar. Se entrarem,
+o ajuste é dentro do modelo (mais peso a esta época nos defesas e guarda-redes; adversário nos
+médios), não um índice à parte.
+
+**Como remedir** (scripts em `scripts/estudo_indices/`, que escrevem só na pasta que se lhes dá):
+
+```
+py scripts/estudo_indices/sondar.py <pasta>            # bootstrap do Draft
+py scripts/estudo_indices/recolher_live.py <pasta>     # /event/N/live de cada jornada
+py scripts/estudo_indices/sondar_classica.py <pasta>   # bootstrap da clássica
+py scripts/estudo_indices/recolher_classica.py <pasta> # histórico por jogador (672 pedidos)
+node scripts/precisao.mjs --json <trabalho>/linhas.json
+py scripts/estudo_indices/parte_b5.py <pasta> <trabalho>   # intervalos por clube e escolha entre livres
+py scripts/estudo_indices/parte_b4.py <pasta> <trabalho> "2:clean_sheets"   # fora da amostra e onze
+```
+
+`<trabalho>` tem de conter `comum.py` e `feats.py` (ou aponta-se para `scripts/estudo_indices`,
+copiando para lá o `linhas.json`). Os scripts assumem 10 jornadas: o `n=10` de `carregar` e de
+`construir` tem de subir com a época.

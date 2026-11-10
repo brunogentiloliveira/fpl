@@ -91,6 +91,13 @@ aproximações.
 - Se houve ajuste, acrescenta uma secção ao `CLAUDE.md`, com as medições. Se uma ideia foi
   medida e rejeitada, acrescenta-a à tabela "Decidido, e porquê não".
 
+## Pistas a vigiar
+
+O fim de `docs/precisao-registo.md` tem uma tabela "Pistas a vigiar" com sinais que já saíram do
+ruído mas ainda não melhoraram o onze. A partir da jornada 15, remede-as com os scripts de
+`scripts/estudo_indices/` (os comandos estão no registo) e acrescenta os números novos ao bloco
+da verificação. Só entram no modelo pela regra da secção 4.
+
 ## 6. Commit, e o que nunca fazer sozinho
 
 - Trabalha num ramo novo (`claude/precisao-jN`), com commit do código, do registo e do
