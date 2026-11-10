@@ -98,11 +98,40 @@ ruído mas ainda não melhoraram o onze. A partir da jornada 15, remede-as com o
 `scripts/estudo_indices/` (os comandos estão no registo) e acrescenta os números novos ao bloco
 da verificação. Só entram no modelo pela regra da secção 4.
 
+## Execução agendada (sem ninguém a ver)
+
+Numa execução agendada só correm sem pedir autorização os comandos listados em
+`.claude/settings.json`, e a autorização é dada pelo **texto do comando**. Em oito execuções o
+primeiro comando foi escrito de sete maneiras diferentes, e sete ficaram paradas à espera de
+uma autorização que ninguém estava lá para dar. Por isso:
+
+- Um comando por chamada, escrito **exatamente** como abaixo: sem `cd`, sem `;`, `&&` ou `|`,
+  sem redirecionamentos, com `/` nos caminhos. A pasta de trabalho já é a do projeto.
+- Os ficheiros leem-se com a ferramenta Read, não com a shell.
+- Um comando que não esteja na lista não se tenta. Fica escrito no resumo o que faltou fazer.
+
+Passos:
+
+1. Lê `docs/precisao-registo.md` (Read) e vê qual foi a última jornada avaliada.
+2. `py scripts/recolher.py` faz a recolha completa (a do `atualizar.cmd`, sem o servidor).
+   Corre sempre: os dados em disco podem ser de antes do fim da jornada.
+3. `node scripts/precisao.mjs`. A primeira linha diz as jornadas avaliadas. Se a última já
+   estiver no registo, responde "Nada de novo desde a jornada N" e termina.
+4. `node scripts/precisao.mjs --modo classica`
+5. Acrescenta o bloco ao registo (Edit em `docs/precisao-registo.md`), como na secção 5.
+6. `git checkout -b claude/precisao-jN`, depois `git add docs/precisao-registo.md`, depois
+   `git commit -m "Registo da precisao: jornada N"`. A mensagem vai numa linha, só com `-m`
+   (pode repetir-se o `-m`), sem heredoc.
+
+**Numa execução agendada não se mexe no modelo.** Se a secção 8 trouxer um sinal, o registo e o
+resumo dizem qual é. O diagnóstico e o ajuste (secção 4), os testes (secção 5) e a remedição das
+pistas a vigiar pedem comandos que não cabem numa lista fixa, e ficam para uma sessão com o
+utilizador.
+
 ## 6. Commit, e o que nunca fazer sozinho
 
 - Trabalha num ramo novo (`claude/precisao-jN`), com commit do código, do registo e do
   `CLAUDE.md`. Os dados de `site/data/` ficam fora do commit.
-- **Nunca fundir em `main` nem fazer push sem o utilizador aprovar.** Numa execução agendada
-  (sem ninguém a ver), pára no commit no ramo e deixa um resumo curto, em português: a
-  precisão desta jornada, os sinais, e o ajuste proposto com os números de antes e depois, ou
-  "sem ajustes".
+- **Nunca fundir em `main` nem fazer push sem o utilizador aprovar.** Uma execução agendada
+  segue a secção "Execução agendada" acima: pára no commit do registo no ramo e deixa um resumo
+  curto, em português, com a precisão desta jornada, os sinais e o que fica por decidir.

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py scripts/recolher.py)",
+      "Bash(node scripts/precisao.mjs)",
+      "Bash(node scripts/precisao.mjs --modo classica)",
+      "Bash(git status --short)",
+      "Bash(git branch --show-current)",
+      "Bash(git checkout -b claude/precisao-j*)",
+      "Bash(git add docs/precisao-registo.md)",
+      "Bash(git commit -m *)",
+      "PowerShell(py scripts/recolher.py)",
+      "PowerShell(node scripts/precisao.mjs)",
+      "PowerShell(node scripts/precisao.mjs --modo classica)",
+      "PowerShell(git status --short)",
+      "PowerShell(git branch --show-current)",
+      "PowerShell(git checkout -b claude/precisao-j*)",
+      "PowerShell(git add docs/precisao-registo.md)",
+      "PowerShell(git commit -m *)",
+      "Edit(/docs/precisao-registo.md)",
+      "Edit(docs/precisao-registo.md)"
+    ]
+  }
+}

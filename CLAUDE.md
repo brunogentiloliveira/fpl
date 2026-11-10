@@ -1274,6 +1274,33 @@ critérios e só propõe um ajuste medido antes e depois. Nunca funde nem faz pu
 tarefa agendada chama-a às terças e sextas de manhã. Se não houver jornada nova acabada, pára.
 Os números de cada verificação ficam em `docs/precisao-registo.md`.
 
+### A rotina agendada nunca tinha corrido, e porquê (2026-11-10)
+
+Entre 16/10 e 10/11 a tarefa disparou sete vezes e **não mediu nada**. Parou sempre no primeiro
+comando, à espera de uma autorização, e a aplicação marcou as sete como "succeeded". O registo
+ficou sem entradas e nada avisou.
+
+- **A autorização é dada pelo texto exato do comando.** O "permitir sempre" de 21/10 guardou
+  esse comando letra a letra em `.claude/settings.local.json`, e nunca mais serviu: em oito
+  execuções o primeiro comando foi escrito de sete maneiras (com `\` ou `/`, com ou sem
+  `-Compress`, em PowerShell ou em Bash).
+- **A correção são três peças que só funcionam juntas.**
+  - `.claude/settings.json` lista os comandos da rotina, para Bash e para PowerShell, e a edição
+    do registo.
+  - A secção "Execução agendada" da skill manda escrever esses comandos tal e qual, um por
+    chamada.
+  - `scripts/recolher.py` faz a recolha num comando único. Definir as variáveis de ambiente na
+    linha de comandos mudava o texto, e sem elas a clássica era recolhida **sem o plantel e sem
+    erro nenhum**.
+- **Uma execução agendada deixou de mexer no modelo.** Regista a precisão e os sinais, e faz
+  commit só do registo num ramo `claude/precisao-jN`. O diagnóstico, o ajuste e os testes pedem
+  comandos livres, que não cabem numa lista fixa, e ficam para uma sessão acompanhada.
+- **Os testes ficam de fora de propósito**: o `testes.py` ainda troca o `calendario.json`
+  verdadeiro durante o teste do artefacto.
+- **Por provar em 2026-11-10**: a recolha e o backtest foram corridos à mão com os comandos da
+  lista, mas nenhuma execução agendada a exerceu ainda. A edição do registo e o commit só se
+  provam na primeira jornada nova.
+
 ## Lesões: quem herda os minutos, e o peso de uma ausência curta (2026-10-08)
 
 Reparo do utilizador, em dois pontos. (1) Quando um titular se lesiona, alguém entra no lugar
