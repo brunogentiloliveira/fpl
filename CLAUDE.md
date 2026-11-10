@@ -1118,6 +1118,7 @@ divergências**, ou perante qualquer divergência dentro das próximas 6 semanas
 PL já confirmou as escolhas de televisão, por isso aí uma divergência não é uma remarcação
 normal, é sinal de um problema a sério. Recusar o clube inteiro à primeira divergência
 apagava-lhe os jogos europeus — a única coisa que esta fonte acrescenta ao que já se tinha.
+*(A regra das 6 semanas saiu em 2026-11-10: ver "Uma remarcação deitava fora o clube inteiro".)*
 
 **Não liga ao modelo de projeção** — a mesma linha vermelha que já valia para o zerozero.pt
 sozinho. Há *quem* joga na Europa e *quando*, falta *quanto custa em minutos*: um treinador roda
@@ -1219,6 +1220,35 @@ sobrepunham-se. Passou a **uma coluna por jornada** (`limitesJornadas`, `jogosPo
 A grelha de 12 jornadas pedia ~950px, e por isso a largura da app passou de 58rem a **63rem
 em todos os separadores**. Alargar só o Calendário fazia o conteúdo saltar 40px ao mudar de
 separador.
+
+### Uma remarcação deitava fora o clube inteiro (2026-11-10)
+
+A recolha de 10/11 saiu com 18 clubes: o Nott'm Forest e o Everton ficaram "sem dados". Vi o
+aviso, mencionei-o à parte e não fui ver. O utilizador reparou, e com razão.
+
+**Causa.** A PL passou o Forest-Everton de sábado 19/12 para domingo 20/12, e o Forest-Hull de
+06/01 para 05/01. A API já tinha as datas novas (em setembro tinha as antigas) e o zerozero
+ainda não. A validação comparava (data, adversário, casa/fora), por isso um jogo remarcado era
+"um jogo que não bate", e a regra das 6 semanas recusava o clube por uma só divergência nesse
+prazo.
+
+**A premissa dessa regra estava ao contrário.** Partia de que a 5 ou 6 semanas os jogos já
+estão fixos. É precisamente quando as escolhas da televisão saem e as duas fontes se
+desencontram.
+
+**Correção** (`validar_pl`, `motivo_recusa`). O jogo identifica-se por (adversário, casa/fora),
+que numa época só acontece uma vez. Medido nos 20 clubes: batem **760 em 760**, e só **2 jogos**
+tinham a data diferente, os dois por um dia.
+
+- O mesmo jogo com outra data é uma remarcação. Vale a data da API, de onde os jogos da PL já
+  saíam, e o clube fica.
+- Um jogo que a API não tem (outro adversário, ou o campo trocado) continua a recusar a linha, e
+  mais de 2 recusam o clube. É o que denuncia a página de outro clube ou de outra época.
+- Mais de 9 datas diferentes (`REMARCADAS_MAX`, um quarto das 38 linhas) também recusam o
+  clube. Isso já não é a televisão, é um erro de leitura das datas, que estragaria as dos jogos
+  europeus.
+- O motivo dizia "38 jogos da PL não batem com a API" quando era um: a lista vinha cheia com as
+  linhas que batiam, para passar o limiar. Passou a contar só os que não batem.
 
 ## A precisão do modelo, medida a cada jornada (2026-10-13, pedido do utilizador)
 

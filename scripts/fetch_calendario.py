@@ -303,44 +303,66 @@ def _data(ordinal):
     return date.fromordinal(ordinal).isoformat()
 
 
-def validar_pl(linhas_zz, fixtures_api, semanas_criticas=6):
-    """Cruza as linhas da PL do zerozero com a API. Recusa linhas — ou o
-    clube inteiro, quando a divergência é grave demais para ser só uma
-    remarcação normal.
+# Quantos jogos da PL podem ter no zerozero uma data diferente da da API sem se
+# desconfiar da página. Uma remarcação mexe em poucos jogos de cada vez (em
+# 2026-11-10 eram 2 em 380, o pior clube com 2); um erro de leitura das datas
+# mexe em quase todos. Um quarto das 38 linhas separa bem os dois casos.
+REMARCADAS_MAX = 9
 
-    Só por (data, adversário, casa/fora) — nunca pela hora, que está noutro
-    fuso. Hoje batem 760/760.
 
-    Escala de linha para clube em dois casos: mais de 2 divergências (perde-
-    se a confiança de que é só a TV a remarcar, e não a página errada), ou
-    qualquer divergência dentro das próximas `semanas_criticas` semanas — a
-    Premier League confirma as escolhas televisivas com 5-6 semanas de
-    antecedência, por isso aí dentro os jogos já estão fixos e uma
-    divergência não é uma remarcação, é sinal de um problema a sério.
-    Escalado, `recusadas` traz uma entrada por cada linha do clube (não só
-    as que divergem) — para qualquer clube real da época isto passa bem de
-    2, o que também é o sinal que `main()` já usa para não escrever o
-    clube. Os motivos genuínos ficam à cabeça da lista (as linhas que
-    batiam vêm depois), para a amostra do diagnóstico continuar a mostrar
-    o problema real e não uma linha qualquer que batia certo.
+def validar_pl(linhas_zz, fixtures_api):
+    """Cruza as linhas da PL do zerozero com a API, jogo a jogo.
+
+    Devolve (aceites, recusadas, remarcadas). Quem decide se o clube cai é
+    `motivo_recusa()`.
+
+    O jogo identifica-se por (adversário, casa/fora): numa época cada par só
+    acontece uma vez, e batem 760 em 760. A data não serve para identificar,
+    porque a PL remarca jogos e as duas fontes não atualizam ao mesmo tempo.
+    Em 2026-11-10 a API já tinha o Forest-Everton no domingo 20/12 e o
+    Forest-Hull a 05/01, e o zerozero ainda os dava a 19/12 e a 06/01. Com a
+    data dentro da chave, isso eram "jogos que não batem", e a regra que
+    recusava o clube por qualquer divergência nas 6 semanas seguintes deitou
+    fora o Forest e o Everton inteiros. Essa regra partia de que a essa
+    distância os jogos já estão fixos; é ao contrário, é quando as escolhas
+    da televisão saem e as fontes se desencontram.
+
+    - aceites: o mesmo jogo, na mesma data.
+    - remarcadas: o mesmo jogo, com outra data. Vale a da API, que é de onde
+      os jogos da PL saem de qualquer maneira.
+    - recusadas: um jogo que a API não tem (outro adversário, ou o campo
+      trocado). É o que denuncia a página de outro clube ou de outra época.
+
+    Nunca pela hora, que está noutro fuso.
     """
-    oficiais = {(j["data"], j["adv_slug"], j["casa"]) for j in fixtures_api}
-    hoje = fd.datetime.now(fd.timezone.utc).date().isoformat()
-    limite = (fd.datetime.now(fd.timezone.utc)
-              + fd.timedelta(weeks=semanas_criticas)).date().isoformat()
-    aceites, recusadas, critica = [], [], False
+    datas_do_jogo = {}
+    for j in fixtures_api:
+        datas_do_jogo.setdefault((j["adv_slug"], j["casa"]), set()).add(j["data"])
+    aceites, recusadas, remarcadas = [], [], []
     for linha in linhas_zz:
-        chave = (linha["data"], linha["adv_slug"], linha["casa"])
-        if chave in oficiais:
+        datas = datas_do_jogo.get((linha["adv_slug"], linha["casa"]))
+        if datas is None:
+            recusadas.append(f"{linha['data']} vs {linha['adv_slug']}")
+        elif linha["data"] in datas:
             aceites.append(linha)
         else:
-            recusadas.append(f"{linha['data']} vs {linha['adv_slug']}")
-            if hoje <= linha["data"] <= limite:
-                critica = True
-    if critica or len(recusadas) > 2:
-        resto = [f"{l['data']} vs {l['adv_slug']}" for l in aceites]
-        return [], recusadas + resto
-    return aceites, recusadas
+            remarcadas.append(f"{linha['data']} vs {linha['adv_slug']} "
+                              f"(na API: {', '.join(sorted(datas))})")
+    return aceites, recusadas, remarcadas
+
+
+def motivo_recusa(recusadas, remarcadas):
+    """Porque é que não se confia na página do clube, ou None se se confia.
+
+    Mais de 2 jogos que a API não tem já não é um adiamento: é a página
+    errada. Mais de `REMARCADAS_MAX` datas diferentes já não é a televisão: é
+    um erro de leitura das datas, que estragaria também as dos jogos europeus.
+    """
+    if len(recusadas) > 2:
+        return f"{len(recusadas)} jogos da PL que a API não tem"
+    if len(remarcadas) > REMARCADAS_MAX:
+        return f"{len(remarcadas)} jogos da PL com data diferente da API"
+    return None
 
 
 def _get_html(url):
@@ -474,10 +496,11 @@ def main():
         linhas = jogos_do_clube(info["caminho"], epoca_id, primeira)
         pl_zz = [x for x in linhas if normalizar_comp(x["comp_bruta"]) == "PL"]
         desvios = desvios_por_data(pl_zz, oficiais.get(team_id, []))
-        _, divergentes = validar_pl(pl_zz, oficiais.get(team_id, []))
-        if len(divergentes) > 2:
-            recusados[str(team_id)] = f"{len(divergentes)} jogos da PL não batem com a API"
-            fd.registar(f"Calendário: {nome}", False, divergentes[:3])
+        _, divergentes, remarcadas = validar_pl(pl_zz, oficiais.get(team_id, []))
+        motivo = motivo_recusa(divergentes, remarcadas)
+        if motivo:
+            recusados[str(team_id)] = motivo
+            fd.registar(f"Calendário: {nome}", False, (divergentes or remarcadas)[:3])
             continue
 
         jogos = []

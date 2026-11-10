@@ -776,40 +776,81 @@ def testa_calendario_validacao():
     boas = [{"data": "2026-10-11", "adv_slug": "liverpool", "casa": False},
             {"data": "2026-10-17", "adv_slug": "ipswich-town", "casa": True}]
 
-    aceites, recusadas = fc.validar_pl(boas, api)
-    verificar("linhas que batem passam todas", len(aceites) == 2 and not recusadas)
+    aceites, recusadas, remarcadas = fc.validar_pl(boas, api)
+    verificar("linhas que batem passam todas",
+              len(aceites) == 2 and not recusadas and not remarcadas)
 
-    # Uma remarcação não pode derrubar o clube: 700 das 760 linhas ainda vão
-    # mexer com as escolhas televisivas, e os jogos europeus são a única coisa
-    # que esta fonte acrescenta.
+    # Um jogo que a API não tem (adiado e ainda sem data nova, por exemplo) não
+    # pode derrubar o clube: os jogos europeus são a única coisa que esta fonte
+    # acrescenta.
     ma = boas + [{"data": "2027-03-01", "adv_slug": "chelsea", "casa": True}]
-    aceites, recusadas = fc.validar_pl(ma, api)
-    verificar("uma divergência distante recusa a linha, não o clube",
-              len(aceites) == 2 and len(recusadas) == 1, (len(aceites), recusadas))
+    aceites, recusadas, remarcadas = fc.validar_pl(ma, api)
+    verificar("um jogo que a API não tem recusa a linha, não o clube",
+              len(aceites) == 2 and len(recusadas) == 1 and not remarcadas
+              and fc.motivo_recusa(recusadas, remarcadas) is None,
+              (len(aceites), recusadas, remarcadas))
 
     # A validação é por DATA. Comparar data-hora rejeitaria 155 dos 380 jogos
     # por causa do fuso, e a regra de recusa deitava fora os 20 clubes.
     verificar("a hora não entra na comparação",
               len(fc.validar_pl(boas, api)[0]) == 2)
 
-    # semanas_criticas: a PL confirma as escolhas televisivas com 5-6
-    # semanas de antecedência — uma divergência aí dentro não é uma
-    # remarcação normal, e escala para recusar o clube inteiro mesmo sendo
-    # só 1 divergência (o limiar de "mais de 2" sozinho não a apanhava).
+    # O caso real de 2026-11-10: a PL passou o Forest-Everton de sábado 19/12
+    # para domingo 20/12 e o zerozero ficou com a data antiga. O mesmo
+    # adversário no mesmo campo é o mesmo jogo, e a cinco ou seis semanas de
+    # distância é precisamente quando as escolhas da televisão saem e as duas
+    # fontes se desencontram. A regra antiga recusava o clube inteiro por isto.
     from datetime import datetime, timedelta, timezone
     hoje = datetime.now(timezone.utc).date()
     perto = (hoje + timedelta(days=10)).isoformat()
-    longe = (hoje + timedelta(days=300)).isoformat()
+    vespera = (hoje + timedelta(days=9)).isoformat()
+    api_perto = api + [{"data": perto, "adv_slug": "everton", "casa": True,
+                        "kickoff": perto + "T14:00:00Z", "dif": 3, "evento": 8}]
+    remarcado = boas + [{"data": vespera, "adv_slug": "everton", "casa": True}]
+    aceites, recusadas, remarcadas = fc.validar_pl(remarcado, api_perto)
+    verificar("um jogo remarcado um dia, mesmo daqui a dias, não recusa o clube",
+              len(aceites) == 2 and not recusadas and len(remarcadas) == 1
+              and fc.motivo_recusa(recusadas, remarcadas) is None,
+              (len(aceites), recusadas, remarcadas))
+    verificar("a linha remarcada diz as duas datas",
+              bool(remarcadas) and vespera in remarcadas[0] and perto in remarcadas[0],
+              remarcadas)
 
-    com_divergencia_perto = boas + [{"data": perto, "adv_slug": "chelsea", "casa": True}]
-    aceites, recusadas = fc.validar_pl(com_divergencia_perto, api, semanas_criticas=6)
-    verificar("divergência dentro da janela crítica recusa o clube, não só a linha",
-              aceites == [] and len(recusadas) == 3, (aceites, recusadas))
+    # O mesmo adversário no campo contrário não é o mesmo jogo.
+    trocado = boas + [{"data": perto, "adv_slug": "everton", "casa": False}]
+    aceites, recusadas, remarcadas = fc.validar_pl(trocado, api_perto)
+    verificar("o mesmo adversário no outro campo é divergência, não remarcação",
+              len(recusadas) == 1 and not remarcadas, (recusadas, remarcadas))
 
-    com_divergencia_longe = boas + [{"data": longe, "adv_slug": "chelsea", "casa": True}]
-    aceites, recusadas = fc.validar_pl(com_divergencia_longe, api, semanas_criticas=6)
-    verificar("a mesma divergência, fora da janela crítica, recusa só a linha",
-              len(aceites) == 2 and len(recusadas) == 1, (aceites, recusadas))
+    # A página errada (outro clube, outra época) falha nos adversários, e aí o
+    # clube cai: mais de 2 jogos que a API não tem.
+    errada = boas + [{"data": "2027-03-0%d" % i, "adv_slug": s, "casa": True}
+                     for i, s in enumerate(("chelsea", "arsenal", "fulham"), 1)]
+    aceites, recusadas, remarcadas = fc.validar_pl(errada, api)
+    motivo = fc.motivo_recusa(recusadas, remarcadas)
+    verificar("mais de 2 jogos que a API não tem recusam o clube",
+              len(recusadas) == 3 and motivo is not None, (recusadas, motivo))
+    verificar("o motivo conta só os jogos que não batem",
+              motivo is not None and motivo.startswith("3 "), motivo)
+
+    # As remarcações são poucas de cada vez. Datas diferentes em muitos jogos já
+    # não é a televisão: é um erro de leitura das datas, que estragaria também
+    # as dos jogos europeus.
+    n = fc.REMARCADAS_MAX + 1
+    muitos = [{"data": "2027-02-%02d" % d, "adv_slug": "clube-%d" % d, "casa": True}
+              for d in range(1, n + 1)]
+    api_muitos = [{"data": "2027-03-%02d" % d, "adv_slug": "clube-%d" % d, "casa": True,
+                   "kickoff": "2027-03-%02dT15:00:00Z" % d, "dif": 3, "evento": d}
+                  for d in range(1, n + 1)]
+    aceites, recusadas, remarcadas = fc.validar_pl(muitos, api_muitos)
+    verificar("datas diferentes em muitos jogos recusam o clube",
+              len(remarcadas) == n and fc.motivo_recusa(recusadas, remarcadas) is not None,
+              (len(remarcadas), fc.motivo_recusa(recusadas, remarcadas)))
+    aceites, recusadas, remarcadas = fc.validar_pl(muitos[:-1], api_muitos)
+    verificar("no limite das remarcações o clube fica",
+              len(remarcadas) == fc.REMARCADAS_MAX
+              and fc.motivo_recusa(recusadas, remarcadas) is None,
+              (len(remarcadas), fc.motivo_recusa(recusadas, remarcadas)))
 
 
 def testa_calendario_epoca():
