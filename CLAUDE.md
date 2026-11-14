@@ -11,7 +11,11 @@ Sem backend nem base de dados: JSONs estáticos gerados por um script Python.
 - 7 gestores. `scoring: "c"` (**classic**, não head-to-head), `transaction_mode: "free-agency"`.
 - A equipa do utilizador é **"Buendia Porro"** (gestor Bruno **Gentil**, `league_entry id 61532`,
   `entry_id 61414`). Nota: "Gentil" é o apelido do gestor, não o nome da equipa.
-- Idioma do site: português de Portugal. Fuso: Europe/Lisbon. Mobile-first (uso sobretudo no telemóvel).
+- Idioma do site: português de Portugal. Fuso: Europe/Lisbon.
+- **Usado no computador, como página web.** O utilizador não usa o telemóvel ("foca só na
+  página web", 2026-10-02; o projeto nasceu mobile-first e isso deixou de valer). As
+  verificações de layout fazem-se a 1280px. Do telemóvel fica só uma garantia barata: a
+  página não pode ganhar scroll horizontal.
 
 ## API (pública, sem autenticação) — campos reais confirmados
 
@@ -1323,13 +1327,42 @@ ficou sem entradas e nada avisou.
     linha de comandos mudava o texto, e sem elas a clássica era recolhida **sem o plantel e sem
     erro nenhum**.
 - **Uma execução agendada deixou de mexer no modelo.** Regista a precisão e os sinais, e faz
-  commit só do registo num ramo `claude/precisao-jN`. O diagnóstico, o ajuste e os testes pedem
+  commit do registo e dos dados num ramo `claude/precisao-jN`. O diagnóstico, o ajuste e os testes pedem
   comandos livres, que não cabem numa lista fixa, e ficam para uma sessão acompanhada.
 - **Os testes ficam de fora de propósito**: o `testes.py` ainda troca o `calendario.json`
   verdadeiro durante o teste do artefacto.
 - **Por provar em 2026-11-10**: a recolha e o backtest foram corridos à mão com os comandos da
   lista, mas nenhuma execução agendada a exerceu ainda. A edição do registo e o commit só se
   provam na primeira jornada nova.
+
+### Os dados passaram a ir para o git (2026-11-14)
+
+Os ficheiros de `site/data/` estavam no git, mas sem commit desde 01/09: a regra era não os
+incluir. Só se reparou quando o utilizador foi trocar de computador. O GitHub tinha as jornadas
+1 e 2 e o disco tinha da 1 à 10.
+
+- **Quase tudo se volta a recolher, menos o estado clínico por jornada** (`jornadas[ev].estados`).
+  A API só dá o de hoje, e o `precisao.mjs` precisa dele para saber quem estava lesionado antes
+  de cada jogo. Perder o disco era perder as jornadas 3 a 10 para sempre.
+- **A rotina agendada faz agora commit dos dados com o registo** (`git add site/data` na lista
+  de permissões e nos passos da skill). Só chegam ao GitHub quando o utilizador aprova o push
+  do ramo da verificação, como tudo o resto.
+- **O estado clínico só se grava enquanto a jornada decorre.** Se a recolha não correr nenhuma
+  vez entre o deadline de uma jornada e o da seguinte, o dessa jornada perde-se.
+
+### Mudança de computador (2026-11-14)
+
+O que não vem com o `git clone`, e como se repõe:
+
+- **Python 3.12+ (com o `py`) e Node** têm de ser instalados. O `atualizar.cmd` procura o
+  Python sozinho.
+- **A tarefa agendada** vive na aplicação de cada computador. O texto e o horário estão em
+  `docs/tarefa-agendada.md`; na primeira execução é preciso aprovar as permissões.
+- **O que o browser guarda** (`localStorage`) perde-se: o plantel escrito à mão na clássica, as
+  preferências e as projeções da secção "Precisão do modelo". O `precisao.mjs` substitui esta
+  última.
+- **A memória e as conversas do Claude** ficam no computador antigo. O que importava delas está
+  neste ficheiro e em `docs/precisao-registo.md`.
 
 ## Lesões: quem herda os minutos, e o peso de uma ausência curta (2026-10-08)
 

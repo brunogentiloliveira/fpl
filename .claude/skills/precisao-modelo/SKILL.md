@@ -27,7 +27,8 @@ contradigam a medição original.
   py scripts\fetch_data.py; py scripts\fetch_classica.py; py scripts\fetch_calendario.py
   ```
 
-  Os ficheiros de `site/data/` são dados e não se fazem commits deles.
+  Os ficheiros de `site/data/` entram no commit da verificação: o estado clínico de cada
+  jornada só existe neles, porque a API só dá o de hoje.
 - **A última jornada acabada já está no registo**: diz "nada de novo desde a JN" e pára.
 
 ## 2. Correr o backtest
@@ -120,7 +121,7 @@ Passos:
 4. `node scripts/precisao.mjs --modo classica`
 5. Acrescenta o bloco ao registo (Edit em `docs/precisao-registo.md`), como na secção 5.
 6. `git checkout -b claude/precisao-jN`, depois `git add docs/precisao-registo.md`, depois
-   `git commit -m "Registo da precisao: jornada N"`. A mensagem vai numa linha, só com `-m`
+   `git add site/data`, depois `git commit -m "Registo da precisao: jornada N"`. A mensagem vai numa linha, só com `-m`
    (pode repetir-se o `-m`), sem heredoc.
 
 **Numa execução agendada não se mexe no modelo.** Se a secção 8 trouxer um sinal, o registo e o
@@ -130,8 +131,8 @@ utilizador.
 
 ## 6. Commit, e o que nunca fazer sozinho
 
-- Trabalha num ramo novo (`claude/precisao-jN`), com commit do código, do registo e do
-  `CLAUDE.md`. Os dados de `site/data/` ficam fora do commit.
+- Trabalha num ramo novo (`claude/precisao-jN`), com commit do código, do registo, do
+  `CLAUDE.md` e dos dados de `site/data/`.
 - **Nunca fundir em `main` nem fazer push sem o utilizador aprovar.** Uma execução agendada
-  segue a secção "Execução agendada" acima: pára no commit do registo no ramo e deixa um resumo
+  segue a secção "Execução agendada" acima: pára no commit do registo e dos dados no ramo e deixa um resumo
   curto, em português, com a precisão desta jornada, os sinais e o que fica por decidir.
